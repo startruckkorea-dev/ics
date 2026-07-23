@@ -4424,7 +4424,6 @@ const MSAL_CONFIG = {
 const MSAL_SCOPES = ["User.Read", "Sites.ReadWrite.All", "Files.ReadWrite.All"]; // 다른 APS 시스템들과 동일 조합(이미 동의된 권한 재사용, 이 앱은 실제로는 읽기만 함)
 const SITE_PATH = "startruckkorea.sharepoint.com:/sites/STK-DB:"; // 다른 APS 시스템들과 동일한 사이트 재사용
 const GRAPH = "https://graph.microsoft.com/v1.0";
-const CONFIG_FILE_NAME = "ics_config.xlsx"; // STK-DB 문서 라이브러리 루트에 업로드해야 함
 
 const msalApp = new msal.PublicClientApplication(MSAL_CONFIG);
 let _siteId = null;
@@ -4440,33 +4439,62 @@ async function apiGet(path, token) {
   return res.json();
 }
 
-// ics_config.xlsx의 "Departments"/"Users" 시트를 읽어 INITIAL_DEPARTMENTS / INITIAL_USERS 배열 내용을 갈아끼움
-// (배열 자체를 재할당하지 않고 내용만 바꿔서, 이미 default-param으로 이 배열을 참조하는 함수들이 그대로 최신값을 보게 함)
+// system_config_final.xlsx (다른 APS 시스템들과 완전히 동일한 공용 config 파일)에서
+// ICS_ACCESSOR_{부서id} / ICS_REVIEWER_N / ICS_ADMIN_N / ICS_CFO / ICS_RD 키를 읽어 INITIAL_USERS를 구성.
+// 3열(KEY/이름/이메일) 뿐인 단순 포맷, 헤더 없이 그대로 읽음 (loadSystemConfig()와 동일 파싱 규칙)
+// INITIAL_DEPARTMENTS는 부서 목록 자체(한글/영문명)라 config 대상이 아니고 코드 내 값 그대로 유지.
 async function loadIcsConfig(token) {
   const drives = await apiGet(`/sites/${_siteId}/drives`, token);
   const docDrive = (drives.value || []).find(d => ["Documents", "문서", "Shared Documents"].includes(d.name)) || (drives.value || [])[0];
-  const res = await fetch(`${GRAPH}/drives/${docDrive.id}/root:/${CONFIG_FILE_NAME}:/content`, { headers: { Authorization: "Bearer " + token } });
-  if (!res.ok) throw new Error(`${CONFIG_FILE_NAME} not found in STK-DB (${res.status})`);
+  const res = await fetch(`${GRAPH}/drives/${docDrive.id}/root:/system_config_final.xlsx:/content`, { headers: { Authorization: "Bearer " + token } });
+  if (!res.ok) throw new Error(`system_config_final.xlsx not found in STK-DB (${res.status})`);
   const buf = await res.arrayBuffer();
   const wb = XLSX.read(buf, { type: "array" });
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
 
-  const deptRows = XLSX.utils.sheet_to_json(wb.Sheets["Departments"], { defval: "" });
-  if (deptRows.length) {
-    INITIAL_DEPARTMENTS.length = 0;
-    deptRows.forEach(r => INITIAL_DEPARTMENTS.push({ id: String(r.id).trim(), ko: String(r.ko).trim(), en: String(r.en).trim() }));
+  const cfg = {};
+  rows.forEach(row => {
+    const key = (row[0] || "").toString().trim();
+    if (!key || key.startsWith("[") || key === "설정 키 (KEY)" || key.startsWith("이 파일") || key.startsWith("STK Korea")) return;
+    cfg[key] = { name: (row[1] || "").toString().trim(), email: (row[2] || "").toString().trim().toLowerCase() };
+  });
+
+  const deptIds = INITIAL_DEPARTMENTS.map(d => d.id); // fin/hr/pur/sal/itd/prd
+  const newUsers = [];
+  let seq = 1;
+
+  deptIds.forEach(dept => {
+    const v = cfg[`ICS_ACCESSOR_${dept}`];
+    if (v && v.email) newUsers.push({ id: `u${seq++}`, name: v.name || v.email, nameEn: v.name || v.email, email: v.email, dept, role: "accessor" });
+  });
+  for (let n = 1; n <= 20; n++) {
+    const v = cfg[`ICS_REVIEWER_${n}`];
+    if (!v) break; // 값이 없는 번호가 나오면 중단 (다른 시스템들의 자동확장 패턴과 동일)
+    if (v.email) newUsers.push({ id: `u${seq++}`, name: v.name || v.email, nameEn: v.name || v.email, email: v.email, dept: null, role: "reviewer" });
   }
+  for (let n = 1; n <= 20; n++) {
+    const v = cfg[`ICS_ADMIN_${n}`];
+    if (!v) break;
+    if (v.email) newUsers.push({ id: `u${seq++}`, name: v.name || v.email, nameEn: v.name || v.email, email: v.email, dept: null, role: "admin" });
+  }
+  if (cfg.ICS_CFO && cfg.ICS_CFO.email) newUsers.push({ id: `u${seq++}`, name: cfg.ICS_CFO.name || cfg.ICS_CFO.email, nameEn: cfg.ICS_CFO.name || cfg.ICS_CFO.email, email: cfg.ICS_CFO.email, dept: null, role: "cfo" });
+  if (cfg.ICS_RD && cfg.ICS_RD.email) newUsers.push({ id: `u${seq++}`, name: cfg.ICS_RD.name || cfg.ICS_RD.email, nameEn: cfg.ICS_RD.name || cfg.ICS_RD.email, email: cfg.ICS_RD.email, dept: null, role: "rd" });
 
-  const userRows = XLSX.utils.sheet_to_json(wb.Sheets["Users"], { defval: "" });
-  if (userRows.length) {
+  // 한 이메일이 여러 역할(예: accessor이면서 admin)에 동시 등록된 경우, 더 높은 권한 역할을 우선 적용
+  // (이 앱은 사용자당 role 하나만 가지는 구조라, 우선순위로 하나를 골라야 함)
+  const ROLE_PRIORITY = { admin: 0, rd: 1, cfo: 2, reviewer: 3, accessor: 4 };
+  const byEmail = {};
+  newUsers.forEach(u => {
+    const existing = byEmail[u.email];
+    if (!existing || ROLE_PRIORITY[u.role] < ROLE_PRIORITY[existing.role]) byEmail[u.email] = u;
+  });
+  const dedupedUsers = Object.values(byEmail);
+
+  if (dedupedUsers.length) {
     INITIAL_USERS.length = 0;
-    userRows.forEach(r => INITIAL_USERS.push({
-      id: String(r.id).trim(),
-      name: String(r.name).trim(),
-      nameEn: String(r.nameEn).trim(),
-      email: String(r.email).trim().toLowerCase(),
-      dept: r.dept ? String(r.dept).trim() : null,
-      role: String(r.role).trim(),
-    }));
+    dedupedUsers.forEach((u, i) => { u.id = `u${i+1}`; INITIAL_USERS.push(u); });
+  } else {
+    throw new Error("system_config_final.xlsx에서 ICS_* 키를 하나도 못 찾음");
   }
 }
 
