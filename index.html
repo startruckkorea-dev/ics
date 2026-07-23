@@ -636,7 +636,10 @@ const STR = {
       emailPlaceholder: "이메일 주소 입력 (예: hong.gildong@startruckkorea.com)",
       grantBtn: "권한 부여", invalidEmail: "올바른 이메일 주소를 입력해주세요.",
       addHint: "등록된 이메일은 아래 목록에 추가되며, 체크박스로 부서별 접근 권한을 지정할 수 있습니다.",
-      notice: "변경 사항은 즉시 반영됩니다. 부서 담당자의 접근 범위를 좁히면 해당 이메일 계정은 대시보드·통제 현황·통제 항목 관리 화면에서 체크된 부서의 데이터만 볼 수 있습니다.",
+      requestGuideTitle: "접근 권한 신청 방법",
+      requestGuideStep1: "BU Admin에게 권한 요청",
+      requestGuideStep2: "BU Admin이 아래 시스템으로 티켓 생성",
+      notice: "변경 사항은 즉시 반영됩니다. 부서 담당자의 접근 범위를 좁히면 해당 이메일 계정은 대시보드·통제 현황·통제 항목 관리 화면에서 체크된 부서의 데이터만 볼 수 있습니다. ⚠️ 단, 이 화면에서의 변경은 새로고침하면 초기화됩니다 — 영구 반영하려면 system_config_final.xlsx를 직접 수정해주세요.",
     },
   },
   en: {
@@ -890,7 +893,10 @@ const STR = {
       emailPlaceholder: "Enter email address (e.g. jane.doe@startruckkorea.com)",
       grantBtn: "Grant access", invalidEmail: "Please enter a valid email address.",
       addHint: "Registered emails appear in the list below, where department access can be set with checkboxes.",
-      notice: "Changes take effect immediately. Narrowing a user's scope means that email account will only see data for the checked departments on the Dashboard, Control Status, and Control Item Management screens.",
+      requestGuideTitle: "How to request access",
+      requestGuideStep1: "Request access from your BU Admin",
+      requestGuideStep2: "The BU Admin creates a ticket in",
+      notice: "Changes take effect immediately. Narrowing a user's scope means that email account will only see data for the checked departments on the Dashboard, Control Status, and Control Item Management screens. ⚠️ Note: changes made here reset on page refresh — to make them permanent, edit system_config_final.xlsx directly.",
     },
   },
 };
@@ -3999,9 +4005,6 @@ function SettingsPage({ currentUser, years, selectedYear, activeYear, startNewYe
 function PermissionsPage({ permissions, setPermissions }) {
   const { lang, t } = useLang();
   const { departments, users, setUsers } = useAppData();
-  const [newEmail, setNewEmail] = useState("");
-  const [newRole, setNewRole] = useState("accessor");
-  const [error, setError] = useState("");
 
   // 최초 시드 데모 계정(9명)은 설정 페이지에서만 이름 등 상세정보를 관리하도록, 권한관리 화면에서는 삭제할 수 없게 보호한다.
   const protectedEmails = new Set(INITIAL_USERS.filter((u) => u.role !== "admin").map((u) => u.email));
@@ -4031,26 +4034,6 @@ function PermissionsPage({ permissions, setPermissions }) {
   function setAll(email, allOn) {
     setPermissions((prev) => ({ ...prev, [email]: { ...(prev[email] || { role: "accessor" }), depts: allOn ? departments.map((d) => d.id) : [] } }));
   }
-  function grantByEmail() {
-    const email = newEmail.trim().toLowerCase();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      setError(t("permissions.invalidEmail"));
-      return;
-    }
-    setPermissions((prev) => ({ ...prev, [email]: { role: newRole, depts: prev[email]?.depts || [] } }));
-    // 설정(사용자 및 권한) 목록과 즉시 동기화: 여기서 새로 부여한 이메일이 사용자 목록에 없으면 새 사용자로 추가하고,
-    // 이미 있는 사용자라면 역할을 방금 지정한 값으로 맞춰준다 (양방향 업데이트).
-    setUsers((prev) => {
-      if (prev.some((u) => u.email === email)) {
-        return prev.map((u) => (u.email === email ? { ...u, role: newRole } : u));
-      }
-      const localPart = email.split("@")[0];
-      const niceName = localPart.replace(/[._-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) || email;
-      return [...prev, { id: `user_${Math.random().toString(36).slice(2, 8)}`, name: niceName, nameEn: niceName, email, dept: null, role: newRole }];
-    });
-    setNewEmail("");
-    setError("");
-  }
   function removeEmail(email) {
     setPermissions((prev) => {
       const next = { ...prev };
@@ -4067,26 +4050,17 @@ function PermissionsPage({ permissions, setPermissions }) {
     <div>
       <SectionHeader icon={KeyRound} title={t("permissions.title")} subtitle={t("permissions.subtitle")} />
 
-      <div className="bg-white rounded-xl border border-slate-100 p-4 mb-4">
-        <p className="text-xs font-semibold text-slate-500 mb-2">{t("permissions.addTitle")}</p>
-        <div className="flex flex-wrap items-center gap-2">
-          <input
-            type="email"
-            value={newEmail}
-            onChange={(e) => { setNewEmail(e.target.value); setError(""); }}
-            placeholder={t("permissions.emailPlaceholder")}
-            className={`${inputCls} flex-1 min-w-[220px]`}
-          />
-          <select value={newRole} onChange={(e) => setNewRole(e.target.value)} className={`${inputCls} w-auto`}>
-            <option value="accessor">{t("roles.accessor")}</option>
-            <option value="reviewer">{t("roles.reviewer")}</option>
-          </select>
-          <button onClick={grantByEmail} className="flex items-center gap-1.5 text-white text-sm font-medium px-4 py-2 rounded-lg" style={{ backgroundColor: BRAND.accent }}>
-            <Plus size={15} /> {t("permissions.grantBtn")}
-          </button>
-        </div>
-        {error && <p className="text-xs text-red-600 mt-1.5">{error}</p>}
-        <p className="text-xs text-slate-400 mt-1.5">{t("permissions.addHint")}</p>
+      <div className="rounded-xl border p-4 mb-4" style={{ backgroundColor: BRAND.accentSoft, borderColor: BRAND.accent + "40" }}>
+        <p className="text-sm font-semibold mb-2" style={{ color: BRAND.navy }}>{t("permissions.requestGuideTitle")}</p>
+        <ol className="text-sm space-y-1 list-decimal list-inside" style={{ color: BRAND.navy }}>
+          <li>{t("permissions.requestGuideStep1")}</li>
+          <li>
+            {t("permissions.requestGuideStep2")}{" "}
+            <a href="https://itsm-ticket.startruckkorea.com/" target="_blank" rel="noreferrer" className="underline font-medium" style={{ color: BRAND.accent }}>
+              itsm-ticket.startruckkorea.com
+            </a>
+          </li>
+        </ol>
       </div>
 
       <div className="bg-white rounded-xl border border-slate-100 overflow-hidden">
