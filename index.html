@@ -17,16 +17,35 @@
   }
 }
 </script>
+<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.28.0/lib/msal-browser.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js" nonce="MjM5ODM2NTI1MCwxODc5NDk5OTgz"></script>
 <style>
   html, body { margin: 0; padding: 0; height: 100%; background: #F5F6F8; }
   #root { height: 100%; }
   #loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
     font-family: -apple-system, 'Malgun Gothic', sans-serif; color: #64748B; font-size: 14px; }
+  #login-screen{display:flex;align-items:center;justify-content:center;min-height:100vh;background:linear-gradient(145deg,#0f2744 0%,#101B34 100%);font-family:-apple-system,'Malgun Gothic',sans-serif}
+  .login-card{background:#fff;border-radius:16px;padding:40px 36px;width:340px;box-shadow:0 20px 60px rgba(0,0,0,.3);text-align:center}
+  .login-title{font-size:1.05rem;font-weight:700;color:#101B34;margin-bottom:4px}
+  .login-co{font-size:.8rem;color:#8A94A6;margin-bottom:20px}
+  .login-guide{font-size:.8rem;color:#8A94A6;margin-bottom:20px}
+  .btn-login{background:linear-gradient(135deg,#2F7B7A,#1A2B4C);color:#fff;border:none;border-radius:10px;padding:13px 0;font-size:.92rem;font-weight:600;cursor:pointer;width:100%;font-family:inherit}
+  .btn-login:disabled{background:#cbd5e0;cursor:not-allowed}
+  #login-err{color:#C1352E;font-size:.78rem;margin-top:10px;display:none}
 </style>
 </head>
 <body>
-<div id="loading">화면을 불러오는 중입니다…</div>
+<div id="login-screen">
+  <div class="login-card">
+    <div style="font-size:2rem;margin-bottom:10px">🛡️</div>
+    <div class="login-title">내부통제관리시스템</div>
+    <div class="login-co">Star Truck Korea · Internal Control System</div>
+    <div class="login-guide">Hyosung M365 계정으로 로그인하세요</div>
+    <button class="btn-login" id="btn-login" disabled>로딩 중...</button>
+    <div id="login-err"></div>
+  </div>
+</div>
+<div id="loading" style="display:none">화면을 불러오는 중입니다…</div>
 <div id="root"></div>
 <script type="text/babel" data-presets="react" data-type="module" nonce="MjM5ODM2NTI1MCwxODc5NDk5OTgz">
 import React, { useState, useMemo, useRef, useEffect, createContext, useContext } from "react";
@@ -101,7 +120,7 @@ const BRAND = {
 /* 다국어 데이터                                                        */
 /* ------------------------------------------------------------------ */
 
-const INITIAL_DEPARTMENTS = [
+let INITIAL_DEPARTMENTS = [
   { id: "fin", ko: "재무팀", en: "Finance" },
   { id: "hr", ko: "인사팀", en: "HR" },
   { id: "pur", ko: "구매팀", en: "Purchasing" },
@@ -176,7 +195,7 @@ const ACTION_LABELS = {
   delete_control: { ko: "통제 항목 삭제", en: "Control item deleted" },
 };
 
-const INITIAL_USERS = [
+let INITIAL_USERS = [
   { id: "u1", name: "김도윤", nameEn: "Kim Do-yun", email: "doyun.kim@startruckkorea.com", dept: "fin", role: "accessor" },
   { id: "u2", name: "이서연", nameEn: "Lee Seo-yeon", email: "seoyeon.lee@startruckkorea.com", dept: "hr", role: "accessor" },
   { id: "u3", name: "박준호", nameEn: "Park Jun-ho", email: "junho.park@startruckkorea.com", dept: "pur", role: "accessor" },
@@ -368,7 +387,8 @@ function buildArchiveYearControls(sourceControls, sourceYear, newYear) {
 const STR = {
   ko: {
     tagline: "내부통제관리시스템",
-    currentLogin: "현재 로그인 (데모 전환)",
+    currentLogin: "현재 로그인",
+    logout: "로그아웃",
     roles: { accessor: "Accessor", reviewer: "Reviewer", admin: "Admin", cfo: "CFO", rd: "RD" },
     navGroup: { controlMgmt: "통제 관리", assessment: "평가", adminOnly: "관리자 전용", executive: "경영진 전용" },
     nav: {
@@ -621,7 +641,8 @@ const STR = {
   },
   en: {
     tagline: "Internal Control Management System",
-    currentLogin: "Signed in as (demo switch)",
+    currentLogin: "Signed in as",
+    logout: "Sign out",
     roles: { accessor: "Accessor", reviewer: "Reviewer", admin: "Admin", cfo: "CFO", rd: "RD" },
     navGroup: { controlMgmt: "Control Management", assessment: "Assessment", adminOnly: "Admin only", executive: "Executive" },
     nav: {
@@ -1057,7 +1078,7 @@ const MENU_GROUPS = [
   ] },
 ];
 
-function Sidebar({ page, setPage, currentUser, setCurrentUserId }) {
+function Sidebar({ page, setPage, currentUser }) {
   const { lang, t } = useLang();
   const { users, departments } = useAppData();
   return (
@@ -1113,20 +1134,14 @@ function Sidebar({ page, setPage, currentUser, setCurrentUserId }) {
 
       <div className="px-3 py-4 border-t border-white/10">
         <p className="text-[11px] text-slate-500 px-2 mb-1.5">{t("currentLogin")}</p>
-        <div className="relative">
-          <select
-            value={currentUser.id}
-            onChange={(e) => setCurrentUserId(e.target.value)}
-            className="w-full appearance-none bg-white/5 text-slate-100 text-xs rounded-lg pl-3 pr-8 py-2.5 border border-white/10 focus:outline-none"
-          >
-            {users.map((u) => {
-              const label = `${pName(u.name, lang, users)}${u.dept ? " · " + deptName(u.dept, lang, departments) : ""} (${t(`roles.${u.role}`)})`;
-              return (
-                <option key={u.id} value={u.id} style={{ color: "#111" }}>{label}</option>
-              );
-            })}
-          </select>
-          <ChevronDown size={14} className="absolute right-2.5 top-3 text-slate-400 pointer-events-none" />
+        <div className="rounded-lg bg-white/5 border border-white/10 px-3 py-2.5">
+          <div className="text-xs font-semibold text-slate-100">{pName(currentUser.name, lang, users)}</div>
+          <div className="text-[11px] text-slate-400 mt-0.5">{currentUser.email}</div>
+          <div className="text-[11px] text-slate-400">{currentUser.dept ? deptName(currentUser.dept, lang, departments) + " · " : ""}{t(`roles.${currentUser.role}`)}</div>
+          <button
+            onClick={() => window.icsSignOut && window.icsSignOut()}
+            className="mt-2 w-full text-[11px] text-slate-300 border border-white/10 rounded-md py-1.5 hover:bg-white/10"
+          >{t("logout")}</button>
         </div>
       </div>
     </div>
@@ -4131,7 +4146,7 @@ function PermissionsPage({ permissions, setPermissions }) {
 /* 메인 앱                                                              */
 /* ------------------------------------------------------------------ */
 
-export default function InternalControlApp() {
+export default function InternalControlApp({ initialUserId }) {
   const [lang, setLang] = useState("ko");
   const t = useMemo(() => makeT(lang), [lang]);
 
@@ -4141,7 +4156,7 @@ export default function InternalControlApp() {
   const [page, setPage] = useState("dashboard");
   const [controls, setControls] = useState(INITIAL_CONTROLS);
   const [log, setLog] = useState(INITIAL_LOG);
-  const [currentUserId, setCurrentUserId] = useState("u9");
+  const [currentUserId] = useState(initialUserId || INITIAL_USERS[0]?.id);
   const [listFilter, setListFilter] = useState({ dept: "", cat: "", risk: "", status: "" });
   const [permissions, setPermissions] = useState(() => computeInitialPermissions(INITIAL_CONTROLS));
   const [learnContent, setLearnContent] = useState({
@@ -4259,7 +4274,7 @@ export default function InternalControlApp() {
     <LangContext.Provider value={{ lang, t, setLang }}>
     <AppDataContext.Provider value={{ departments, setDepartments, users, setUsers }}>
       <div className="flex w-full" style={{ height: "100vh", backgroundColor: "#F5F6F8", fontFamily: "'Pretendard','Apple SD Gothic Neo','Malgun Gothic',-apple-system,sans-serif" }}>
-        <Sidebar page={page} setPage={setPage} currentUser={currentUser} setCurrentUserId={setCurrentUserId} />
+        <Sidebar page={page} setPage={setPage} currentUser={currentUser} />
 
         <div className="flex-1 flex flex-col min-w-0">
           <div className="h-14 flex-shrink-0 bg-white border-b border-slate-100 flex items-center justify-between px-6">
@@ -4392,10 +4407,120 @@ export default function InternalControlApp() {
 }
 
 import { createRoot } from "react-dom/client";
-const loadingEl = document.getElementById("loading");
-if (loadingEl) loadingEl.remove();
-const rootEl = document.getElementById("root");
-createRoot(rootEl).render(<InternalControlApp />);
+
+/* ------------------------------------------------------------------ */
+/* MSAL 로그인 + SharePoint config Excel(ics_config.xlsx) 로딩            */
+/* ------------------------------------------------------------------ */
+// ⚠️ CLIENT_ID는 반드시 이 앱 전용 Azure AD App 등록 후 채워넣어야 합니다.
+// (Entra ID portal → 앱 등록 → 새 등록 → 리디렉션 URI: 이 페이지의 실제 배포 URL 추가)
+const MSAL_CONFIG = {
+  auth: {
+    clientId: "REPLACE_WITH_ICS_APP_CLIENT_ID", // TODO: Azure AD App 등록 후 교체
+    authority: "https://login.microsoftonline.com/19cab1f5-21f4-44df-8ac6-96d6ca595203", // STK 공용 테넌트 ID
+    redirectUri: window.location.origin + window.location.pathname,
+  },
+  cache: { cacheLocation: "sessionStorage" },
+};
+const MSAL_SCOPES = ["User.Read", "Sites.Read.All", "Files.Read.All"];
+const SITE_PATH = "startruckkorea.sharepoint.com:/sites/STK-DB:"; // 다른 APS 시스템들과 동일한 사이트 재사용
+const GRAPH = "https://graph.microsoft.com/v1.0";
+const CONFIG_FILE_NAME = "ics_config.xlsx"; // STK-DB 문서 라이브러리 루트에 업로드해야 함
+
+const msalApp = new msal.PublicClientApplication(MSAL_CONFIG);
+let _siteId = null;
+
+function showLoginErr(msg) {
+  const el = document.getElementById("login-err");
+  if (el) { el.textContent = msg; el.style.display = "block"; }
+}
+
+async function apiGet(path, token) {
+  const res = await fetch(GRAPH + path, { headers: { Authorization: "Bearer " + token } });
+  if (!res.ok) throw new Error(path + " → " + res.status);
+  return res.json();
+}
+
+// ics_config.xlsx의 "Departments"/"Users" 시트를 읽어 INITIAL_DEPARTMENTS / INITIAL_USERS 배열 내용을 갈아끼움
+// (배열 자체를 재할당하지 않고 내용만 바꿔서, 이미 default-param으로 이 배열을 참조하는 함수들이 그대로 최신값을 보게 함)
+async function loadIcsConfig(token) {
+  const drives = await apiGet(`/sites/${_siteId}/drives`, token);
+  const docDrive = (drives.value || []).find(d => ["Documents", "문서", "Shared Documents"].includes(d.name)) || (drives.value || [])[0];
+  const res = await fetch(`${GRAPH}/drives/${docDrive.id}/root:/${CONFIG_FILE_NAME}:/content`, { headers: { Authorization: "Bearer " + token } });
+  if (!res.ok) throw new Error(`${CONFIG_FILE_NAME} not found in STK-DB (${res.status})`);
+  const buf = await res.arrayBuffer();
+  const wb = XLSX.read(buf, { type: "array" });
+
+  const deptRows = XLSX.utils.sheet_to_json(wb.Sheets["Departments"], { defval: "" });
+  if (deptRows.length) {
+    INITIAL_DEPARTMENTS.length = 0;
+    deptRows.forEach(r => INITIAL_DEPARTMENTS.push({ id: String(r.id).trim(), ko: String(r.ko).trim(), en: String(r.en).trim() }));
+  }
+
+  const userRows = XLSX.utils.sheet_to_json(wb.Sheets["Users"], { defval: "" });
+  if (userRows.length) {
+    INITIAL_USERS.length = 0;
+    userRows.forEach(r => INITIAL_USERS.push({
+      id: String(r.id).trim(),
+      name: String(r.name).trim(),
+      nameEn: String(r.nameEn).trim(),
+      email: String(r.email).trim().toLowerCase(),
+      dept: r.dept ? String(r.dept).trim() : null,
+      role: String(r.role).trim(),
+    }));
+  }
+}
+
+async function icsBoot(account) {
+  document.getElementById("login-screen").style.display = "none";
+  document.getElementById("loading").style.display = "flex";
+  try {
+    const tokenRes = await msalApp.acquireTokenSilent({ scopes: MSAL_SCOPES, account });
+    const token = tokenRes.accessToken;
+    const siteRes = await apiGet(`/sites/${SITE_PATH}`, token);
+    _siteId = siteRes.id;
+    await loadIcsConfig(token);
+  } catch (e) {
+    console.warn("[ICS] config 로드 실패, 코드 내 기본값으로 진행:", e.message);
+  }
+
+  const myEmail = (account.username || "").toLowerCase();
+  const matched = INITIAL_USERS.find(u => u.email.toLowerCase() === myEmail);
+  if (!matched) {
+    document.getElementById("loading").style.display = "none";
+    document.getElementById("login-screen").style.display = "flex";
+    showLoginErr(`접근 권한이 없습니다 (${myEmail}). 관리자에게 문의해주세요.`);
+    return;
+  }
+
+  window.icsSignOut = () => msalApp.logoutRedirect();
+
+  const loadingEl = document.getElementById("loading");
+  if (loadingEl) loadingEl.remove();
+  const rootEl = document.getElementById("root");
+  createRoot(rootEl).render(<InternalControlApp initialUserId={matched.id} />);
+}
+
+(async function initMsal() {
+  const btn = document.getElementById("btn-login");
+  try {
+    await msalApp.initialize();
+    const resp = await msalApp.handleRedirectPromise();
+    if (resp && resp.account) { msalApp.setActiveAccount(resp.account); await icsBoot(resp.account); return; }
+    const accounts = msalApp.getAllAccounts();
+    if (accounts.length) { msalApp.setActiveAccount(accounts[0]); await icsBoot(accounts[0]); return; }
+    if (btn) { btn.disabled = false; btn.textContent = "Microsoft 365 계정으로 로그인"; }
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = "Microsoft 365 계정으로 로그인"; }
+    showLoginErr(e.message);
+  }
+})();
+
+document.getElementById("btn-login").onclick = async () => {
+  try {
+    if (window !== window.top) { window.open(window.location.href, "_blank"); return; }
+    await msalApp.loginRedirect({ scopes: MSAL_SCOPES });
+  } catch (e) { showLoginErr(e.message); }
+};
 </script>
 </body>
 </html>
