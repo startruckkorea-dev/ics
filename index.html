@@ -4415,7 +4415,7 @@ import { createRoot } from "react-dom/client";
 // (Entra ID portal → 앱 등록 → 새 등록 → 리디렉션 URI: 이 페이지의 실제 배포 URL 추가)
 const MSAL_CONFIG = {
   auth: {
-    clientId: "REPLACE_WITH_ICS_APP_CLIENT_ID", // TODO: Azure AD App 등록 후 교체
+    clientId: "432976c2-b43a-492e-8213-ece505fa1f51", // APS-MasterData-App과 동일 App 등록 (ICS용 리디렉션 URI 추가 등록됨)
     authority: "https://login.microsoftonline.com/19cab1f5-21f4-44df-8ac6-96d6ca595203", // STK 공용 테넌트 ID
     redirectUri: window.location.origin + window.location.pathname,
   },
