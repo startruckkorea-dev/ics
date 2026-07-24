@@ -120,6 +120,9 @@ const BRAND = {
 /* 다국어 데이터                                                        */
 /* ------------------------------------------------------------------ */
 
+// BU Admin 문의 이메일 (system_config_final.xlsx의 ICS_ACCESSOR_CONTACT 키에서 loadIcsConfig()가 채워 넣음)
+let ICS_CONTACT_EMAIL = "";
+
 let INITIAL_DEPARTMENTS = [
   { id: "fin", ko: "재무팀", en: "Finance" },
   { id: "hr", ko: "인사팀", en: "HR" },
@@ -1022,6 +1025,12 @@ function Sidebar({ page, setPage, currentUser }) {
           <img src={LOGO_SRC} alt="Star Truck Korea" style={{ width: "100%", height: "auto", display: "block" }} />
         </div>
         <p className="text-slate-400 text-xs leading-tight mt-2 text-center">{t("tagline")}</p>
+        <a
+          href="https://aps.startruckkorea.com/"
+          className="mt-2.5 flex items-center justify-center gap-1.5 text-xs text-slate-300 hover:text-white transition-colors"
+        >
+          📬 {lang === "en" ? "Back to APS" : "돌아가기"}
+        </a>
       </div>
 
       <nav className="flex-1 px-3 py-4 overflow-y-auto">
@@ -1077,6 +1086,14 @@ function Sidebar({ page, setPage, currentUser }) {
             className="mt-2 w-full text-[11px] text-slate-300 border border-white/10 rounded-md py-1.5 hover:bg-white/10"
           >{t("logout")}</button>
         </div>
+        {ICS_CONTACT_EMAIL && (
+          <p className="text-[11px] text-slate-500 px-2 mt-2.5 leading-relaxed">
+            {lang === "en" ? "BU Admin contact" : "BU Admin 문의"} Email:{" "}
+            <a href={`mailto:${ICS_CONTACT_EMAIL}`} className="text-slate-300 hover:text-white underline">
+              {ICS_CONTACT_EMAIL}
+            </a>
+          </p>
+        )}
       </div>
     </div>
   );
@@ -4195,6 +4212,11 @@ async function loadIcsConfig(token) {
       if (!Number.isNaN(num)) SAMPLE_TABLE[m[1]][m[2]] = num;
     }
   });
+
+  // BU Admin 문의 이메일 (사이드바 하단에 표시)
+  if (cfg.ICS_ACCESSOR_CONTACT && cfg.ICS_ACCESSOR_CONTACT.email) {
+    ICS_CONTACT_EMAIL = cfg.ICS_ACCESSOR_CONTACT.email;
+  }
 
   const deptIds = INITIAL_DEPARTMENTS.map(d => d.id); // fin/hr/pur/sal/itd/prd (또는 config로 교체된 부서 목록)
   const newUsers = [];
