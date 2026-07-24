@@ -4685,7 +4685,29 @@ async function loadIcsConfig(token) {
     cfg[key] = { name: (row[1] || "").toString().trim(), email: (row[2] || "").toString().trim().toLowerCase() };
   });
 
-  const deptIds = INITIAL_DEPARTMENTS.map(d => d.id); // fin/hr/pur/sal/itd/prd
+  // 부서 목록(ICS_DEPT_{코드}: 값1=한글명, 값2=영문명)이 config에 있으면 코드 내 기본값을 완전히 교체.
+  // deptIds를 구하기 전에 먼저 반영해야, config에 새 부서코드가 추가된 경우에도 그 아래 ICS_ACCESSOR_{새부서}가 정상 인식된다.
+  const deptKeys = Object.keys(cfg).filter((k) => k.startsWith("ICS_DEPT_"));
+  if (deptKeys.length) {
+    const newDepts = deptKeys.map((k) => {
+      const code = k.replace("ICS_DEPT_", "");
+      const v = cfg[k];
+      return { id: code, ko: v.name || code, en: v.email || v.name || code };
+    });
+    INITIAL_DEPARTMENTS.length = 0;
+    newDepts.forEach((d) => INITIAL_DEPARTMENTS.push(d));
+  }
+
+  // 샘플링 권장 건수(ICS_SAMPLE_{중요도}_{빈도}: 값1=건수)가 config에 있으면 해당 칸만 덮어씀 (일부만 등록돼도 나머지는 코드 기본값 유지)
+  Object.keys(cfg).forEach((k) => {
+    const m = k.match(/^ICS_SAMPLE_(high|medium|low)_(continuous|monthly|quarterly|semiannual|annual)$/);
+    if (m) {
+      const num = Number(cfg[k].name);
+      if (!Number.isNaN(num)) SAMPLE_TABLE[m[1]][m[2]] = num;
+    }
+  });
+
+  const deptIds = INITIAL_DEPARTMENTS.map(d => d.id); // fin/hr/pur/sal/itd/prd (또는 config로 교체된 부서 목록)
   const newUsers = [];
   let seq = 1;
 
