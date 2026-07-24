@@ -567,7 +567,7 @@ const STR = {
       requestGuideTitle: "접근 권한 신청 방법",
       requestGuideStep1: "BU Admin에게 권한 요청",
       requestGuideStep2: "BU Admin이 아래 시스템으로 티켓 생성",
-      notice: "변경 사항은 즉시 반영됩니다. 부서 담당자의 접근 범위를 좁히면 해당 이메일 계정은 대시보드·통제 현황·통제 항목 관리 화면에서 체크된 부서의 데이터만 볼 수 있습니다. ⚠️ 단, 이 화면에서의 변경은 새로고침하면 초기화됩니다 — 영구 반영하려면 system_config_final.xlsx를 직접 수정해주세요.",
+      notice: "이 화면은 조회 전용입니다. 부서·사용자 접근 권한을 변경하려면 위 안내대로 BU Admin에게 IT Ticket으로 요청해 주세요.",
     },
   },
   en: {
@@ -824,7 +824,7 @@ const STR = {
       requestGuideTitle: "How to request access",
       requestGuideStep1: "Request access from your BU Admin",
       requestGuideStep2: "The BU Admin creates a ticket in",
-      notice: "Changes take effect immediately. Narrowing a user's scope means that email account will only see data for the checked departments on the Dashboard, Control Status, and Control Item Management screens. ⚠️ Note: changes made here reset on page refresh — to make them permanent, edit system_config_final.xlsx directly.",
+      notice: "This screen is view-only. To change department or user access, request it from your BU Admin via IT Ticket as described above.",
     },
   },
 };
@@ -3644,232 +3644,59 @@ function SettingsPage({ currentUser, years, selectedYear, activeYear, startNewYe
         {typeof window !== "undefined" && window.storage ? t("settings.storageOnNotice") : t("settings.storageOffNotice")}
       </div>
 
-      {!isAdmin && (
-        <div className="bg-amber-50 text-amber-700 text-sm px-4 py-3 rounded-lg mb-4 flex items-center gap-2">
-          <AlertTriangle size={16} /> {t("settings.readonlyNotice")}
+      <div className="rounded-xl border p-4 mb-4 flex items-start gap-2" style={{ backgroundColor: BRAND.accentSoft, borderColor: BRAND.accent + "40" }}>
+        <KeyRound size={16} style={{ color: BRAND.navy }} className="flex-shrink-0 mt-0.5" />
+        <div className="text-sm" style={{ color: BRAND.navy }}>
+          <p className="font-semibold mb-1">{t("permissions.requestGuideTitle")}</p>
+          <ol className="space-y-0.5 list-decimal list-inside">
+            <li>{t("permissions.requestGuideStep1")}</li>
+            <li>
+              {t("permissions.requestGuideStep2")}{" "}
+              <a href="https://itsm-ticket.startruckkorea.com/" target="_blank" rel="noreferrer" className="underline font-medium" style={{ color: BRAND.accent }}>
+                itsm-ticket.startruckkorea.com
+              </a>
+            </li>
+          </ol>
         </div>
-      )}
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <div className="bg-white rounded-xl border border-slate-100 p-5">
-          <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-            <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2"><Building2 size={15} /> {t("settings.deptListTitle")}</h3>
-            {isAdmin && editingDeptId !== "new" && (
-              <div className="flex items-center gap-2 flex-wrap">
-                <button onClick={downloadDeptTemplate} className="flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-teal-600">
-                  <Download size={12} /> {t("settings.deptTemplateBtn")}
-                </button>
-                <button onClick={() => deptFileRef.current?.click()} className="flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-teal-600">
-                  <UploadCloud size={12} /> {t("settings.deptUploadBtn")}
-                </button>
-                <input ref={deptFileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleDeptUpload} />
-                <button onClick={startAddDept} className="flex items-center gap-1 text-xs font-medium text-teal-600 hover:text-teal-700">
-                  <Plus size={13} /> {t("settings.addDeptBtn")}
-                </button>
-                <button onClick={() => setResetTarget("departments")} className="flex items-center gap-1 text-xs font-medium text-red-500 hover:text-red-600">
-                  <Trash2 size={12} /> {t("resetData.resetBtn")}
-                </button>
-              </div>
-            )}
-          </div>
-          {deptUploadResult && (
-            <div
-              className="text-xs px-3 py-2 rounded-lg mb-3 flex items-center justify-between gap-2"
-              style={deptUploadResult.error ? { backgroundColor: "#FEE2E2", color: "#B91C1C" } : { backgroundColor: "#E4F1F0", color: BRAND.accent }}
-            >
-              {deptUploadResult.error ? (
-                <span>{t("manage.uploadError")}</span>
-              ) : (
-                <span>
-                  {t("manage.uploadSummaryNew")} {deptUploadResult.added}{t("common.items")} · {t("manage.uploadSummaryUpdated")} {deptUploadResult.updated}{t("common.items")}
-                  {deptUploadResult.skipped > 0 && ` · ${t("manage.uploadSummarySkipped")} ${deptUploadResult.skipped}${t("common.items")}`}
-                </span>
-              )}
-              <button onClick={() => setDeptUploadResult(null)} className="flex-shrink-0 opacity-60 hover:opacity-100"><X size={12} /></button>
-            </div>
-          )}
+          <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2 mb-3"><Building2 size={15} /> {t("settings.deptListTitle")}</h3>
           <div className="divide-y divide-slate-50">
-            {departments.map((d) =>
-              editingDeptId === d.id ? (
-                <div key={d.id} className="py-2.5">
-                  <div className="flex items-center gap-2">
-                    <input
-                      value={deptDraft.ko}
-                      onChange={(e) => setDeptDraft((p) => ({ ...p, ko: e.target.value }))}
-                      placeholder={t("settings.deptNameKoPlaceholder")}
-                      className={inputCls + " flex-1"}
-                    />
-                    <input
-                      value={deptDraft.en}
-                      onChange={(e) => setDeptDraft((p) => ({ ...p, en: e.target.value }))}
-                      placeholder={t("settings.deptNameEnPlaceholder")}
-                      className={inputCls + " flex-1"}
-                    />
-                    <span className="text-xs text-slate-400 flex-shrink-0 px-1">{d.id.toUpperCase()}</span>
-                    <button onClick={saveDept} className="text-teal-600 hover:text-teal-700 flex-shrink-0" title={t("common.confirm")}>
-                      <Check size={16} />
-                    </button>
-                    <button
-                      onClick={() => {
-                        setEditingDeptId(null);
-                        setDeptError("");
-                      }}
-                      className="text-slate-400 hover:text-slate-600 flex-shrink-0"
-                      title={t("common.cancel")}
-                    >
-                      <X size={16} />
-                    </button>
-                  </div>
-                  {deptError && <p className="text-xs text-red-600 mt-1.5">{deptError}</p>}
-                </div>
-              ) : (
-                <div key={d.id} className="py-2.5 flex items-center justify-between text-sm group">
-                  <span className="text-slate-700">{d[lang]}</span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-slate-400">{d.id.toUpperCase()}</span>
-                    {isAdmin && (
-                      <>
-                        <button onClick={() => startEditDept(d)} className="text-slate-300 hover:text-teal-600 opacity-0 group-hover:opacity-100 transition-opacity" title={t("common.edit")}>
-                          <Pencil size={13} />
-                        </button>
-                        {(() => {
-                          const inUse = controls.some((c) => c.dept === d.id) || users.some((u) => u.dept === d.id);
-                          return (
-                            <button
-                              onClick={() => removeDept(d)}
-                              disabled={inUse}
-                              className={
-                                "opacity-0 group-hover:opacity-100 transition-opacity " +
-                                (inUse ? "text-slate-200 cursor-not-allowed" : "text-slate-300 hover:text-red-500")
-                              }
-                              title={inUse ? t("settings.deptInUseHint") : t("common.delete")}
-                            >
-                              <Trash2 size={13} />
-                            </button>
-                          );
-                        })()}
-                      </>
-                    )}
-                  </div>
-                </div>
-              )
-            )}
-            {editingDeptId === "new" && (
-              <div className="py-2.5">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  <input
-                    autoFocus
-                    value={deptDraft.ko}
-                    onChange={(e) => setDeptDraft((p) => ({ ...p, ko: e.target.value }))}
-                    placeholder={t("settings.deptNameKoPlaceholder")}
-                    className={inputCls}
-                  />
-                  <input
-                    value={deptDraft.en}
-                    onChange={(e) => setDeptDraft((p) => ({ ...p, en: e.target.value }))}
-                    placeholder={t("settings.deptNameEnPlaceholder")}
-                    className={inputCls}
-                  />
-                  <input
-                    value={deptDraft.code}
-                    onChange={(e) => setDeptDraft((p) => ({ ...p, code: e.target.value }))}
-                    placeholder={t("settings.deptCodePlaceholder")}
-                    className={inputCls}
-                  />
-                </div>
-                <p className="text-xs text-slate-400 mt-1.5">{t("settings.deptCodeHint")}</p>
-                {deptError && <p className="text-xs text-red-600 mt-1">{deptError}</p>}
-                <div className="flex justify-end gap-2 mt-2">
-                  <button
-                    onClick={() => {
-                      setEditingDeptId(null);
-                      setDeptError("");
-                    }}
-                    className="px-3 py-1.5 text-xs text-slate-500 rounded-lg hover:bg-slate-50"
-                  >
-                    {t("common.cancel")}
-                  </button>
-                  <button onClick={saveDept} className="px-4 py-1.5 text-xs font-medium text-white rounded-lg" style={{ backgroundColor: BRAND.accent }}>
-                    {t("common.confirm")}
-                  </button>
-                </div>
+            {departments.map((d) => (
+              <div key={d.id} className="py-2.5 flex items-center justify-between text-sm">
+                <span className="text-slate-700">{d[lang]}</span>
+                <span className="text-xs text-slate-400">{d.id.toUpperCase()}</span>
               </div>
-            )}
+            ))}
+            {departments.length === 0 && <EmptyState text={t("list.emptyText")} />}
           </div>
         </div>
 
         <div className="bg-white rounded-xl border border-slate-100 p-5">
-          <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-            <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2"><Users size={15} /> {t("settings.userListTitle")}</h3>
-            {isAdmin && editingUserId !== "new" && (
-              <div className="flex items-center gap-2 flex-wrap">
-                <button onClick={downloadUserTemplate} className="flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-teal-600">
-                  <Download size={12} /> {t("settings.userTemplateBtn")}
-                </button>
-                <button onClick={() => userFileRef.current?.click()} className="flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-teal-600">
-                  <UploadCloud size={12} /> {t("settings.userUploadBtn")}
-                </button>
-                <input ref={userFileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleUserUpload} />
-                <button onClick={startAddUser} className="flex items-center gap-1 text-xs font-medium text-teal-600 hover:text-teal-700">
-                  <Plus size={13} /> {t("settings.addUserBtn")}
-                </button>
-                <button onClick={() => setResetTarget("users")} className="flex items-center gap-1 text-xs font-medium text-red-500 hover:text-red-600">
-                  <Trash2 size={12} /> {t("resetData.resetBtn")}
-                </button>
-              </div>
-            )}
-          </div>
-          {userUploadResult && (
-            <div
-              className="text-xs px-3 py-2 rounded-lg mb-3 flex items-center justify-between gap-2"
-              style={userUploadResult.error ? { backgroundColor: "#FEE2E2", color: "#B91C1C" } : { backgroundColor: "#E4F1F0", color: BRAND.accent }}
-            >
-              {userUploadResult.error ? (
-                <span>{t("manage.uploadError")}</span>
-              ) : (
-                <span>
-                  {t("manage.uploadSummaryNew")} {userUploadResult.added}{t("common.items")} · {t("manage.uploadSummaryUpdated")} {userUploadResult.updated}{t("common.items")}
-                  {userUploadResult.skipped > 0 && ` · ${t("manage.uploadSummarySkipped")} ${userUploadResult.skipped}${t("common.items")}`}
-                </span>
-              )}
-              <button onClick={() => setUserUploadResult(null)} className="flex-shrink-0 opacity-60 hover:opacity-100"><X size={12} /></button>
-            </div>
-          )}
+          <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2 mb-3"><Users size={15} /> {t("settings.userListTitle")}</h3>
           <div className="divide-y divide-slate-50">
-            {users.map((u) =>
-              editingUserId === u.id ? (
-                <UserEditRow key={u.id} draft={userDraft} setDraft={setUserDraft} departments={departments} t={t} onSave={saveUser} onCancel={() => setEditingUserId(null)} />
-              ) : (
-                <div key={u.id} className="py-2.5 flex items-center justify-between text-sm group">
-                  <div className="min-w-0">
-                    <span className="text-slate-700">{pName(u.name, lang, users)}</span>
-                    <span className="text-xs text-slate-400 ml-2">{u.email}</span>
-                    {u.dept && <span className="text-xs text-slate-400 ml-2">· {deptName(u.dept, lang, departments)}</span>}
-                  </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <span
-                      className="text-xs font-medium px-2 py-0.5 rounded-full"
-                      style={{
-                        backgroundColor: u.role === "admin" ? "#EDE9FE" : u.role === "reviewer" ? BRAND.accentSoft : "#F1F5F9",
-                        color: u.role === "admin" ? "#6D28D9" : u.role === "reviewer" ? BRAND.accent : "#475569",
-                      }}
-                    >
-                      {t(`roles.${u.role}`)}
-                    </span>
-                    {isAdmin && (
-                      <button onClick={() => startEditUser(u)} className="text-slate-300 hover:text-teal-600 opacity-0 group-hover:opacity-100 transition-opacity" title={t("common.edit")}>
-                        <Pencil size={13} />
-                      </button>
-                    )}
-                  </div>
+            {users.map((u) => (
+              <div key={u.id} className="py-2.5 flex items-center justify-between text-sm">
+                <div className="min-w-0">
+                  <span className="text-slate-700">{pName(u.name, lang, users)}</span>
+                  <span className="text-xs text-slate-400 ml-2">{u.email}</span>
+                  {u.dept && <span className="text-xs text-slate-400 ml-2">· {deptName(u.dept, lang, departments)}</span>}
                 </div>
-              )
-            )}
-            {editingUserId === "new" && (
-              <UserEditRow draft={userDraft} setDraft={setUserDraft} departments={departments} t={t} onSave={saveUser} onCancel={() => setEditingUserId(null)} />
-            )}
+                <span
+                  className="text-xs font-medium px-2 py-0.5 rounded-full flex-shrink-0"
+                  style={{
+                    backgroundColor: u.role === "admin" ? "#EDE9FE" : u.role === "reviewer" ? BRAND.accentSoft : "#F1F5F9",
+                    color: u.role === "admin" ? "#6D28D9" : u.role === "reviewer" ? BRAND.accent : "#475569",
+                  }}
+                >
+                  {t(`roles.${u.role}`)}
+                </span>
+              </div>
+            ))}
+            {users.length === 0 && <EmptyState text={t("list.emptyText")} />}
           </div>
-          {isAdmin && <p className="text-xs text-slate-400 mt-3">{t("settings.userEditNotice")}</p>}
         </div>
       </div>
 
@@ -4096,13 +3923,11 @@ function PermissionsPage({ permissions, setPermissions }) {
               <th className="text-left font-medium px-4 py-3">{t("permissions.colUser")}</th>
               <th className="text-left font-medium px-4 py-3">{t("permissions.colRole")}</th>
               {departments.map((d) => <th key={d.id} className="text-center font-medium px-2 py-3">{d[lang]}</th>)}
-              <th className="text-center font-medium px-3 py-3">{t("permissions.colAll")}</th>
-              <th className="text-center font-medium px-3 py-3"> </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-50">
             {rows.map((r) => (
-              <tr key={r.email} className="hover:bg-slate-50">
+              <tr key={r.email}>
                 <td className="px-4 py-3">
                   <p className="text-slate-700 font-medium">{r.name || r.email}</p>
                   {r.name && <p className="text-xs text-slate-400">{r.email}</p>}
@@ -4114,21 +3939,13 @@ function PermissionsPage({ permissions, setPermissions }) {
                 </td>
                 {departments.map((d) => (
                   <td key={d.id} className="text-center px-2 py-3">
-                    <input type="checkbox" checked={r.depts.includes(d.id)} onChange={() => toggle(r.email, d.id)} className="w-4 h-4 accent-teal-600" />
+                    {r.depts.includes(d.id) ? (
+                      <Check size={15} className="inline-block" style={{ color: BRAND.accent }} />
+                    ) : (
+                      <span className="text-slate-200">–</span>
+                    )}
                   </td>
                 ))}
-                <td className="text-center px-3 py-3">
-                  <button onClick={() => setAll(r.email, r.depts.length < departments.length)} className="text-xs text-slate-400 hover:text-teal-600 underline">
-                    {r.depts.length < departments.length ? t("permissions.selectAll") : t("permissions.deselectAll")}
-                  </button>
-                </td>
-                <td className="text-center px-3 py-3">
-                  {r.isCustom && (
-                    <button onClick={() => removeEmail(r.email)} className="text-slate-300 hover:text-red-500">
-                      <Trash2 size={14} />
-                    </button>
-                  )}
-                </td>
               </tr>
             ))}
           </tbody>
