@@ -4192,14 +4192,15 @@ async function loadIcsLog() {
     .map((it) => {
       const f = it.fields;
       const created = it.createdDateTime || (it.fields && it.fields.Created) || null;
+      const detail = stripSpRichText(f.Detail) || "";
       return {
         id: it.id,
         date: created ? String(created).slice(0, 10) : new Date().toISOString().slice(0, 10),
         actor: f.ActorEmail || "",
         actionKey: f.Title || "edit_control",
         code: f.ControlId || "-",
-        name: f.Detail || "",
-        nameEn: f.Detail || "",
+        name: detail,
+        nameEn: detail,
         year: "2026",
       };
     })
