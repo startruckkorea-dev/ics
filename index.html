@@ -868,7 +868,7 @@ function RiskBadge({ risk }) {
   const { lang } = useLang();
   const meta = RISK_META[risk || "none"];
   return (
-    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium" style={{ backgroundColor: meta.bg, color: meta.text }}>
+    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap flex-shrink-0" style={{ backgroundColor: meta.bg, color: meta.text }}>
       <RiskDot risk={risk} size={8} />
       {meta[lang]}
     </span>
@@ -879,7 +879,7 @@ function StatusBadge({ status }) {
   const { lang } = useLang();
   const meta = STATUS_META[status];
   return (
-    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap" style={{ backgroundColor: meta.bg, color: meta.tone }}>
+    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap flex-shrink-0" style={{ backgroundColor: meta.bg, color: meta.tone }}>
       {meta[lang]}
     </span>
   );
@@ -1646,7 +1646,7 @@ function ControlList({ controls: allControls, filter, setFilter, isAdmin, allowe
           <tbody className="divide-y divide-slate-50">
             {filtered.map((c) => (
               <tr key={c.id} onClick={() => setDetail(c)} className="hover:bg-slate-50 cursor-pointer transition-colors">
-                <td className="px-4 py-3 text-slate-500 text-xs font-mono">{c.code}</td>
+                <td className="px-4 py-3 text-slate-500 text-xs font-mono whitespace-nowrap">{c.code}</td>
                 <td className="px-4 py-3 text-slate-700 font-medium">{cName(c, lang)}</td>
                 <td className="px-4 py-3 text-slate-600">{deptName(c.dept, lang, departments)}</td>
                 <td className="px-4 py-3 text-slate-600">{catName(c.cat, lang)}</td>
@@ -2083,7 +2083,7 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
           <tbody className="divide-y divide-slate-50">
             {list.map((c) => (
               <tr key={c.id} className={"hover:bg-slate-50" + (c.pendingEdit ? " bg-amber-50/60" : "")}>
-                <td className="px-4 py-3 text-slate-500 text-xs font-mono">{c.code}</td>
+                <td className="px-4 py-3 text-slate-500 text-xs font-mono whitespace-nowrap">{c.code}</td>
                 <td className="px-4 py-3 text-slate-700 font-medium">
                   {cName(c, lang)}
                   {c.pendingEdit && (
@@ -3083,7 +3083,7 @@ function HistoryPage({ controls, log }) {
           <tbody className="divide-y divide-slate-50">
             {controls.map((c) => (
               <tr key={c.id}>
-                <td className="px-4 py-2.5 text-slate-500 text-xs font-mono">{c.code}</td>
+                <td className="px-4 py-2.5 text-slate-500 text-xs font-mono whitespace-nowrap">{c.code}</td>
                 <td className="px-4 py-2.5 text-slate-700">{cName(c, lang)}</td>
                 <td className="px-4 py-2.5 text-slate-600">{deptName(c.dept, lang, departments)}</td>
                 <td className="px-4 py-2.5 text-slate-500 text-xs">{c.actualSample ?? "-"}/{recommendedSample(c.importance, c.frequency)}{t("common.items")}</td>
