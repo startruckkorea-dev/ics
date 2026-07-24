@@ -2284,12 +2284,45 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
     setDraft({ risk: c.selfRisk, comment: c.selfComment || "", sampleSize: c.actualSample ?? recommendedSample(c.importance, c.frequency), attachments: c.attachments || [] });
   }
 
-  function submit(c) {
+  const [saving, setSaving] = useState(null);
+
+  async function submit(c) {
     if (!draft.risk) return;
     const today = new Date().toISOString().slice(0, 10);
-    setControls((prev) => prev.map((x) => (x.id === c.id ? { ...x, status: "submitted_self", selfRisk: draft.risk, selfComment: draft.comment, selfCommentEn: draft.comment, selfDate: today, actualSample: draft.sampleSize, attachments: draft.attachments } : x)));
-    addLog(c.accessor, "submit_self", c.code, c.name, c.nameEn);
+    setSaving(c.id);
     setEditing(null);
+    // 화면은 먼저 낙관적으로 갱신하고, SharePoint 저장은 뒤에서 진행 (실패 시 아래에서 되돌림)
+    setControls((prev) =>
+      prev.map((x) => (x.id === c.id ? { ...x, status: "submitted_self", selfRisk: draft.risk, selfComment: draft.comment, selfCommentEn: draft.comment, selfDate: today, actualSample: draft.sampleSize, attachments: draft.attachments } : x))
+    );
+    try {
+      const fields = {
+        Title: `ICS-${c.year}-${c.code}`,
+        ControlId: c.code,
+        Year: c.year,
+        RequesterEmail: c.accessor,
+        Status: "submitted_self",
+        SelfRisk: draft.risk,
+        SelfCommentKo: draft.comment,
+        SelfCommentEn: draft.comment,
+        SelfDate: new Date().toISOString(),
+        SampleCount: draft.sampleSize,
+      };
+      if (c.requestSpId) {
+        await icsUpdateItem(ICS_LISTS.requests, c.requestSpId, fields);
+      } else {
+        fields.RequestDate = new Date().toISOString();
+        const created = await icsCreateItem(ICS_LISTS.requests, fields);
+        setControls((prev) => prev.map((x) => (x.id === c.id ? { ...x, requestSpId: created.id } : x)));
+      }
+      addLog(c.accessor, "submit_self", c.code, c.name, c.nameEn);
+    } catch (e) {
+      // 저장 실패 시 화면을 되돌리고 사용자에게 알림 (첨부파일은 SharePoint 미연동 상태라 로컬에만 남음)
+      setControls((prev) => prev.map((x) => (x.id === c.id ? { ...x, status: c.status, selfRisk: c.selfRisk, selfComment: c.selfComment, selfCommentEn: c.selfCommentEn, selfDate: c.selfDate, actualSample: c.actualSample } : x)));
+      alert("SharePoint 저장에 실패했습니다: " + e.message);
+    } finally {
+      setSaving(null);
+    }
   }
 
   return (
@@ -4120,19 +4153,22 @@ function PermissionsPage({ permissions, setPermissions }) {
 /* 메인 앱                                                              */
 /* ------------------------------------------------------------------ */
 
-export default function InternalControlApp({ initialUserId }) {
+export default function InternalControlApp({ initialUserId, initialControls, initialLog }) {
   const [lang, setLang] = useState("ko");
   const t = useMemo(() => makeT(lang), [lang]);
 
   const [departments, setDepartments] = useState(INITIAL_DEPARTMENTS);
   const [users, setUsers] = useState(INITIAL_USERS);
 
+  // SharePoint(ICS_Controls/ICS_Requests, ICS_Log)에서 불러온 데이터가 있으면 그걸 쓰고,
+  // 로드에 실패했을 때만(네트워크 오류 등) 코드 내 목업 데이터로 안전하게 대체한다.
+  const usingSharePointData = !!(initialControls && initialControls.length);
   const [page, setPage] = useState("dashboard");
-  const [controls, setControls] = useState(INITIAL_CONTROLS);
-  const [log, setLog] = useState(INITIAL_LOG);
+  const [controls, setControls] = useState(usingSharePointData ? initialControls : INITIAL_CONTROLS);
+  const [log, setLog] = useState(initialLog && initialLog.length ? initialLog : INITIAL_LOG);
   const [currentUserId] = useState(initialUserId || INITIAL_USERS[0]?.id);
   const [listFilter, setListFilter] = useState({ dept: "", cat: "", risk: "", status: "" });
-  const [permissions, setPermissions] = useState(() => computeInitialPermissions(INITIAL_CONTROLS));
+  const [permissions, setPermissions] = useState(() => computeInitialPermissions(usingSharePointData ? initialControls : INITIAL_CONTROLS));
   const [learnContent, setLearnContent] = useState({
     ko: { intro: STR.ko.learn.intro, tips: [...STR.ko.learn.tips] },
     en: { intro: STR.en.learn.intro, tips: [...STR.en.learn.tips] },
@@ -4163,6 +4199,12 @@ export default function InternalControlApp({ initialUserId }) {
   function addLog(actor, actionKey, code, name, nameEn) {
     const today = new Date().toISOString().slice(0, 10);
     setLog((prev) => [{ id: uid("log"), date: today, actor, actionKey, code, name, nameEn, year: selectedYear }, ...prev]);
+    if (usingSharePointData) {
+      const detail = name ? (nameEn && nameEn !== name ? `${name} / ${nameEn}` : name) : "";
+      icsCreateItem(ICS_LISTS.log, { Title: actionKey, ActorEmail: actor, ControlId: code, Detail: detail }).catch((e) =>
+        console.warn("[ICS] 로그 저장 실패:", e.message)
+      );
+    }
   }
 
   function goTo(pageKey, filter) {
@@ -4413,6 +4455,155 @@ async function apiGet(path, token) {
   return res.json();
 }
 
+/* ------------------------------------------------------------------
+ * ICS_* SharePoint 목록 연동 (Controls / Requests / Log)
+ * 목록 GUID를 하드코딩하지 않고 displayName으로 조회해서 캐싱한다 (오타/재생성에 안전).
+ * ------------------------------------------------------------------ */
+const ICS_LISTS = { controls: "ICS_Controls", requests: "ICS_Requests", approvals: "ICS_Approvals", log: "ICS_Log" };
+const _icsListIds = {};
+
+async function getGraphToken() {
+  const account = msalApp.getActiveAccount();
+  const tokenRes = await msalApp.acquireTokenSilent({ scopes: MSAL_SCOPES, account });
+  return tokenRes.accessToken;
+}
+
+async function getIcsListId(listName) {
+  if (_icsListIds[listName]) return _icsListIds[listName];
+  const token = await getGraphToken();
+  const res = await apiGet(`/sites/${_siteId}/lists?$filter=displayName eq '${listName}'`, token);
+  if (!res.value || !res.value.length) throw new Error(`SharePoint 목록을 찾을 수 없습니다: ${listName}`);
+  _icsListIds[listName] = res.value[0].id;
+  return _icsListIds[listName];
+}
+
+// 5,000건 임계값 대비 apiAll() 패턴과 동일하게 nextLink를 따라가며 전체 조회
+async function icsListAll(listName, extraQuery = "") {
+  const token = await getGraphToken();
+  const listId = await getIcsListId(listName);
+  let items = [];
+  let url = `${GRAPH}/sites/${_siteId}/lists/${listId}/items?expand=fields&$top=200${extraQuery}`;
+  while (url) {
+    const res = await fetch(url, {
+      headers: { Authorization: "Bearer " + token, Prefer: "HonorNonIndexedQueriesWarningMayFailRandomly" },
+    });
+    if (!res.ok) throw new Error(`${listName} 조회 실패 (${res.status})`);
+    const data = await res.json();
+    items = items.concat(data.value || []);
+    url = data["@odata.nextLink"] || null;
+  }
+  return items;
+}
+
+async function icsCreateItem(listName, fields) {
+  const token = await getGraphToken();
+  const listId = await getIcsListId(listName);
+  const res = await fetch(`${GRAPH}/sites/${_siteId}/lists/${listId}/items`, {
+    method: "POST",
+    headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+    body: JSON.stringify({ fields }),
+  });
+  if (!res.ok) throw new Error(`${listName} 생성 실패 (${res.status})`);
+  return res.json();
+}
+
+async function icsUpdateItem(listName, itemId, fields) {
+  const token = await getGraphToken();
+  const listId = await getIcsListId(listName);
+  const res = await fetch(`${GRAPH}/sites/${_siteId}/lists/${listId}/items/${itemId}/fields`, {
+    method: "PATCH",
+    headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+    body: JSON.stringify(fields),
+  });
+  if (!res.ok) throw new Error(`${listName} 수정 실패 (${res.status})`);
+  return res.json();
+}
+
+// ICS_Controls(마스터) + ICS_Requests(평가 진행 상태)를 읽어서 화면에서 쓰는 통제 항목 배열로 합친다.
+async function loadIcsControls() {
+  const [controlItems, requestItems] = await Promise.all([
+    icsListAll(ICS_LISTS.controls),
+    icsListAll(ICS_LISTS.requests),
+  ]);
+
+  const controls = controlItems.map((it) => {
+    const f = it.fields;
+    return {
+      id: uid(),
+      spId: it.id,
+      requestSpId: null,
+      code: f.Title || "",
+      dept: f.Dept || "",
+      cat: f.Category || "",
+      name: f.NameKo || "",
+      nameEn: f.NameEn || f.NameKo || "",
+      desc: f.DescKo || "",
+      descEn: f.DescEn || f.DescKo || "",
+      accessor: (f.AccessorEmail || "").trim().toLowerCase(),
+      reviewer: (f.ReviewerEmail || "").trim().toLowerCase(),
+      year: String(f.Year || "2026"),
+      frequency: f.Frequency || "quarterly",
+      importance: f.Importance || "medium",
+      status: "not_started",
+      selfRisk: null, selfComment: "", selfCommentEn: "", selfDate: null,
+      reviewRisk: null, reviewComment: "", reviewCommentEn: "", reviewDate: null,
+      actualSample: null, attachments: [], history: [],
+      fsaStatus: "not_started", fsaRisk: null, fsaComment: "", fsaCommentEn: "", fsaDate: null,
+      fsaReviewRisk: null, fsaReviewComment: "", fsaReviewCommentEn: "", fsaReviewDate: null,
+      pendingEdit: null,
+    };
+  });
+  controls.forEach((c) => { c.sampleSize = recommendedSample(c.importance, c.frequency); });
+
+  requestItems.forEach((it) => {
+    const f = it.fields;
+    const match = controls.find((c) => c.code === f.ControlId && c.year === String(f.Year));
+    if (!match) return; // 통제 마스터에 없는 고아 Request는 무시 (삭제된 통제 등)
+    match.requestSpId = it.id;
+    match.status = f.Status || "not_started";
+    match.selfRisk = f.SelfRisk || null;
+    match.selfComment = f.SelfCommentKo || "";
+    match.selfCommentEn = f.SelfCommentEn || "";
+    match.selfDate = f.SelfDate ? String(f.SelfDate).slice(0, 10) : null;
+    match.actualSample = f.SampleCount !== undefined && f.SampleCount !== "" && f.SampleCount !== null ? Number(f.SampleCount) : null;
+    match.reviewRisk = f.ReviewRisk || null;
+    match.reviewComment = f.ReviewCommentKo || "";
+    match.reviewCommentEn = f.ReviewCommentEn || "";
+    match.reviewDate = f.ReviewDate ? String(f.ReviewDate).slice(0, 10) : null;
+    match.fsaStatus = f.FsaStatus || "not_started";
+    match.fsaRisk = f.FsaRisk || null;
+    match.fsaComment = f.FsaCommentKo || "";
+    match.fsaCommentEn = f.FsaCommentEn || "";
+    match.fsaDate = f.FsaDate ? String(f.FsaDate).slice(0, 10) : null;
+    match.fsaReviewRisk = f.FsaReviewRisk || null;
+    match.fsaReviewComment = f.FsaReviewCommentKo || "";
+    match.fsaReviewCommentEn = f.FsaReviewCommentEn || "";
+    match.fsaReviewDate = f.FsaReviewDate ? String(f.FsaReviewDate).slice(0, 10) : null;
+  });
+
+  return controls;
+}
+
+async function loadIcsLog() {
+  const items = await icsListAll(ICS_LISTS.log, "&$orderby=lastModifiedDateTime desc");
+  return items
+    .map((it) => {
+      const f = it.fields;
+      const created = it.createdDateTime || (it.fields && it.fields.Created) || null;
+      return {
+        id: it.id,
+        date: created ? String(created).slice(0, 10) : new Date().toISOString().slice(0, 10),
+        actor: f.ActorEmail || "",
+        actionKey: f.Title || "edit_control",
+        code: f.ControlId || "-",
+        name: f.Detail || "",
+        nameEn: f.Detail || "",
+        year: "2026",
+      };
+    })
+    .sort((a, b) => (a.date < b.date ? 1 : -1));
+}
+
 // system_config_final.xlsx (다른 APS 시스템들과 완전히 동일한 공용 config 파일)에서
 // ICS_ACCESSOR_{부서id} / ICS_REVIEWER_N / ICS_ADMIN_N / ICS_CFO / ICS_RD 키를 읽어 INITIAL_USERS를 구성.
 // 3열(KEY/이름/이메일) 뿐인 단순 포맷, 헤더 없이 그대로 읽음 (loadSystemConfig()와 동일 파싱 규칙)
@@ -4496,10 +4687,19 @@ async function icsBoot(account) {
 
   window.icsSignOut = () => msalApp.logoutRedirect();
 
+  let loadedControls = null;
+  let loadedLog = null;
+  try {
+    [loadedControls, loadedLog] = await Promise.all([loadIcsControls(), loadIcsLog()]);
+  } catch (e) {
+    // SharePoint 통제 데이터 로드 실패 시, 코드 내 목업 데이터로 안전하게 대체 실행 (config 로드와 동일한 폴백 정책)
+    console.warn("[ICS] 통제 항목 로드 실패, 코드 내 목업 데이터로 진행:", e.message);
+  }
+
   const loadingEl = document.getElementById("loading");
   if (loadingEl) loadingEl.remove();
   const rootEl = document.getElementById("root");
-  createRoot(rootEl).render(<InternalControlApp initialUserId={matched.id} />);
+  createRoot(rootEl).render(<InternalControlApp initialUserId={matched.id} initialControls={loadedControls} initialLog={loadedLog} />);
 }
 
 (async function initMsal() {
