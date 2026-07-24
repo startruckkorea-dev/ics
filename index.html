@@ -195,19 +195,9 @@ const ACTION_LABELS = {
   delete_control: { ko: "통제 항목 삭제", en: "Control item deleted" },
 };
 
-let INITIAL_USERS = [
-  { id: "u1", name: "김도윤", nameEn: "Kim Do-yun", email: "doyun.kim@startruckkorea.com", dept: "fin", role: "accessor" },
-  { id: "u2", name: "이서연", nameEn: "Lee Seo-yeon", email: "seoyeon.lee@startruckkorea.com", dept: "hr", role: "accessor" },
-  { id: "u3", name: "박준호", nameEn: "Park Jun-ho", email: "junho.park@startruckkorea.com", dept: "pur", role: "accessor" },
-  { id: "u4", name: "최민지", nameEn: "Choi Min-ji", email: "minji.choi@startruckkorea.com", dept: "sal", role: "accessor" },
-  { id: "u5", name: "정우성", nameEn: "Jung Woo-sung", email: "woosung.jung@startruckkorea.com", dept: "itd", role: "accessor" },
-  { id: "u6", name: "한소희", nameEn: "Han So-hee", email: "sohee.han@startruckkorea.com", dept: "prd", role: "accessor" },
-  { id: "u7", name: "오세훈", nameEn: "Oh Se-hun", email: "sehun.oh@startruckkorea.com", dept: null, role: "reviewer" },
-  { id: "u8", name: "강지현", nameEn: "Kang Ji-hyun", email: "jihyun.kang@startruckkorea.com", dept: null, role: "reviewer" },
-  { id: "u9", name: "관리자", nameEn: "Admin", email: "admin@startruckkorea.com", dept: null, role: "admin" },
-  { id: "u10", name: "배재무", nameEn: "Bae Jae-mu", email: "cfo@startruckkorea.com", dept: null, role: "cfo" },
-  { id: "u11", name: "장대표", nameEn: "Jang Dae-pyo", email: "rd@startruckkorea.com", dept: null, role: "rd" },
-];
+// 실제 사용자 목록은 로그인 시 system_config_final.xlsx(ICS_ACCESSOR_*/ICS_REVIEWER_*/ICS_ADMIN_*/ICS_CFO/ICS_RD)에서
+// loadIcsConfig()가 채워 넣는다. 이름·이메일 등 개인정보를 git 저장소에 하드코딩하지 않기 위해 여기서는 항상 빈 배열로 시작한다.
+let INITIAL_USERS = [];
 
 function pName(koreanName, lang, users = INITIAL_USERS) {
   const u = users.find((x) => x.name === koreanName);
@@ -274,73 +264,12 @@ function finalRisk(control) {
 }
 
 /* 초기 통제 항목 목업 데이터 */
-const INITIAL_CONTROLS = [
-  { code: "FIN-CE-01", dept: "fin", cat: "CE", name: "전표 승인 권한 통제", nameEn: "Approval authority control over accounting entries", desc: "회계전표 작성/승인 권한을 직무별로 분리하고 승인 한도를 준수하는지 점검한다.", descEn: "Checks that voucher preparation and approval authority are segregated by role and that approval limits are observed.", accessor: "doyun.kim@startruckkorea.com", reviewer: "sehun.oh@startruckkorea.com", status: "completed", selfRisk: "green", selfComment: "전결규정에 따라 승인 권한이 적절히 분리되어 운영 중.", selfCommentEn: "Approval authority is properly segregated in line with the delegation-of-authority policy.", selfDate: "2026-06-02", reviewRisk: "green", reviewComment: "샘플 점검 결과 이상 없음. 현 수준 유지.", reviewCommentEn: "Sample testing found no issues. Maintain the current level.", reviewDate: "2026-06-05" },
-  { code: "FIN-RA-01", dept: "fin", cat: "RA", name: "부정위험 평가 프로세스", nameEn: "Fraud risk assessment process", desc: "연 1회 부정위험 평가를 실시하고 고위험 항목에 대한 보완대책을 수립한다.", descEn: "Conducts an annual fraud risk assessment and establishes remediation plans for high-risk items.", accessor: "doyun.kim@startruckkorea.com", reviewer: "sehun.oh@startruckkorea.com", status: "submitted_self", selfRisk: "orange", selfComment: "평가 주기는 준수되나 보완대책 이행 확인 절차가 미흡함.", selfCommentEn: "The assessment cycle is followed, but there is no adequate process to verify remediation follow-through.", selfDate: "2026-06-20", reviewRisk: null, reviewComment: "", reviewCommentEn: "", reviewDate: null },
-  { code: "FIN-CA-01", dept: "fin", cat: "CA", name: "결산 마감 통제", nameEn: "Period-end closing control", desc: "월/분기/연 결산 시 체크리스트 기반 마감 절차를 준수하는지 확인한다.", descEn: "Confirms that monthly, quarterly, and annual closings follow a checklist-based closing procedure.", accessor: "doyun.kim@startruckkorea.com", reviewer: "sehun.oh@startruckkorea.com", status: "completed", selfRisk: "green", selfComment: "체크리스트 기반 마감 프로세스 안정적으로 운영 중.", selfCommentEn: "The checklist-based closing process is running stably.", selfDate: "2026-05-28", reviewRisk: "green", reviewComment: "적정 수준.", reviewCommentEn: "Adequate level.", reviewDate: "2026-05-30" },
-  { code: "FIN-CA-02", dept: "fin", cat: "CA", name: "자금 집행 이중승인 통제", nameEn: "Dual-approval control over fund disbursement", desc: "일정 금액 이상 자금 집행 시 기안자 외 승인자 1인 이상의 이중승인을 받는다.", descEn: "Requires at least one additional approver beyond the requester for disbursements above a set amount.", accessor: "doyun.kim@startruckkorea.com", reviewer: "sehun.oh@startruckkorea.com", status: "returned", selfRisk: "green", selfComment: "이중승인 체계 정상 운영.", selfCommentEn: "The dual-approval system is operating normally.", selfDate: "2026-06-10", reviewRisk: "red", reviewComment: "일부 긴급집행 건에서 사후승인 사례 다수 발견. 사전통제 재정비 필요.", reviewCommentEn: "Several urgent-disbursement cases were approved after the fact. Preventive controls need to be redesigned.", reviewDate: "2026-06-14" },
-  { code: "FIN-MO-01", dept: "fin", cat: "MO", name: "재무보고 정합성 모니터링", nameEn: "Financial reporting consistency monitoring", desc: "재무제표와 하위 시스템 데이터 간 정합성을 분기별로 점검한다.", descEn: "Checks quarterly consistency between the financial statements and underlying system data.", accessor: "doyun.kim@startruckkorea.com", reviewer: "sehun.oh@startruckkorea.com", status: "not_started", selfRisk: null, selfComment: "", selfCommentEn: "", selfDate: null, reviewRisk: null, reviewComment: "", reviewCommentEn: "", reviewDate: null },
+// 실제 통제 항목/평가 데이터는 로그인 시 ICS_Controls·ICS_Requests SharePoint 목록에서 loadIcsControls()가 불러온다.
+// 통제명·담당자 이메일 등 업무 데이터를 git 저장소에 하드코딩하지 않기 위해 여기서는 항상 빈 배열로 시작한다.
+const INITIAL_CONTROLS = [];
 
-  { code: "HR-CE-01", dept: "hr", cat: "CE", name: "윤리강령 준수 서약", nameEn: "Code-of-conduct acknowledgment", desc: "전 임직원 대상 연 1회 윤리강령 준수 서약을 받고 위반 시 징계 규정을 적용한다.", descEn: "Obtains an annual code-of-conduct acknowledgment from all employees and applies disciplinary rules for violations.", accessor: "seoyeon.lee@startruckkorea.com", reviewer: "jihyun.kang@startruckkorea.com", status: "completed", selfRisk: "green", selfComment: "전 직원 서약 완료, 위반 이력 없음.", selfCommentEn: "All employees have signed; no violations on record.", selfDate: "2026-06-01", reviewRisk: "green", reviewComment: "적정.", reviewCommentEn: "Adequate.", reviewDate: "2026-06-03" },
-  { code: "HR-CE-02", dept: "hr", cat: "CE", name: "조직도 및 직무분장 최신화", nameEn: "Organization chart and segregation-of-duties update", desc: "조직 변경 시 조직도와 직무기술서를 최신화하고 승인 이력을 관리한다.", descEn: "Updates the org chart and job descriptions whenever the organization changes and keeps an approval history.", accessor: "seoyeon.lee@startruckkorea.com", reviewer: "jihyun.kang@startruckkorea.com", status: "submitted_self", selfRisk: "orange", selfComment: "최근 조직개편 반영이 2주 지연됨.", selfCommentEn: "The latest reorganization was reflected two weeks late.", selfDate: "2026-06-25", reviewRisk: null, reviewComment: "", reviewCommentEn: "", reviewDate: null },
-  { code: "HR-RA-01", dept: "hr", cat: "RA", name: "핵심인력 이탈 리스크 평가", nameEn: "Key-personnel turnover risk assessment", desc: "핵심 직무 및 인력에 대한 이탈 리스크를 평가하고 후계자 계획을 수립한다.", descEn: "Assesses turnover risk for key roles and people and establishes succession plans.", accessor: "seoyeon.lee@startruckkorea.com", reviewer: "jihyun.kang@startruckkorea.com", status: "not_started", selfRisk: null, selfComment: "", selfCommentEn: "", selfDate: null, reviewRisk: null, reviewComment: "", reviewCommentEn: "", reviewDate: null },
-  { code: "HR-CA-01", dept: "hr", cat: "CA", name: "급여 지급 승인 통제", nameEn: "Payroll disbursement approval control", desc: "급여 산정 및 지급 전 인사팀장과 재무팀 교차 승인을 받는다.", descEn: "Requires cross-approval from the HR head and Finance before payroll is calculated and paid.", accessor: "seoyeon.lee@startruckkorea.com", reviewer: "jihyun.kang@startruckkorea.com", status: "completed", selfRisk: "orange", selfComment: "교차 승인은 이루어지나 산정 근거자료 보관이 일부 미흡.", selfCommentEn: "Cross-approval occurs, but supporting calculation records are not fully retained.", selfDate: "2026-06-08", reviewRisk: "orange", reviewComment: "근거자료 보관 체계 개선 권고. 3개월 내 개선 확인 예정.", reviewCommentEn: "Recommend improving the record-retention process; follow-up in 3 months.", reviewDate: "2026-06-11" },
-  { code: "HR-IC-01", dept: "hr", cat: "IC", name: "내부고발 채널 운영", nameEn: "Whistleblower channel operation", desc: "익명 신고 채널을 운영하고 접수 건에 대한 처리 절차를 준수한다.", descEn: "Operates an anonymous reporting channel and follows the handling procedure for reports received.", accessor: "seoyeon.lee@startruckkorea.com", reviewer: "jihyun.kang@startruckkorea.com", status: "completed", selfRisk: "green", selfComment: "채널 정상 운영, 접수 2건 모두 규정대로 처리 완료.", selfCommentEn: "Channel is operating normally; both reports received were handled per policy.", selfDate: "2026-05-20", reviewRisk: "green", reviewComment: "적정.", reviewCommentEn: "Adequate.", reviewDate: "2026-05-24" },
-
-  { code: "PUR-CE-01", dept: "pur", cat: "CE", name: "구매 담당자 이해상충 관리", nameEn: "Conflict-of-interest management for buyers", desc: "구매 담당자와 협력사 간 이해상충 여부를 정기적으로 확인하고 서약서를 받는다.", descEn: "Periodically checks for conflicts of interest between buyers and suppliers and collects declarations.", accessor: "junho.park@startruckkorea.com", reviewer: "sehun.oh@startruckkorea.com", status: "submitted_self", selfRisk: "green", selfComment: "이해상충 서약 100% 징구 완료.", selfCommentEn: "100% of conflict-of-interest declarations have been collected.", selfDate: "2026-06-18", reviewRisk: null, reviewComment: "", reviewCommentEn: "", reviewDate: null },
-  { code: "PUR-RA-01", dept: "pur", cat: "RA", name: "협력사 신용 리스크 평가", nameEn: "Supplier credit risk assessment", desc: "주요 협력사에 대한 신용도 및 공급 안정성을 정기 평가한다.", descEn: "Regularly evaluates the creditworthiness and supply stability of key suppliers.", accessor: "junho.park@startruckkorea.com", reviewer: "sehun.oh@startruckkorea.com", status: "completed", selfRisk: "orange", selfComment: "일부 협력사 재무건전성 저하 확인, 대체 협력사 발굴 진행 중.", selfCommentEn: "Financial health of some suppliers has weakened; sourcing alternative suppliers is underway.", selfDate: "2026-06-05", reviewRisk: "orange", reviewComment: "대체 협력사 확보 계획 분기별 보고 요청.", reviewCommentEn: "Request quarterly reporting on the alternative-supplier plan.", reviewDate: "2026-06-09" },
-  { code: "PUR-CA-01", dept: "pur", cat: "CA", name: "구매발주 승인 프로세스", nameEn: "Purchase-order approval process", desc: "구매요청부터 발주까지 금액 구간별 승인 권한을 준수한다.", descEn: "Follows tiered approval authority by amount from purchase request through order.", accessor: "junho.park@startruckkorea.com", reviewer: "sehun.oh@startruckkorea.com", status: "completed", selfRisk: "green", selfComment: "승인 프로세스 시스템으로 통제되어 예외 없음.", selfCommentEn: "The approval process is system-enforced with no exceptions.", selfDate: "2026-05-30", reviewRisk: "green", reviewComment: "적정.", reviewCommentEn: "Adequate.", reviewDate: "2026-06-02" },
-  { code: "PUR-CA-02", dept: "pur", cat: "CA", name: "계약 체결 이중승인", nameEn: "Dual-approval for contract execution", desc: "일정 규모 이상 계약 체결 시 법무 검토 및 이중승인을 거친다.", descEn: "Contracts above a set size go through legal review and dual approval.", accessor: "junho.park@startruckkorea.com", reviewer: "sehun.oh@startruckkorea.com", status: "returned", selfRisk: "orange", selfComment: "법무 검토는 이루어지나 검토 완료 전 계약 체결 사례 1건 발견.", selfCommentEn: "Legal review takes place, but one contract was signed before the review was completed.", selfDate: "2026-06-12", reviewRisk: "red", reviewComment: "선체결 후검토 사례는 중대한 통제 미준수. 재발방지 대책 제출 요망.", reviewCommentEn: "Signing before review is a significant control failure. A corrective action plan is required.", reviewDate: "2026-06-16" },
-  { code: "PUR-MO-01", dept: "pur", cat: "MO", name: "구매단가 적정성 모니터링", nameEn: "Purchase-price reasonableness monitoring", desc: "동일 품목 구매단가의 이상 변동을 모니터링하고 사유를 확인한다.", descEn: "Monitors abnormal price movements for the same item and verifies the reasons.", accessor: "junho.park@startruckkorea.com", reviewer: "sehun.oh@startruckkorea.com", status: "not_started", selfRisk: null, selfComment: "", selfCommentEn: "", selfDate: null, reviewRisk: null, reviewComment: "", reviewCommentEn: "", reviewDate: null },
-
-  { code: "SAL-CE-01", dept: "sal", cat: "CE", name: "영업 리베이트 정책 준수", nameEn: "Sales rebate policy compliance", desc: "고객 리베이트/할인 정책이 사전 승인된 기준 내에서 집행되는지 확인한다.", descEn: "Confirms that customer rebates and discounts are applied within pre-approved limits.", accessor: "minji.choi@startruckkorea.com", reviewer: "jihyun.kang@startruckkorea.com", status: "completed", selfRisk: "orange", selfComment: "일부 영업사원의 임의 할인 사례 확인, 재교육 진행.", selfCommentEn: "Some salespeople applied discretionary discounts; retraining is underway.", selfDate: "2026-06-04", reviewRisk: "orange", reviewComment: "재발 방지 위해 승인 시스템 내 할인율 상한 설정 권고.", reviewCommentEn: "Recommend setting a discount-rate cap in the approval system to prevent recurrence.", reviewDate: "2026-06-07" },
-  { code: "SAL-RA-01", dept: "sal", cat: "RA", name: "매출채권 회수 리스크 평가", nameEn: "Accounts-receivable collection risk assessment", desc: "장기 미회수 매출채권에 대한 리스크를 평가하고 대손충당 정책을 검토한다.", descEn: "Assesses risk from long-overdue receivables and reviews the bad-debt allowance policy.", accessor: "minji.choi@startruckkorea.com", reviewer: "jihyun.kang@startruckkorea.com", status: "submitted_self", selfRisk: "red", selfComment: "주요 거래처 1곳의 90일 초과 미회수 채권 급증.", selfCommentEn: "Receivables over 90 days past due have risen sharply for one major customer.", selfDate: "2026-06-22", reviewRisk: null, reviewComment: "", reviewCommentEn: "", reviewDate: null },
-  { code: "SAL-CA-01", dept: "sal", cat: "CA", name: "매출 계상 시점 통제", nameEn: "Revenue recognition timing control", desc: "수익 인식 기준에 따라 매출 계상 시점이 적정한지 확인한다.", descEn: "Confirms that revenue is recorded at the correct time under the recognition policy.", accessor: "minji.choi@startruckkorea.com", reviewer: "jihyun.kang@startruckkorea.com", status: "completed", selfRisk: "green", selfComment: "수익인식 기준 준수, 이상 없음.", selfCommentEn: "Revenue recognition policy is followed; no issues found.", selfDate: "2026-05-26", reviewRisk: "green", reviewComment: "적정.", reviewCommentEn: "Adequate.", reviewDate: "2026-05-29" },
-  { code: "SAL-IC-01", dept: "sal", cat: "IC", name: "영업 계약 정보 공유 프로세스", nameEn: "Sales-contract information-sharing process", desc: "체결 계약 정보가 재무/물류 부서에 적시 공유되는지 확인한다.", descEn: "Confirms signed-contract information is shared with Finance and Logistics on time.", accessor: "minji.choi@startruckkorea.com", reviewer: "jihyun.kang@startruckkorea.com", status: "not_started", selfRisk: null, selfComment: "", selfCommentEn: "", selfDate: null, reviewRisk: null, reviewComment: "", reviewCommentEn: "", reviewDate: null },
-
-  { code: "ITD-CE-01", dept: "itd", cat: "CE", name: "정보보안 정책 및 교육", nameEn: "Information-security policy and training", desc: "정보보안 정책을 문서화하고 전 직원 대상 연 1회 이상 보안교육을 실시한다.", descEn: "Documents the information-security policy and provides security training to all employees at least once a year.", accessor: "woosung.jung@startruckkorea.com", reviewer: "sehun.oh@startruckkorea.com", status: "completed", selfRisk: "green", selfComment: "전 직원 보안교육 이수율 98% 달성.", selfCommentEn: "98% of employees completed security training.", selfDate: "2026-06-01", reviewRisk: "green", reviewComment: "적정.", reviewCommentEn: "Adequate.", reviewDate: "2026-06-03" },
-  { code: "ITD-RA-01", dept: "itd", cat: "RA", name: "IT 보안 위험평가", nameEn: "IT security risk assessment", desc: "주요 시스템에 대한 취약점 점검 및 위험평가를 정기 실시한다.", descEn: "Regularly performs vulnerability checks and risk assessments on key systems.", accessor: "woosung.jung@startruckkorea.com", reviewer: "sehun.oh@startruckkorea.com", status: "submitted_self", selfRisk: "orange", selfComment: "일부 레거시 시스템의 취약점 패치가 지연됨.", selfCommentEn: "Patches for vulnerabilities in some legacy systems are delayed.", selfDate: "2026-06-24", reviewRisk: null, reviewComment: "", reviewCommentEn: "", reviewDate: null },
-  { code: "ITD-CA-01", dept: "itd", cat: "CA", name: "시스템 접근권한 통제", nameEn: "System access-rights control", desc: "퇴사/부서이동 시 계정 및 접근권한 회수 절차를 준수한다.", descEn: "Follows the procedure to revoke accounts and access rights upon resignation or transfer.", accessor: "woosung.jung@startruckkorea.com", reviewer: "sehun.oh@startruckkorea.com", status: "completed", selfRisk: "red", selfComment: "최근 3개월 내 퇴사자 2명의 계정 회수가 지연 처리됨.", selfCommentEn: "Account revocation was delayed for 2 employees who left in the past 3 months.", selfDate: "2026-06-06", reviewRisk: "red", reviewComment: "접근권한 회수 프로세스 즉시 개선 필요. 자동화 방안 검토 요청.", reviewCommentEn: "The access-revocation process needs immediate improvement; request a review of an automated solution.", reviewDate: "2026-06-10" },
-  { code: "ITD-MO-01", dept: "itd", cat: "MO", name: "핵심리스크지표(KRI) 모니터링", nameEn: "Key risk indicator (KRI) monitoring", desc: "IT 장애/보안사고 관련 핵심리스크지표를 월 단위로 모니터링한다.", descEn: "Monitors monthly key risk indicators related to IT outages and security incidents.", accessor: "woosung.jung@startruckkorea.com", reviewer: "sehun.oh@startruckkorea.com", status: "not_started", selfRisk: null, selfComment: "", selfCommentEn: "", selfDate: null, reviewRisk: null, reviewComment: "", reviewCommentEn: "", reviewDate: null },
-
-  { code: "PRD-CA-01", dept: "prd", cat: "CA", name: "재고실사 및 차이조정", nameEn: "Physical inventory count and variance reconciliation", desc: "정기 재고실사를 실시하고 장부-실물 차이를 원인 분석 후 조정한다.", descEn: "Performs periodic physical inventory counts and adjusts book-to-physical variances after root-cause analysis.", accessor: "sohee.han@startruckkorea.com", reviewer: "jihyun.kang@startruckkorea.com", status: "completed", selfRisk: "orange", selfComment: "일부 품목 차이율이 허용범위를 소폭 초과.", selfCommentEn: "The variance rate for some items slightly exceeds the tolerance.", selfDate: "2026-06-09", reviewRisk: "orange", reviewComment: "차이 원인 분석 결과 보완 후 재점검 예정.", reviewCommentEn: "Will re-inspect after supplementing the variance root-cause analysis.", reviewDate: "2026-06-13" },
-  { code: "PRD-MO-01", dept: "prd", cat: "MO", name: "품질 관리 모니터링", nameEn: "Quality control monitoring", desc: "생산 공정별 품질 지표를 모니터링하고 불량률 추이를 관리한다.", descEn: "Monitors quality metrics by production process and tracks defect-rate trends.", accessor: "sohee.han@startruckkorea.com", reviewer: "jihyun.kang@startruckkorea.com", status: "not_started", selfRisk: null, selfComment: "", selfCommentEn: "", selfDate: null, reviewRisk: null, reviewComment: "", reviewCommentEn: "", reviewDate: null },
-].map((c, i) => {
-  const frequency = FREQUENCY_OPTIONS[i % FREQUENCY_OPTIONS.length].id;
-  const importance = IMPORTANCE_OPTIONS[i % IMPORTANCE_OPTIONS.length].id;
-  return {
-    id: uid(),
-    history: [],
-    frequency,
-    importance,
-    sampleSize: recommendedSample(importance, frequency),
-    actualSample: null,
-    attachments: [],
-    year: "2026",
-    fsaStatus: "not_started",
-    fsaRisk: null,
-    fsaComment: "",
-    fsaCommentEn: "",
-    fsaDate: null,
-    fsaReviewRisk: null,
-    fsaReviewComment: "",
-    fsaReviewCommentEn: "",
-    fsaReviewDate: null,
-    pendingEdit: null,
-    ...c,
-  };
-});
-
-const INITIAL_LOG = [
-  { id: uid("log"), date: "2026-06-24", actor: "정우성", actionKey: "submit_self", code: "ITD-RA-01", year: "2026" },
-  { id: uid("log"), date: "2026-06-22", actor: "최민지", actionKey: "submit_self", code: "SAL-RA-01", year: "2026" },
-  { id: uid("log"), date: "2026-06-20", actor: "김도윤", actionKey: "submit_self", code: "FIN-RA-01", year: "2026" },
-  { id: uid("log"), date: "2026-06-16", actor: "오세훈", actionKey: "review_reject", code: "PUR-CA-02", year: "2026" },
-  { id: uid("log"), date: "2026-06-14", actor: "오세훈", actionKey: "review_reject", code: "FIN-CA-02", year: "2026" },
-  { id: uid("log"), date: "2026-06-13", actor: "강지현", actionKey: "review_complete", code: "PRD-CA-01", year: "2026" },
-  { id: uid("log"), date: "2026-06-11", actor: "강지현", actionKey: "review_complete", code: "HR-CA-01", year: "2026" },
-  { id: uid("log"), date: "2026-06-10", actor: "정우성", actionKey: "submit_self", code: "ITD-CA-01", year: "2026" },
-];
+// 실제 활동 로그도 마찬가지로 ICS_Log SharePoint 목록에서 loadIcsLog()가 불러온다.
+const INITIAL_LOG = [];
 
 /* ------------------------------------------------------------------ */
 /* 연도(회계연도) 아카이브 관련 헬퍼                                        */
@@ -1926,8 +1855,8 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
         "통제명(영문)": "Example control name",
         "설명": "통제 설명을 입력하세요.",
         "설명(영문)": "Enter the control description.",
-        "1차담당자": sampleAccessor?.name || "김도윤",
-        "2차검토자": sampleReviewer?.name || "오세훈",
+        "1차담당자": sampleAccessor?.name || "홍길동",
+        "2차검토자": sampleReviewer?.name || "김철수",
         "점검빈도": FREQUENCY_OPTIONS[2].ko,
         "중요도": IMPORTANCE_OPTIONS[1].ko,
       },
@@ -4749,6 +4678,7 @@ async function loadIcsConfig(token) {
 async function icsBoot(account) {
   document.getElementById("login-screen").style.display = "none";
   document.getElementById("loading").style.display = "flex";
+  let configLoadFailed = false;
   try {
     const tokenRes = await msalApp.acquireTokenSilent({ scopes: MSAL_SCOPES, account });
     const token = tokenRes.accessToken;
@@ -4756,7 +4686,17 @@ async function icsBoot(account) {
     _siteId = siteRes.id;
     await loadIcsConfig(token);
   } catch (e) {
-    console.warn("[ICS] config 로드 실패, 코드 내 기본값으로 진행:", e.message);
+    // INITIAL_USERS를 코드에 하드코딩해두지 않으므로, 여기서 실패하면 사용자 목록이 비어있는 채로 남는다.
+    // 그대로 진행하면 "권한 없음"으로 오인되니, 실제 원인(설정 파일 로드 실패)을 화면에 명확히 알린다.
+    console.warn("[ICS] system_config_final.xlsx 로드 실패:", e.message);
+    configLoadFailed = true;
+  }
+
+  if (configLoadFailed || INITIAL_USERS.length === 0) {
+    document.getElementById("loading").style.display = "none";
+    document.getElementById("login-screen").style.display = "flex";
+    showLoginErr("사용자 설정(system_config_final.xlsx)을 불러오지 못했습니다. 잠시 후 새로고침하거나 관리자에게 문의해주세요.");
+    return;
   }
 
   const myEmail = (account.username || "").toLowerCase();
