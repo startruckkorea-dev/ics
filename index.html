@@ -4598,6 +4598,47 @@ async function loadIcsLog() {
 // ICS_ACCESSOR_{부서id} / ICS_REVIEWER_N / ICS_ADMIN_N / ICS_CFO / ICS_RD 키를 읽어 INITIAL_USERS를 구성.
 // 3열(KEY/이름/이메일) 뿐인 단순 포맷, 헤더 없이 그대로 읽음 (loadSystemConfig()와 동일 파싱 규칙)
 // INITIAL_DEPARTMENTS는 부서 목록 자체(한글/영문명)라 config 대상이 아니고 코드 내 값 그대로 유지.
+// KEY_PATH(예: "learn.tips[0]")를 따라가며 STR.ko/STR.en 안에 값을 채워 넣는 헬퍼.
+// 경로 중간 객체/배열이 없으면 자동 생성한다.
+function setByKeyPath(obj, path, value) {
+  const parts = path.split(".").flatMap((seg) => {
+    const m = seg.match(/^(\w+)\[(\d+)\]$/);
+    return m ? [m[1], m[2]] : [seg];
+  });
+  let node = obj;
+  for (let i = 0; i < parts.length - 1; i++) {
+    const key = parts[i];
+    if (node[key] === undefined || node[key] === null) {
+      node[key] = /^\d+$/.test(parts[i + 1]) ? [] : {};
+    }
+    node = node[key];
+  }
+  node[parts[parts.length - 1]] = value;
+}
+
+// 화면에 보이는 모든 문구(STR.ko/STR.en)를 ics_ui_strings.xlsx(같은 문서 라이브러리, system_config_final.xlsx 옆)에서 덮어쓴다.
+// 파일이 없거나 일부 KEY만 있어도 문제없음 — 못 찾은 문구는 코드 내 기본 문구가 그대로 쓰인다 (실패해도 화면이 깨지지 않음).
+async function loadIcsUiStrings(token) {
+  const drives = await apiGet(`/sites/${_siteId}/drives`, token);
+  const docDrive = (drives.value || []).find(d => ["Documents", "문서", "Shared Documents"].includes(d.name)) || (drives.value || [])[0];
+  const res = await fetch(`${GRAPH}/drives/${docDrive.id}/root:/ics_ui_strings.xlsx:/content`, { headers: { Authorization: "Bearer " + token } });
+  if (!res.ok) throw new Error(`ics_ui_strings.xlsx not found (${res.status})`);
+  const buf = await res.arrayBuffer();
+  const wb = XLSX.read(buf, { type: "array" });
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
+
+  let applied = 0;
+  rows.forEach((row) => {
+    const key = (row[0] || "").toString().trim();
+    if (!key || key.startsWith("──") || key === "KEY_PATH") return;
+    const ko = row[1] !== undefined && row[1] !== null ? row[1].toString() : "";
+    const en = row[2] !== undefined && row[2] !== null ? row[2].toString() : "";
+    if (ko) { setByKeyPath(STR.ko, key, ko); applied++; }
+    if (en) setByKeyPath(STR.en, key, en);
+  });
+  if (!applied) throw new Error("ics_ui_strings.xlsx에서 유효한 KEY_PATH를 하나도 찾지 못함");
+}
+
 async function loadIcsConfig(token) {
   const drives = await apiGet(`/sites/${_siteId}/drives`, token);
   const docDrive = (drives.value || []).find(d => ["Documents", "문서", "Shared Documents"].includes(d.name)) || (drives.value || [])[0];
@@ -4679,9 +4720,10 @@ async function icsBoot(account) {
   document.getElementById("login-screen").style.display = "none";
   document.getElementById("loading").style.display = "flex";
   let configLoadFailed = false;
+  let token = null;
   try {
     const tokenRes = await msalApp.acquireTokenSilent({ scopes: MSAL_SCOPES, account });
-    const token = tokenRes.accessToken;
+    token = tokenRes.accessToken;
     const siteRes = await apiGet(`/sites/${SITE_PATH}`, token);
     _siteId = siteRes.id;
     await loadIcsConfig(token);
@@ -4690,6 +4732,15 @@ async function icsBoot(account) {
     // 그대로 진행하면 "권한 없음"으로 오인되니, 실제 원인(설정 파일 로드 실패)을 화면에 명확히 알린다.
     console.warn("[ICS] system_config_final.xlsx 로드 실패:", e.message);
     configLoadFailed = true;
+  }
+
+  // 화면 문구(STR) 커스터마이징은 선택 사항이라 실패해도 앱 진행을 막지 않는다 (파일이 아직 없으면 코드 내 기본 문구 사용).
+  if (token && _siteId) {
+    try {
+      await loadIcsUiStrings(token);
+    } catch (e) {
+      console.warn("[ICS] ics_ui_strings.xlsx 로드 실패, 코드 내 기본 문구로 진행:", e.message);
+    }
   }
 
   if (configLoadFailed || INITIAL_USERS.length === 0) {
