@@ -215,9 +215,8 @@ function pName(koreanName, lang, users = INITIAL_USERS) {
   return lang === "en" ? u.nameEn : u.name;
 }
 function personByEmail(email, lang, users = INITIAL_USERS) {
-  const u = users.find((x) => x.email === email);
-  if (!u) return email || "-";
-  return lang === "en" ? u.nameEn : u.name;
+  // 담당자/검토자는 항상 이메일 그대로 표시 (일부만 system_config에 등록되어 이름/이메일이 뒤섞여 보이는 문제 방지)
+  return email || "-";
 }
 
 function uid(prefix = "c") {
