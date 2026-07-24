@@ -1135,20 +1135,34 @@ function Dashboard({ controls: allControls, goTo, isAdmin, allowedDepts }) {
       />
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-        <div className="bg-white rounded-xl border border-slate-100 p-4">
-          <p className="text-xs text-slate-500 mb-1">{t("dashboard.kpiTotal")}</p>
-          <p className="text-2xl font-semibold text-slate-800">{stats.total}</p>
+        <div className="relative bg-white rounded-xl border border-slate-100 p-4 overflow-hidden">
+          <div className="absolute top-0 left-0 right-0 h-1" style={{ backgroundColor: BRAND.navy }} />
+          <div className="flex items-center justify-between mb-1.5">
+            <p className="text-xs text-slate-500">{t("dashboard.kpiTotal")}</p>
+            <ClipboardList size={14} className="text-slate-300" />
+          </div>
+          <p className="text-2xl font-bold text-slate-800">{stats.total}</p>
         </div>
-        <div className="bg-white rounded-xl border border-slate-100 p-4">
-          <p className="text-xs text-slate-500 mb-1">{t("dashboard.kpiCompletion")}</p>
-          <p className="text-2xl font-semibold text-slate-800">{stats.completion}%</p>
+        <div className="relative bg-white rounded-xl border border-slate-100 p-4 overflow-hidden">
+          <div className="absolute top-0 left-0 right-0 h-1" style={{ backgroundColor: BRAND.accent }} />
+          <div className="flex items-center justify-between mb-1.5">
+            <p className="text-xs text-slate-500">{t("dashboard.kpiCompletion")}</p>
+            <CheckCircle2 size={14} className="text-slate-300" />
+          </div>
+          <p className="text-2xl font-bold" style={{ color: BRAND.accent }}>{stats.completion}%</p>
         </div>
         {["green", "orange", "red"].map((r) => (
-          <button key={r} onClick={() => goTo("list", { risk: r })} className="bg-white rounded-xl border border-slate-100 p-4 text-left hover:border-slate-300 transition-colors">
-            <p className="text-xs text-slate-500 mb-1 flex items-center gap-1.5">
+          <button
+            key={r}
+            onClick={() => goTo("list", { risk: r })}
+            className="relative text-left rounded-xl border p-4 overflow-hidden transition-transform hover:-translate-y-0.5"
+            style={{ backgroundColor: RISK_META[r].bg, borderColor: RISK_META[r].color + "33" }}
+          >
+            <div className="absolute top-0 left-0 right-0 h-1" style={{ backgroundColor: RISK_META[r].color }} />
+            <p className="text-xs mb-1.5 flex items-center gap-1.5 font-medium" style={{ color: RISK_META[r].text }}>
               <RiskDot risk={r} size={8} /> {RISK_META[r][lang]}
             </p>
-            <p className="text-2xl font-semibold" style={{ color: RISK_META[r].color }}>{stats.counts[r]}</p>
+            <p className="text-2xl font-bold" style={{ color: RISK_META[r].color }}>{stats.counts[r]}</p>
           </button>
         ))}
       </div>
@@ -1185,10 +1199,11 @@ function Dashboard({ controls: allControls, goTo, isAdmin, allowedDepts }) {
                           <button
                             title={`${row.dept[lang]} · ${cell.cat[lang]} (${cell.count}${t("common.items")})`}
                             onClick={() => goTo("list", { dept: row.dept.id, cat: cell.cat.id })}
-                            className="w-6 h-6 rounded-md inline-flex items-center justify-center hover:opacity-70 transition-opacity"
-                            style={{ backgroundColor: RISK_META[cell.risk].bg }}
+                            className="min-w-[38px] h-8 px-1.5 rounded-lg inline-flex items-center justify-center gap-1 hover:opacity-75 transition-opacity font-semibold"
+                            style={{ backgroundColor: RISK_META[cell.risk].bg, color: RISK_META[cell.risk].text }}
                           >
-                            <RiskDot risk={cell.risk} size={9} />
+                            <RiskDot risk={cell.risk} size={7} />
+                            {cell.count}
                           </button>
                         ) : (
                           <span className="text-slate-200">–</span>
@@ -1205,7 +1220,7 @@ function Dashboard({ controls: allControls, goTo, isAdmin, allowedDepts }) {
         <div className="lg:col-span-2 bg-white rounded-xl border border-slate-100 p-5">
           <h3 className="text-sm font-semibold text-slate-700 mb-4">{t("dashboard.chartTitle")}</h3>
           <ResponsiveContainer width="100%" height={230}>
-            <BarChart data={barData} layout="vertical" margin={{ left: 10 }}>
+            <BarChart data={barData} layout="vertical" margin={{ left: 10 }} barSize={18}>
               <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#F1F3F5" />
               <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11, fill: "#94A3B8" }} />
               <YAxis type="category" dataKey="name" width={56} tick={{ fontSize: 11, fill: "#64748B" }} />
@@ -1221,18 +1236,29 @@ function Dashboard({ controls: allControls, goTo, isAdmin, allowedDepts }) {
 
       <div className="bg-white rounded-xl border border-slate-100 p-5">
         <h3 className="text-sm font-semibold text-slate-700 mb-3">{t("dashboard.recentTitle")}</h3>
-        <div className="divide-y divide-slate-50">
-          {recent.map((c) => (
-            <div key={c.id} className="py-2.5 flex items-center justify-between text-sm">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <RiskDot risk={finalRisk(c)} />
-                <span className="text-slate-700 truncate">{cName(c, lang)}</span>
-                <span className="text-slate-400 text-xs flex-shrink-0">{deptName(c.dept, lang, departments)} · {c.code}</span>
-              </div>
-              <span className="text-xs text-slate-400 flex-shrink-0 ml-3">{c.reviewDate || c.selfDate}</span>
-            </div>
-          ))}
-        </div>
+        {recent.length > 0 ? (
+          <div className="divide-y divide-slate-50">
+            {recent.map((c) => {
+              const risk = finalRisk(c);
+              return (
+                <div key={c.id} className="py-3 flex items-center justify-between text-sm gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: RISK_META[risk].bg }}>
+                      <RiskDot risk={risk} size={9} />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-slate-700 font-medium truncate">{cName(c, lang)}</p>
+                      <p className="text-slate-400 text-xs truncate">{deptName(c.dept, lang, departments)} · {c.code}</p>
+                    </div>
+                  </div>
+                  <span className="text-xs text-slate-400 flex-shrink-0">{c.reviewDate || c.selfDate}</span>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <EmptyState text={lang === "en" ? "No recent activity yet." : "최근 평가 활동이 없습니다."} />
+        )}
       </div>
     </div>
   );
@@ -1631,31 +1657,34 @@ function ControlList({ controls: allControls, filter, setFilter, isAdmin, allowe
 
       <div className="bg-white rounded-xl border border-slate-100 overflow-hidden">
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-slate-500 text-xs">
+          <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wide">
             <tr>
-              <th className="text-left font-medium px-4 py-3">{t("list.colCode")}</th>
-              <th className="text-left font-medium px-4 py-3">{t("list.colName")}</th>
-              <th className="text-left font-medium px-4 py-3">{t("list.colDept")}</th>
-              <th className="text-left font-medium px-4 py-3">{t("list.colCat")}</th>
-              <th className="text-left font-medium px-4 py-3">{t("list.colAccessor")}</th>
-              <th className="text-left font-medium px-4 py-3">{t("list.colReviewer")}</th>
-              <th className="text-left font-medium px-4 py-3">{t("list.colStatus")}</th>
-              <th className="text-left font-medium px-4 py-3">{t("list.colRisk")}</th>
+              <th className="text-left font-semibold px-4 py-3">{t("list.colCode")}</th>
+              <th className="text-left font-semibold px-4 py-3">{t("list.colName")}</th>
+              <th className="text-left font-semibold px-4 py-3">{t("list.colDept")}</th>
+              <th className="text-left font-semibold px-4 py-3">{t("list.colCat")}</th>
+              <th className="text-left font-semibold px-4 py-3">{t("list.colAccessor")}</th>
+              <th className="text-left font-semibold px-4 py-3">{t("list.colReviewer")}</th>
+              <th className="text-left font-semibold px-4 py-3">{t("list.colStatus")}</th>
+              <th className="text-left font-semibold px-4 py-3">{t("list.colRisk")}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-50">
-            {filtered.map((c) => (
-              <tr key={c.id} onClick={() => setDetail(c)} className="hover:bg-slate-50 cursor-pointer transition-colors">
-                <td className="px-4 py-3 text-slate-500 text-xs font-mono whitespace-nowrap">{c.code}</td>
-                <td className="px-4 py-3 text-slate-700 font-medium">{cName(c, lang)}</td>
-                <td className="px-4 py-3 text-slate-600">{deptName(c.dept, lang, departments)}</td>
-                <td className="px-4 py-3 text-slate-600">{catName(c.cat, lang)}</td>
-                <td className="px-4 py-3 text-slate-600">{personByEmail(c.accessor, lang, users)}</td>
-                <td className="px-4 py-3 text-slate-600">{personByEmail(c.reviewer, lang, users)}</td>
-                <td className="px-4 py-3"><StatusBadge status={c.status} /></td>
-                <td className="px-4 py-3"><RiskBadge risk={finalRisk(c)} /></td>
-              </tr>
-            ))}
+            {filtered.map((c, i) => {
+              const risk = finalRisk(c);
+              return (
+                <tr key={c.id} onClick={() => setDetail(c)} className={`cursor-pointer transition-colors hover:bg-slate-100/70 ${i % 2 === 1 ? "bg-slate-50/50" : ""}`}>
+                  <td className="pl-3 pr-4 py-3 text-slate-500 text-xs font-mono whitespace-nowrap" style={{ boxShadow: `inset 3px 0 0 ${RISK_META[risk].color}` }}>{c.code}</td>
+                  <td className="px-4 py-3 text-slate-700 font-medium">{cName(c, lang)}</td>
+                  <td className="px-4 py-3 text-slate-600">{deptName(c.dept, lang, departments)}</td>
+                  <td className="px-4 py-3 text-slate-600">{catName(c.cat, lang)}</td>
+                  <td className="px-4 py-3 text-slate-600">{personByEmail(c.accessor, lang, users)}</td>
+                  <td className="px-4 py-3 text-slate-600">{personByEmail(c.reviewer, lang, users)}</td>
+                  <td className="px-4 py-3"><StatusBadge status={c.status} /></td>
+                  <td className="px-4 py-3"><RiskBadge risk={risk} /></td>
+                </tr>
+              );
+            })}
             {filtered.length === 0 && (
               <tr><td colSpan={8}><EmptyState text={t("list.emptyText")} /></td></tr>
             )}
