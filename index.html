@@ -2236,6 +2236,8 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
           Status: "not_started",
         });
         spId = created.id;
+        // 이후 단계(업로드/저장)가 실패하더라도 재시도 시 항목이 중복 생성되지 않도록 즉시 반영
+        setControls((prev) => prev.map((x) => (x.id === c.id ? { ...x, requestSpId: spId } : x)));
       }
 
       // 2) 아직 업로드 안 된(webUrl 없는) 첨부만 실제 업로드, 이미 업로드된 것은 그대로 재사용
@@ -4487,7 +4489,10 @@ async function icsCreateItem(listName, fields) {
     headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
     body: JSON.stringify({ fields }),
   });
-  if (!res.ok) throw new Error(`${listName} 생성 실패 (${res.status})`);
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(`${listName} 생성 실패 (${res.status}): ${detail.slice(0, 300)}`);
+  }
   return res.json();
 }
 
@@ -4499,9 +4504,13 @@ async function icsUpdateItem(listName, itemId, fields) {
     headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
     body: JSON.stringify(fields),
   });
-  if (!res.ok) throw new Error(`${listName} 수정 실패 (${res.status})`);
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(`${listName} 수정 실패 (${res.status}): ${detail.slice(0, 300)}`);
+  }
   return res.json();
 }
+
 
 // ICS_Controls(마스터) + ICS_Requests(평가 진행 상태)를 읽어서 화면에서 쓰는 통제 항목 배열로 합친다.
 async function loadIcsControls() {
