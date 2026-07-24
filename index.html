@@ -1859,13 +1859,6 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [deptFilter, setDeptFilter] = useState("");
   const [uploadResult, setUploadResult] = useState(null);
-  const [resetting, setResetting] = useState(false);
-
-  function resetControls() {
-    setControls((prev) => prev.filter((c) => c.year !== year));
-    addLog(currentUser.email, "reset_controls", "-", t("resetData.resetControlsTitle"), t("resetData.resetControlsTitle"));
-    setResetting(false);
-  }
   const fileInputRef = useRef(null);
 
   const visibleDeptOptions = isAdmin ? departments : departments.filter((d) => allowedDepts.includes(d.id));
@@ -2038,9 +2031,6 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
                   <UploadCloud size={14} /> {t("manage.uploadBtn")}
                 </button>
                 <input ref={fileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleUploadFile} />
-                <button onClick={() => setResetting(true)} className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg border border-red-200 text-red-500 hover:bg-red-50">
-                  <Trash2 size={14} /> {t("resetData.resetBtn")}
-                </button>
               </>
             )}
             {canEdit && (
@@ -2204,15 +2194,6 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
             <button onClick={() => remove(confirmDelete)} className="px-4 py-2 text-sm text-white bg-red-500 rounded-lg hover:bg-red-600">{t("common.delete")}</button>
           </div>
         </Modal>
-      )}
-      {resetting && (
-        <ResetConfirmModal
-          title={t("resetData.resetControlsTitle")}
-          description={t("resetData.resetControlsDesc")}
-          resetPassword={resetPassword}
-          onConfirm={resetControls}
-          onClose={() => setResetting(false)}
-        />
       )}
     </div>
   );
@@ -3371,278 +3352,10 @@ function SettingsPage({ currentUser, years, selectedYear, activeYear, startNewYe
   const [confirming, setConfirming] = useState(false);
   const nextYear = String(Number(activeYear) + 1);
 
-  const [resetTarget, setResetTarget] = useState(null); // "departments" | "users" | null
-  const [changingPw, setChangingPw] = useState(false);
-  const [pwForm, setPwForm] = useState({ current: "", next: "", confirm: "" });
-  const [pwError, setPwError] = useState("");
-  const [pwSuccess, setPwSuccess] = useState(false);
-
-  function resetDepartments() {
-    setDepartments([]);
-    addLog(currentUser.email, "reset_departments", "-", t("resetData.departments"), t("resetData.departments"));
-    setResetTarget(null);
-  }
-  function resetUsersAndPermissions() {
-    setUsers((prev) => prev.filter((u) => u.id === currentUser.id));
-    setPermissions({});
-    addLog(currentUser.email, "reset_users", "-", t("resetData.usersPermissions"), t("resetData.usersPermissions"));
-    setResetTarget(null);
-  }
-  function changePassword() {
-    setPwError("");
-    setPwSuccess(false);
-    if (pwForm.current !== resetPassword) {
-      setPwError(t("resetData.wrongPassword"));
-      return;
-    }
-    if (!pwForm.next || pwForm.next !== pwForm.confirm) {
-      setPwError(t("resetData.passwordMismatch"));
-      return;
-    }
-    setResetPassword(pwForm.next);
-    addLog(currentUser.email, "reset_password_changed", "-", t("resetData.passwordChanged"), t("resetData.passwordChanged"));
-    setPwForm({ current: "", next: "", confirm: "" });
-    setPwSuccess(true);
-    setChangingPw(false);
-  }
-
-  const [editingDeptId, setEditingDeptId] = useState(null); // dept id, or "new"
-  const [deptDraft, setDeptDraft] = useState({ ko: "", en: "", code: "" });
-  const [deptError, setDeptError] = useState("");
-  const [deptUploadResult, setDeptUploadResult] = useState(null);
-  const deptFileRef = useRef(null);
-
-  const [editingUserId, setEditingUserId] = useState(null); // user id, or "new"
-  const [userDraft, setUserDraft] = useState({ name: "", nameEn: "", email: "", dept: "", role: "accessor" });
-  const [userUploadResult, setUserUploadResult] = useState(null);
-  const userFileRef = useRef(null);
-
-  function downloadDeptTemplate() {
-    const sample = [{ "부서코드": "ACC", "부서명(한글)": "회계팀", "부서명(영문)": "Accounting" }];
-    const ws = XLSX.utils.json_to_sheet(sample);
-    ws["!cols"] = Object.keys(sample[0]).map(() => ({ wch: 20 }));
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "부서 업로드 양식");
-    XLSX.writeFile(wb, "department_upload_template.xlsx");
-  }
-
-  function handleDeptUpload(e) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      try {
-        const data = new Uint8Array(evt.target.result);
-        const wb = XLSX.read(data, { type: "array" });
-        const sheet = wb.Sheets[wb.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
-        let added = 0;
-        let updated = 0;
-        let skipped = 0;
-        setDepartments((prev) => {
-          let next = [...prev];
-          rows.forEach((row) => {
-            const rawCode = String(row["부서코드"] || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
-            const ko = String(row["부서명(한글)"] || "").trim();
-            const en = String(row["부서명(영문)"] || "").trim();
-            if (!rawCode || !ko) {
-              skipped++;
-              return;
-            }
-            const idx = next.findIndex((d) => d.id === rawCode);
-            if (idx >= 0) {
-              next[idx] = { ...next[idx], ko, en: en || ko };
-              updated++;
-            } else {
-              next = [...next, { id: rawCode, ko, en: en || ko }];
-              added++;
-            }
-          });
-          return next;
-        });
-        setDeptUploadResult({ added, updated, skipped });
-      } catch (err) {
-        setDeptUploadResult({ error: true });
-      }
-    };
-    reader.readAsArrayBuffer(file);
-    e.target.value = "";
-  }
-
-  function downloadUserTemplate() {
-    const sample = [
-      {
-        "이름(한글)": "홍길동",
-        "이름(영문)": "Hong Gil-dong",
-        "이메일": "gildong.hong@example.com",
-        "역할": "accessor",
-        "부서": departments[0]?.ko || "",
-      },
-    ];
-    const ws = XLSX.utils.json_to_sheet(sample);
-    ws["!cols"] = Object.keys(sample[0]).map(() => ({ wch: 22 }));
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "사용자 업로드 양식");
-    XLSX.writeFile(wb, "user_upload_template.xlsx");
-  }
-
-  function handleUserUpload(e) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      try {
-        const data = new Uint8Array(evt.target.result);
-        const wb = XLSX.read(data, { type: "array" });
-        const sheet = wb.Sheets[wb.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
-        let added = 0;
-        let updated = 0;
-        let skipped = 0;
-        const permUpdates = [];
-        setUsers((prev) => {
-          let next = [...prev];
-          rows.forEach((row) => {
-            const name = String(row["이름(한글)"] || "").trim();
-            const email = String(row["이메일"] || "").trim();
-            const roleRaw = String(row["역할"] || "").trim().toLowerCase();
-            const role = ["accessor", "reviewer", "admin", "cfo", "rd"].includes(roleRaw) ? roleRaw : null;
-            if (!name || !email || !role) {
-              skipped++;
-              return;
-            }
-            const deptApplicable = role === "accessor" || role === "reviewer";
-            const dept = deptApplicable ? findDeptByLabel(row["부서"], departments)?.id || null : null;
-            const nameEn = String(row["이름(영문)"] || "").trim() || name;
-            const idx = next.findIndex((u) => u.email.toLowerCase() === email.toLowerCase());
-            if (idx >= 0) {
-              next[idx] = { ...next[idx], name, nameEn, email, role, dept };
-              updated++;
-            } else {
-              next = [...next, { id: `user_${Math.random().toString(36).slice(2, 8)}`, name, nameEn, email, role, dept }];
-              added++;
-            }
-            permUpdates.push({ email, role, dept, deptApplicable });
-          });
-          return next;
-        });
-        setPermissions((prev) => {
-          const next = { ...prev };
-          permUpdates.forEach(({ email, role, dept, deptApplicable }) => {
-            const carried = next[email];
-            const depts = deptApplicable ? (dept ? [dept] : carried?.depts || []) : carried?.depts || [];
-            next[email] = { role, depts };
-          });
-          return next;
-        });
-        setUserUploadResult({ added, updated, skipped });
-      } catch (err) {
-        setUserUploadResult({ error: true });
-      }
-    };
-    reader.readAsArrayBuffer(file);
-    e.target.value = "";
-  }
-
-  function confirmStart() {
-    startNewYear(nextYear);
-    setConfirming(false);
-  }
-
-  function startAddDept() {
-    setDeptDraft({ ko: "", en: "", code: "" });
-    setDeptError("");
-    setEditingDeptId("new");
-  }
-  function startEditDept(d) {
-    setDeptDraft({ ko: d.ko, en: d.en, code: d.id });
-    setDeptError("");
-    setEditingDeptId(d.id);
-  }
-  function saveDept() {
-    const ko = deptDraft.ko.trim();
-    const en = deptDraft.en.trim();
-    if (!ko) {
-      setDeptError(t("settings.deptNameRequired"));
-      return;
-    }
-    if (editingDeptId === "new") {
-      const raw = deptDraft.code.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
-      if (!raw) {
-        setDeptError(t("settings.deptCodeRequired"));
-        return;
-      }
-      if (departments.some((d) => d.id === raw)) {
-        setDeptError(t("settings.deptCodeDuplicate"));
-        return;
-      }
-      setDepartments((prev) => [...prev, { id: raw, ko, en: en || ko }]);
-    } else {
-      setDepartments((prev) => prev.map((d) => (d.id === editingDeptId ? { ...d, ko, en: en || ko } : d)));
-    }
-    setDeptError("");
-    setEditingDeptId(null);
-  }
-
-  function removeDept(d) {
-    const inUseByControls = controls.some((c) => c.dept === d.id);
-    const inUseByUsers = users.some((u) => u.dept === d.id);
-    if (inUseByControls || inUseByUsers) return;
-    setDepartments((prev) => prev.filter((x) => x.id !== d.id));
-  }
-
-  function startAddUser() {
-    setUserDraft({ name: "", nameEn: "", email: "", dept: departments[0]?.id || "", role: "accessor" });
-    setEditingUserId("new");
-  }
-  function startEditUser(u) {
-    setUserDraft({ name: u.name, nameEn: u.nameEn, email: u.email, dept: u.dept || "", role: u.role });
-    setEditingUserId(u.id);
-  }
-  function saveUser() {
-    const name = userDraft.name.trim();
-    const email = userDraft.email.trim();
-    if (!name || !email) return;
-    const prevUser = editingUserId !== "new" ? users.find((u) => u.id === editingUserId) : null;
-    const oldEmail = prevUser?.email;
-    const deptApplicable = userDraft.role === "accessor" || userDraft.role === "reviewer";
-    const payload = {
-      name,
-      nameEn: userDraft.nameEn.trim() || name,
-      email,
-      dept: deptApplicable ? userDraft.dept || null : null,
-      role: userDraft.role,
-    };
-    if (editingUserId === "new") {
-      const id = `user_${Math.random().toString(36).slice(2, 8)}`;
-      setUsers((prev) => [...prev, { id, ...payload }]);
-    } else {
-      setUsers((prev) => prev.map((u) => (u.id === editingUserId ? { ...u, ...payload } : u)));
-    }
-    // 권한 관리(permissions)와 즉시 동기화: 역할/이메일 변경 시 기존 부서 접근 범위를 새 이메일로 이관하고,
-    // Accessor/Reviewer는 지정한 소속 부서로 접근 범위를 바로 반영한다.
-    setPermissions((prev) => {
-      const next = { ...prev };
-      const carried = (oldEmail && next[oldEmail]) || next[payload.email];
-      if (oldEmail && oldEmail !== payload.email) delete next[oldEmail];
-      const depts = deptApplicable ? (payload.dept ? [payload.dept] : carried?.depts || []) : carried?.depts || [];
-      next[payload.email] = { role: payload.role, depts };
-      return next;
-    });
-    setEditingUserId(null);
-  }
 
   return (
     <div>
       <SectionHeader icon={Settings} title={t("settings.title")} subtitle={t("settings.subtitle")} />
-
-      <div
-        className="text-sm px-4 py-3 rounded-lg mb-4 flex items-center gap-2"
-        style={typeof window !== "undefined" && window.storage ? { backgroundColor: "#E4F1F0", color: BRAND.accent } : { backgroundColor: "#F1F5F9", color: "#64748B" }}
-      >
-        {typeof window !== "undefined" && window.storage ? <Check size={16} /> : <AlertTriangle size={16} />}
-        {typeof window !== "undefined" && window.storage ? t("settings.storageOnNotice") : t("settings.storageOffNotice")}
-      </div>
 
       <div className="rounded-xl border p-4 mb-4 flex items-start gap-2" style={{ backgroundColor: BRAND.accentSoft, borderColor: BRAND.accent + "40" }}>
         <KeyRound size={16} style={{ color: BRAND.navy }} className="flex-shrink-0 mt-0.5" />
@@ -3766,55 +3479,6 @@ function SettingsPage({ currentUser, years, selectedYear, activeYear, startNewYe
         )}
       </div>
 
-      {isAdmin && (
-        <div className="bg-white rounded-xl border border-slate-100 p-5 mt-5">
-          <h3 className="text-sm font-semibold text-slate-700 mb-1 flex items-center gap-2"><KeyRound size={15} /> {t("resetData.pwSectionTitle")}</h3>
-          <p className="text-sm text-slate-500 mb-3">{t("resetData.pwSectionDesc")}</p>
-
-          {!changingPw ? (
-            <button
-              onClick={() => {
-                setChangingPw(true);
-                setPwSuccess(false);
-                setPwError("");
-              }}
-              className="text-sm font-medium px-4 py-2 rounded-lg border border-slate-200 text-slate-600 hover:border-teal-400 hover:text-teal-600"
-            >
-              {t("resetData.changePwBtn")}
-            </button>
-          ) : (
-            <div className="max-w-sm space-y-3">
-              <Field label={t("resetData.currentPwLabel")}>
-                <input type="password" className={inputCls} value={pwForm.current} onChange={(e) => setPwForm((p) => ({ ...p, current: e.target.value }))} />
-              </Field>
-              <Field label={t("resetData.newPwLabel")}>
-                <input type="password" className={inputCls} value={pwForm.next} onChange={(e) => setPwForm((p) => ({ ...p, next: e.target.value }))} />
-              </Field>
-              <Field label={t("resetData.confirmPwLabel")}>
-                <input type="password" className={inputCls} value={pwForm.confirm} onChange={(e) => setPwForm((p) => ({ ...p, confirm: e.target.value }))} />
-              </Field>
-              {pwError && <p className="text-xs text-red-600">{pwError}</p>}
-              <div className="flex gap-2">
-                <button
-                  onClick={() => {
-                    setChangingPw(false);
-                    setPwForm({ current: "", next: "", confirm: "" });
-                    setPwError("");
-                  }}
-                  className="px-4 py-2 text-sm text-slate-500 rounded-lg hover:bg-slate-50"
-                >
-                  {t("common.cancel")}
-                </button>
-                <button onClick={changePassword} className="px-4 py-2 text-sm font-medium text-white rounded-lg" style={{ backgroundColor: BRAND.accent }}>
-                  {t("common.confirm")}
-                </button>
-              </div>
-            </div>
-          )}
-          {pwSuccess && <p className="text-xs text-teal-600 mt-2">{t("resetData.passwordChanged")}</p>}
-        </div>
-      )}
-
       {confirming && (
         <Modal title={t("settings.confirmTitle")} onClose={() => setConfirming(false)}>
           <p className="text-sm text-slate-600 mb-5">{t("settings.confirmBody")}</p>
@@ -3827,25 +3491,6 @@ function SettingsPage({ currentUser, years, selectedYear, activeYear, startNewYe
             </button>
           </div>
         </Modal>
-      )}
-
-      {resetTarget === "departments" && (
-        <ResetConfirmModal
-          title={t("resetData.resetDeptTitle")}
-          description={t("resetData.resetDeptDesc")}
-          resetPassword={resetPassword}
-          onConfirm={resetDepartments}
-          onClose={() => setResetTarget(null)}
-        />
-      )}
-      {resetTarget === "users" && (
-        <ResetConfirmModal
-          title={t("resetData.resetUsersTitle")}
-          description={t("resetData.resetUsersDesc")}
-          resetPassword={resetPassword}
-          onConfirm={resetUsersAndPermissions}
-          onClose={() => setResetTarget(null)}
-        />
       )}
     </div>
   );
@@ -4053,57 +3698,6 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
   const bothConfirmed = !!(currentYearConfirmation.cfo && currentYearConfirmation.rd);
 
   const canEditControls = currentUser.role === "accessor" || currentUser.role === "admin";
-
-  /* ------------------------------------------------------------------
-   * 데이터 저장(영속화)
-   * Claude 아티팩트 미리보기 환경에서 제공되는 window.storage(모든 사용자 공유, shared=true)를
-   * 사용해 부서/사용자/통제항목/평가/로그/연도/컨펌/초기화 비밀번호를 저장한다.
-   * ⚠️ window.storage는 Claude 아티팩트 미리보기에서만 동작하며, 다운로드한 단일 HTML 파일을
-   *   브라우저에서 직접 열거나(internal-control-system.html) 정식 배포판(production-build)에서는
-   *   존재하지 않는 API이므로 해당 환경에서는 자동으로 저장을 건너뛰고 기존처럼 세션 메모리에만
-   *   남는다 (실 운영 배포 시에는 SECURITY_REVIEW.md에 안내된 대로 실제 백엔드/DB가 필요하다).
-   * ------------------------------------------------------------------ */
-  const [dataLoaded, setDataLoaded] = useState(false);
-  const STORAGE_KEY = "startruck_ics_data_v1";
-
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      try {
-        if (window.storage) {
-          const result = await window.storage.get(STORAGE_KEY, true);
-          if (result && result.value && !cancelled) {
-            const saved = JSON.parse(result.value);
-            if (saved.departments) setDepartments(saved.departments);
-            if (saved.users) setUsers(saved.users);
-            if (saved.controls) setControls(saved.controls);
-            if (saved.log) setLog(saved.log);
-            if (saved.permissions) setPermissions(saved.permissions);
-            if (saved.years) setYears(saved.years);
-            if (saved.yearConfirmations) setYearConfirmations(saved.yearConfirmations);
-            if (saved.resetPassword) setResetPassword(saved.resetPassword);
-            if (saved.learnContent) setLearnContent(saved.learnContent);
-          }
-        }
-      } catch (err) {
-        // 저장된 데이터가 없거나 불러오기에 실패한 경우 - 기본(데모) 데이터로 계속 진행
-      } finally {
-        if (!cancelled) setDataLoaded(true);
-      }
-    }
-    load();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    if (!dataLoaded || !window.storage) return;
-    const payload = JSON.stringify({ departments, users, controls, log, permissions, years, yearConfirmations, resetPassword, learnContent });
-    window.storage.set(STORAGE_KEY, payload, true).catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [departments, users, controls, log, permissions, years, yearConfirmations, resetPassword, learnContent, dataLoaded]);
 
   return (
     <LangContext.Provider value={{ lang, t, setLang }}>
