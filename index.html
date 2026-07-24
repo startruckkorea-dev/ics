@@ -1822,7 +1822,7 @@ function resolvePersonEmail(raw, users) {
   return u ? u.email : "";
 }
 
-function ControlManage({ controls: allControls, setControls, canEdit, addLog, isAdmin, allowedDepts, currentUser, isArchived, year, resetPassword }) {
+function ControlManage({ controls: allControls, setControls, canEdit, addLog, isAdmin, allowedDepts, currentUser, isArchived, year, resetPassword, showToast }) {
   const { lang, t } = useLang();
   const { departments, users } = useAppData();
   const [form, setForm] = useState(null);
@@ -2199,7 +2199,7 @@ function formatBytes(bytes) {
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
 }
 
-function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived }) {
+function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived, showToast }) {
   const { lang, t } = useLang();
   const { departments, users } = useAppData();
   const [editing, setEditing] = useState(null);
@@ -2271,6 +2271,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
         )
       );
       addLog(c.accessor, "submit_self", c.code, c.name, c.nameEn);
+      showToast(lang === "en" ? "Self-assessment submitted." : "자가평가가 제출됐습니다.");
     } catch (e) {
       alert("SharePoint 저장에 실패했습니다: " + e.message);
     } finally {
@@ -2469,7 +2470,7 @@ function FSAForm({ draft, setDraft, onCancel, onSubmit }) {
   );
 }
 
-function FSAPage({ controls, setControls, currentUser, addLog, isArchived }) {
+function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showToast }) {
   const { lang, t } = useLang();
   const { departments, users } = useAppData();
   const [editing, setEditing] = useState(null);
@@ -2494,6 +2495,7 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived }) {
       prev.map((x) => (x.id === c.id ? { ...x, fsaStatus: "submitted_self", fsaRisk: draft.risk, fsaComment: draft.comment, fsaCommentEn: draft.comment, fsaDate: today } : x))
     );
     addLog(c.accessor, "fsa_submit", c.code, c.name, c.nameEn);
+    showToast(lang === "en" ? "Final self-assessment submitted." : "최종자기평가가 제출됐습니다.");
     setEditing(null);
   }
 
@@ -2604,7 +2606,7 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived }) {
 /* FSA 2차검토 (담당자가 제출한 최종자기평가를 검토자가 승인/반려)                 */
 /* ------------------------------------------------------------------ */
 
-function FSAReviewPage({ controls, setControls, currentUser, addLog, isArchived }) {
+function FSAReviewPage({ controls, setControls, currentUser, addLog, isArchived, showToast }) {
   const { lang, t } = useLang();
   const { departments, users } = useAppData();
   const [editing, setEditing] = useState(null);
@@ -2629,6 +2631,7 @@ function FSAReviewPage({ controls, setControls, currentUser, addLog, isArchived 
       )
     );
     addLog(c.reviewer, "fsa_review_complete", c.code, c.name, c.nameEn);
+    showToast(lang === "en" ? "FSA review confirmed." : "FSA 검토가 완료됐습니다.");
     setEditing(null);
   }
   function reject(c) {
@@ -2639,6 +2642,7 @@ function FSAReviewPage({ controls, setControls, currentUser, addLog, isArchived 
       )
     );
     addLog(c.reviewer, "fsa_review_reject", c.code, c.name, c.nameEn);
+    showToast(lang === "en" ? "Returned to the accessor." : "담당자에게 반려됐습니다.");
     setReturning(null);
     setReturnComment("");
   }
@@ -2749,7 +2753,7 @@ function FSAReviewPage({ controls, setControls, currentUser, addLog, isArchived 
 /* 2차 검토                                                             */
 /* ------------------------------------------------------------------ */
 
-function ReviewPage({ controls, setControls, currentUser, addLog, isArchived }) {
+function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, showToast }) {
   const { lang, t } = useLang();
   const { departments, users } = useAppData();
   const [editing, setEditing] = useState(null);
@@ -2786,12 +2790,14 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived }) 
     const today = new Date().toISOString().slice(0, 10);
     setControls((prev) => prev.map((x) => (x.id === c.id ? { ...x, status: "completed", reviewRisk: draft.risk, reviewComment: draft.comment, reviewCommentEn: draft.comment, reviewDate: today } : x)));
     addLog(c.reviewer, "review_complete", c.code, c.name, c.nameEn);
+    showToast(lang === "en" ? "Review confirmed." : "검토가 완료됐습니다.");
     setEditing(null);
   }
   function reject(c) {
     const today = new Date().toISOString().slice(0, 10);
     setControls((prev) => prev.map((x) => (x.id === c.id ? { ...x, status: "returned", reviewRisk: "red", reviewComment: returnComment, reviewCommentEn: returnComment, reviewDate: today } : x)));
     addLog(c.reviewer, "review_reject", c.code, c.name, c.nameEn);
+    showToast(lang === "en" ? "Returned to the accessor." : "담당자에게 반려됐습니다.");
     setReturning(null);
     setReturnComment("");
   }
@@ -4146,6 +4152,15 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
   // 관리자 데이터 초기화(전체 삭제) 시 요구되는 비밀번호. 관리자가 설정 페이지에서 변경 가능 (데모 기본값: 0000).
   const [resetPassword, setResetPassword] = useState("0000");
 
+  // 저장/제출 등 작업이 성공했을 때 잠깐 보여주는 토스트 알림 (조용히 끝나서 반영됐는지 헷갈리는 문제 방지)
+  const [toast, setToast] = useState(null);
+  const toastTimerRef = useRef(null);
+  function showToast(message) {
+    setToast(message);
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setToast(null), 2800);
+  }
+
   const controlsForYear = useMemo(() => controls.filter((c) => c.year === selectedYear), [controls, selectedYear]);
   const logForYear = useMemo(() => log.filter((l) => l.year === selectedYear), [log, selectedYear]);
   const controlsForActiveYear = useMemo(() => controls.filter((c) => c.year === activeYear), [controls, activeYear]);
@@ -4248,6 +4263,15 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
     <LangContext.Provider value={{ lang, t, setLang }}>
     <AppDataContext.Provider value={{ departments, setDepartments, users, setUsers }}>
       <div className="flex w-full" style={{ height: "100vh", backgroundColor: "#F5F6F8", fontFamily: "'Pretendard','Apple SD Gothic Neo','Malgun Gothic',-apple-system,sans-serif" }}>
+        {toast && (
+          <div
+            className="fixed left-1/2 bottom-6 z-[100] flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg text-sm font-medium text-white"
+            style={{ backgroundColor: BRAND.navy, transform: "translateX(-50%)" }}
+          >
+            <CheckCircle2 size={16} style={{ color: BRAND.accent }} />
+            {toast}
+          </div>
+        )}
         <Sidebar page={page} setPage={setPage} currentUser={currentUser} />
 
         <div className="flex-1 flex flex-col min-w-0">
@@ -4305,6 +4329,7 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
           )}
 
           <div className="flex-1 overflow-y-auto p-6">
+            <div className="max-w-6xl mx-auto">
             {page === "dashboard" && <Dashboard controls={controlsForYear} goTo={goTo} isAdmin={isAdmin} allowedDepts={allowedDepts} />}
             {page === "learn" && (
               <LearnPage
@@ -4330,19 +4355,20 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
                 isArchived={isArchived}
                 year={selectedYear}
                 resetPassword={resetPassword}
+                showToast={showToast}
               />
             )}
             {page === "self" && (
-              <SelfAssessment controls={controlsForYear} setControls={setControls} currentUser={currentUser} addLog={addLog} isArchived={isArchived} />
+              <SelfAssessment controls={controlsForYear} setControls={setControls} currentUser={currentUser} addLog={addLog} isArchived={isArchived} showToast={showToast} />
             )}
             {page === "review" && (
-              <ReviewPage controls={controlsForYear} setControls={setControls} currentUser={currentUser} addLog={addLog} isArchived={isArchived} isAdmin={isAdmin} />
+              <ReviewPage controls={controlsForYear} setControls={setControls} currentUser={currentUser} addLog={addLog} isArchived={isArchived} isAdmin={isAdmin} showToast={showToast} />
             )}
             {page === "fsa" && (
-              <FSAPage controls={controlsForYear} setControls={setControls} currentUser={currentUser} addLog={addLog} isArchived={isArchived} />
+              <FSAPage controls={controlsForYear} setControls={setControls} currentUser={currentUser} addLog={addLog} isArchived={isArchived} showToast={showToast} />
             )}
             {page === "fsaReview" && (
-              <FSAReviewPage controls={controlsForYear} setControls={setControls} currentUser={currentUser} addLog={addLog} isArchived={isArchived} />
+              <FSAReviewPage controls={controlsForYear} setControls={setControls} currentUser={currentUser} addLog={addLog} isArchived={isArchived} showToast={showToast} />
             )}
             {page === "history" && <HistoryPage controls={controlsForYear} log={logForYear} />}
             {page === "settings" && (
@@ -4372,6 +4398,7 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
                 confirmYear={confirmYear}
               />
             )}
+            </div>
           </div>
         </div>
       </div>
