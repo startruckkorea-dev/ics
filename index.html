@@ -1027,10 +1027,19 @@ function Sidebar({ page, setPage, currentUser }) {
         <p className="text-slate-400 text-xs leading-tight mt-2 text-center">{t("tagline")}</p>
         <a
           href="https://aps.startruckkorea.com/"
-          className="mt-2.5 flex items-center justify-center gap-1.5 text-xs text-slate-300 hover:text-white transition-colors"
+          className="mt-3 flex items-center justify-center gap-1.5 text-xs text-slate-300 hover:text-white hover:border-white/30 transition-colors border border-white/15 rounded-lg py-1.5"
         >
           📬 {lang === "en" ? "Back to APS" : "돌아가기"}
         </a>
+        {ICS_CONTACT_EMAIL && (
+          <p className="text-[10px] text-slate-500 text-center mt-2 leading-relaxed">
+            {lang === "en" ? "BU Admin contact" : "BU Admin 문의"}
+            <br />
+            <a href={`mailto:${ICS_CONTACT_EMAIL}`} className="text-slate-300 hover:text-white underline">
+              {ICS_CONTACT_EMAIL}
+            </a>
+          </p>
+        )}
       </div>
 
       <nav className="flex-1 px-3 py-4 overflow-y-auto">
@@ -1086,14 +1095,6 @@ function Sidebar({ page, setPage, currentUser }) {
             className="mt-2 w-full text-[11px] text-slate-300 border border-white/10 rounded-md py-1.5 hover:bg-white/10"
           >{t("logout")}</button>
         </div>
-        {ICS_CONTACT_EMAIL && (
-          <p className="text-[11px] text-slate-500 px-2 mt-2.5 leading-relaxed">
-            {lang === "en" ? "BU Admin contact" : "BU Admin 문의"} Email:{" "}
-            <a href={`mailto:${ICS_CONTACT_EMAIL}`} className="text-slate-300 hover:text-white underline">
-              {ICS_CONTACT_EMAIL}
-            </a>
-          </p>
-        )}
       </div>
     </div>
   );
