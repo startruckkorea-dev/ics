@@ -3142,9 +3142,10 @@ function HistoryPage({ controls, log }) {
 /* 최종 결과 보고 (CFO/RD 컨펌)                                          */
 /* ------------------------------------------------------------------ */
 
-function FinalReportPage({ controls, currentUser, activeYear, yearConfirmation, confirmYear }) {
+function FinalReportPage({ controls, currentUser, activeYear, yearConfirmation, confirmYear, showToast }) {
   const { lang, t } = useLang();
   const { departments, users } = useAppData();
+  const [confirmingRole, setConfirmingRole] = useState(null);
 
   const stats = useMemo(() => {
     const counts = { green: 0, orange: 0, red: 0, none: 0 };
@@ -3291,7 +3292,7 @@ function FinalReportPage({ controls, currentUser, activeYear, yearConfirmation, 
               <p className="text-sm text-slate-500">{personByEmail(info.by, lang, users)} · {info.at}</p>
             ) : allowed ? (
               <button
-                onClick={() => confirmYear(role)}
+                onClick={() => setConfirmingRole(role)}
                 className="w-full py-2.5 rounded-lg text-sm font-medium text-white flex items-center justify-center gap-1.5"
                 style={{ backgroundColor: BRAND.accent }}
               >
@@ -3308,6 +3309,50 @@ function FinalReportPage({ controls, currentUser, activeYear, yearConfirmation, 
         <p className="text-xs text-slate-400 mt-4 flex items-center gap-1.5">
           <Clock size={13} /> {t("settings.yearConfirmRequired")}
         </p>
+      )}
+
+      {confirmingRole && (
+        <Modal title={`${t(`roles.${confirmingRole}`)} ${t("finalReport.confirmTitle")}`} onClose={() => setConfirmingRole(null)}>
+          {(stats.isaRate < 100 || stats.fsaRate < 100) && (
+            <div className="bg-amber-50 text-amber-700 text-sm px-4 py-3 rounded-lg mb-4 flex items-start gap-2">
+              <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
+              <span>
+                {lang === "en"
+                  ? "Some control items are not fully assessed yet. Confirming now finalizes results as-is."
+                  : "아직 평가가 끝나지 않은 통제 항목이 있습니다. 지금 컨펌하면 현재 상태 그대로 최종 확정됩니다."}
+              </span>
+            </div>
+          )}
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            <div className="bg-slate-50 rounded-lg p-3">
+              <p className="text-xs text-slate-400 mb-1">{t("finalReport.isaRate")}</p>
+              <p className="text-xl font-bold" style={{ color: stats.isaRate < 100 ? "#D9822B" : BRAND.accent }}>{stats.isaRate}%</p>
+            </div>
+            <div className="bg-slate-50 rounded-lg p-3">
+              <p className="text-xs text-slate-400 mb-1">{t("finalReport.fsaRate")}</p>
+              <p className="text-xl font-bold" style={{ color: stats.fsaRate < 100 ? "#D9822B" : BRAND.accent }}>{stats.fsaRate}%</p>
+            </div>
+          </div>
+          <p className="text-sm text-slate-600 mb-5">
+            {lang === "en"
+              ? "This action is recorded with your name and cannot be undone. Proceed?"
+              : "이 작업은 회원님 이름으로 기록되며 되돌릴 수 없습니다. 진행하시겠습니까?"}
+          </p>
+          <div className="flex justify-end gap-2">
+            <button onClick={() => setConfirmingRole(null)} className="px-4 py-2 text-sm text-slate-500 rounded-lg hover:bg-slate-50">{t("common.cancel")}</button>
+            <button
+              onClick={() => {
+                confirmYear(confirmingRole);
+                setConfirmingRole(null);
+                showToast(lang === "en" ? "Final results confirmed." : "최종 결과가 컨펌됐습니다.");
+              }}
+              className="px-4 py-2 text-sm font-medium text-white rounded-lg"
+              style={{ backgroundColor: BRAND.accent }}
+            >
+              {t("finalReport.confirmBtn")}
+            </button>
+          </div>
+        </Modal>
       )}
     </div>
   );
@@ -3666,8 +3711,22 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
   const activeYear = years[years.length - 1];
   const isArchived = selectedYear !== activeYear;
 
-  // CFO/RD의 연도별 최종 결과 컨펌 상태. 두 역할 모두 컨펌해야 다음 회계연도를 시작할 수 있다.
-  const [yearConfirmations, setYearConfirmations] = useState({ "2026": { cfo: null, rd: null } });
+  // CFO/RD의 연도별 최종 결과 컨펌 상태. 별도 저장 없이, 이미 SharePoint(ICS_Log)에 저장된
+  // cfo_confirm/rd_confirm 로그를 읽어서 복원한다 (addLog가 항상 ICS_Log에 실제로 기록하므로 새로고침해도 유지됨).
+  const [yearConfirmations, setYearConfirmations] = useState(() => {
+    const result = { [activeYear]: { cfo: null, rd: null } };
+    (initialLog || []).forEach((entry) => {
+      if (entry.actionKey !== "cfo_confirm" && entry.actionKey !== "rd_confirm") return;
+      const y = entry.name || activeYear; // addLog는 연도를 name/nameEn 자리(SharePoint Detail 필드)에 기록함
+      if (!result[y]) result[y] = { cfo: null, rd: null };
+      const role = entry.actionKey === "cfo_confirm" ? "cfo" : "rd";
+      const existing = result[y][role];
+      if (!existing || entry.date > existing.at) {
+        result[y][role] = { by: entry.actor, at: entry.date };
+      }
+    });
+    return result;
+  });
 
   // 관리자 데이터 초기화(전체 삭제) 시 요구되는 비밀번호. 관리자가 설정 페이지에서 변경 가능 (데모 기본값: 0000).
   const [resetPassword, setResetPassword] = useState("0000");
@@ -3881,6 +3940,7 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
                 activeYear={activeYear}
                 yearConfirmation={currentYearConfirmation}
                 confirmYear={confirmYear}
+                showToast={showToast}
               />
             )}
             </div>
