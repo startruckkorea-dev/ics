@@ -1777,8 +1777,12 @@ function ControlDetailBody({ control: c }) {
             {c.attachments.map((a, i) => (
               <li key={i} className="flex items-center gap-2 text-sm text-slate-600 bg-slate-50 rounded-lg px-3 py-2">
                 <FileText size={14} className="text-slate-400 flex-shrink-0" />
-                <span className="truncate">{a.name}</span>
-                <span className="text-xs text-slate-400 flex-shrink-0 ml-auto">{a.size}</span>
+                {a.webUrl ? (
+                  <a href={a.webUrl} target="_blank" rel="noreferrer" className="truncate hover:underline" style={{ color: BRAND.accent }}>{a.name}</a>
+                ) : (
+                  <span className="truncate">{a.name}</span>
+                )}
+                {a.size && <span className="text-xs text-slate-400 flex-shrink-0 ml-auto">{a.size}</span>}
               </li>
             ))}
           </ul>
@@ -2291,34 +2295,53 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
     const today = new Date().toISOString().slice(0, 10);
     setSaving(c.id);
     setEditing(null);
-    // 화면은 먼저 낙관적으로 갱신하고, SharePoint 저장은 뒤에서 진행 (실패 시 아래에서 되돌림)
-    setControls((prev) =>
-      prev.map((x) => (x.id === c.id ? { ...x, status: "submitted_self", selfRisk: draft.risk, selfComment: draft.comment, selfCommentEn: draft.comment, selfDate: today, actualSample: draft.sampleSize, attachments: draft.attachments } : x))
-    );
     try {
-      const fields = {
-        Title: `ICS-${c.year}-${c.code}`,
-        ControlId: c.code,
-        Year: c.year,
-        RequesterEmail: c.accessor,
+      // 1) 요청 항목이 아직 없으면 먼저 만들어서 SharePoint 아이템 ID를 확보 (첨부파일 업로드 폴더명으로 사용)
+      let spId = c.requestSpId;
+      if (!spId) {
+        const created = await icsCreateItem(ICS_LISTS.requests, {
+          Title: `ICS-${c.year}-${c.code}`,
+          ControlId: c.code,
+          Year: c.year,
+          RequesterEmail: c.accessor,
+          RequestDate: new Date().toISOString(),
+          Status: "not_started",
+        });
+        spId = created.id;
+      }
+
+      // 2) 아직 업로드 안 된(webUrl 없는) 첨부만 실제 업로드, 이미 업로드된 것은 그대로 재사용
+      const finalAttachments = [];
+      for (const att of draft.attachments || []) {
+        if (att.webUrl) {
+          finalAttachments.push({ name: att.name, webUrl: att.webUrl });
+        } else if (att.file) {
+          const uploaded = await icsUploadAttachment(spId, att.file);
+          finalAttachments.push({ name: att.file.name, webUrl: uploaded.webUrl });
+        }
+      }
+      const attachedFilesField = finalAttachments.map((a) => `${a.name}|${a.webUrl}`).join(";");
+
+      // 3) 평가 내용 + 첨부파일 목록을 함께 저장
+      await icsUpdateItem(ICS_LISTS.requests, spId, {
         Status: "submitted_self",
         SelfRisk: draft.risk,
         SelfCommentKo: draft.comment,
         SelfCommentEn: draft.comment,
         SelfDate: new Date().toISOString(),
         SampleCount: draft.sampleSize,
-      };
-      if (c.requestSpId) {
-        await icsUpdateItem(ICS_LISTS.requests, c.requestSpId, fields);
-      } else {
-        fields.RequestDate = new Date().toISOString();
-        const created = await icsCreateItem(ICS_LISTS.requests, fields);
-        setControls((prev) => prev.map((x) => (x.id === c.id ? { ...x, requestSpId: created.id } : x)));
-      }
+        AttachedFiles: attachedFilesField,
+      });
+
+      setControls((prev) =>
+        prev.map((x) =>
+          x.id === c.id
+            ? { ...x, requestSpId: spId, status: "submitted_self", selfRisk: draft.risk, selfComment: draft.comment, selfCommentEn: draft.comment, selfDate: today, actualSample: draft.sampleSize, attachments: finalAttachments }
+            : x
+        )
+      );
       addLog(c.accessor, "submit_self", c.code, c.name, c.nameEn);
     } catch (e) {
-      // 저장 실패 시 화면을 되돌리고 사용자에게 알림 (첨부파일은 SharePoint 미연동 상태라 로컬에만 남음)
-      setControls((prev) => prev.map((x) => (x.id === c.id ? { ...x, status: c.status, selfRisk: c.selfRisk, selfComment: c.selfComment, selfCommentEn: c.selfCommentEn, selfDate: c.selfDate, actualSample: c.actualSample } : x)));
       alert("SharePoint 저장에 실패했습니다: " + e.message);
     } finally {
       setSaving(null);
@@ -2424,7 +2447,8 @@ function SelfAssessForm({ control, draft, setDraft, onCancel, onSubmit }) {
   function handleFiles(e) {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
-    const newAttachments = files.map((f) => ({ name: f.name, size: formatBytes(f.size) }));
+    // file 원본은 실제 업로드(icsUploadAttachment) 시 필요, 이미 업로드된 기존 첨부(webUrl 있음)와 구분하는 용도
+    const newAttachments = files.map((f) => ({ name: f.name, size: formatBytes(f.size), file: f }));
     setDraft({ ...draft, attachments: [...(draft.attachments || []), ...newAttachments] });
     e.target.value = "";
   }
@@ -2945,8 +2969,12 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived }) 
                       {c.attachments.map((a, i) => (
                         <li key={i} className="flex items-center gap-2 text-xs text-slate-600 bg-white border border-slate-100 rounded-lg px-3 py-1.5">
                           <Paperclip size={12} className="text-slate-400 flex-shrink-0" />
-                          <span className="truncate">{a.name}</span>
-                          <span className="text-slate-400 flex-shrink-0 ml-auto">{a.size}</span>
+                          {a.webUrl ? (
+                            <a href={a.webUrl} target="_blank" rel="noreferrer" className="truncate hover:underline" style={{ color: BRAND.accent }}>{a.name}</a>
+                          ) : (
+                            <span className="truncate">{a.name}</span>
+                          )}
+                          {a.size && <span className="text-slate-400 flex-shrink-0 ml-auto">{a.size}</span>}
                         </li>
                       ))}
                     </ul>
@@ -4495,6 +4523,34 @@ async function icsListAll(listName, extraQuery = "") {
   return items;
 }
 
+// AttachedFiles 문서 라이브러리(다른 APS 시스템들과 동일한 공용 라이브러리)의 driveId를 이름으로 찾아 캐싱.
+// GW에서 겪었던 문제(첫 번째 드라이브를 그냥 써버려서 잘못된 드라이브로 업로드되던 버그)를 피하려고
+// 반드시 name === 'AttachedFiles'로 정확히 매칭한다.
+let _icsAttachedFilesDriveId = null;
+async function getIcsAttachedFilesDriveId() {
+  if (_icsAttachedFilesDriveId) return _icsAttachedFilesDriveId;
+  const token = await getGraphToken();
+  const drivesData = await apiGet(`/sites/${_siteId}/drives`, token);
+  const drive = (drivesData.value || []).find((d) => d.name === "AttachedFiles");
+  if (!drive) throw new Error("AttachedFiles 문서 라이브러리를 찾을 수 없습니다.");
+  _icsAttachedFilesDriveId = drive.id;
+  return _icsAttachedFilesDriveId;
+}
+
+// ICS_Requests_AttachedFiles/{requestItemId}/{파일명} 경로에 업로드하고 webUrl을 돌려준다.
+// (BP_Requests/GW_Requests와 동일 패턴: filename|webUrl 쌍으로 목록 필드에 이어 붙여 저장)
+async function icsUploadAttachment(requestItemId, file) {
+  const token = await getGraphToken();
+  const driveId = await getIcsAttachedFilesDriveId();
+  const buf = await file.arrayBuffer();
+  const res = await fetch(
+    `${GRAPH}/drives/${driveId}/root:/ICS_Requests_AttachedFiles/${requestItemId}/${encodeURIComponent(file.name)}:/content`,
+    { method: "PUT", headers: { Authorization: "Bearer " + token, "Content-Type": file.type || "application/octet-stream" }, body: buf }
+  );
+  if (!res.ok) throw new Error(`파일 업로드 실패: ${file.name} (${res.status})`);
+  return res.json(); // { webUrl, name, ... }
+}
+
 async function icsCreateItem(listName, fields) {
   const token = await getGraphToken();
   const listId = await getIcsListId(listName);
@@ -4579,6 +4635,12 @@ async function loadIcsControls() {
     match.fsaReviewComment = f.FsaReviewCommentKo || "";
     match.fsaReviewCommentEn = f.FsaReviewCommentEn || "";
     match.fsaReviewDate = f.FsaReviewDate ? String(f.FsaReviewDate).slice(0, 10) : null;
+    match.attachments = f.AttachedFiles
+      ? f.AttachedFiles.split(";").filter(Boolean).map((pair) => {
+          const [name, webUrl] = pair.split("|");
+          return { name, webUrl };
+        })
+      : [];
   });
 
   return controls;
