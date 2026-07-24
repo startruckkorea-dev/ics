@@ -4149,12 +4149,22 @@ function setByKeyPath(obj, path, value) {
   node[parts[parts.length - 1]] = value;
 }
 
+// system_config_final.xlsx / ics_ui_strings.xlsx가 들어있는 문서 라이브러리(driveId)를 한 번만 조회해서 캐싱.
+// loadIcsConfig와 loadIcsUiStrings가 같은 라이브러리를 각자 따로 조회하던 중복 호출을 줄인다.
+let _icsDocDriveId = null;
+async function getIcsDocDriveId(token) {
+  if (_icsDocDriveId) return _icsDocDriveId;
+  const drives = await apiGet(`/sites/${_siteId}/drives`, token);
+  const docDrive = (drives.value || []).find(d => ["Documents", "문서", "Shared Documents"].includes(d.name)) || (drives.value || [])[0];
+  _icsDocDriveId = docDrive.id;
+  return _icsDocDriveId;
+}
+
 // 화면에 보이는 모든 문구(STR.ko/STR.en)를 ics_ui_strings.xlsx(같은 문서 라이브러리, system_config_final.xlsx 옆)에서 덮어쓴다.
 // 파일이 없거나 일부 KEY만 있어도 문제없음 — 못 찾은 문구는 코드 내 기본 문구가 그대로 쓰인다 (실패해도 화면이 깨지지 않음).
 async function loadIcsUiStrings(token) {
-  const drives = await apiGet(`/sites/${_siteId}/drives`, token);
-  const docDrive = (drives.value || []).find(d => ["Documents", "문서", "Shared Documents"].includes(d.name)) || (drives.value || [])[0];
-  const res = await fetch(`${GRAPH}/drives/${docDrive.id}/root:/ics_ui_strings.xlsx:/content`, { headers: { Authorization: "Bearer " + token } });
+  const docDriveId = await getIcsDocDriveId(token);
+  const res = await fetch(`${GRAPH}/drives/${docDriveId}/root:/ics_ui_strings.xlsx:/content`, { headers: { Authorization: "Bearer " + token } });
   if (!res.ok) throw new Error(`ics_ui_strings.xlsx not found (${res.status})`);
   const buf = await res.arrayBuffer();
   const wb = XLSX.read(buf, { type: "array" });
@@ -4173,9 +4183,8 @@ async function loadIcsUiStrings(token) {
 }
 
 async function loadIcsConfig(token) {
-  const drives = await apiGet(`/sites/${_siteId}/drives`, token);
-  const docDrive = (drives.value || []).find(d => ["Documents", "문서", "Shared Documents"].includes(d.name)) || (drives.value || [])[0];
-  const res = await fetch(`${GRAPH}/drives/${docDrive.id}/root:/system_config_final.xlsx:/content`, { headers: { Authorization: "Bearer " + token } });
+  const docDriveId = await getIcsDocDriveId(token);
+  const res = await fetch(`${GRAPH}/drives/${docDriveId}/root:/system_config_final.xlsx:/content`, { headers: { Authorization: "Bearer " + token } });
   if (!res.ok) throw new Error(`system_config_final.xlsx not found in STK-DB (${res.status})`);
   const buf = await res.arrayBuffer();
   const wb = XLSX.read(buf, { type: "array" });
@@ -4258,27 +4267,38 @@ async function icsBoot(account) {
   document.getElementById("login-screen").style.display = "none";
   document.getElementById("loading").style.display = "flex";
   let configLoadFailed = false;
-  let token = null;
+  let loadedControls = null;
+  let loadedLog = null;
   try {
     const tokenRes = await msalApp.acquireTokenSilent({ scopes: MSAL_SCOPES, account });
-    token = tokenRes.accessToken;
+    const token = tokenRes.accessToken;
     const siteRes = await apiGet(`/sites/${SITE_PATH}`, token);
     _siteId = siteRes.id;
-    await loadIcsConfig(token);
+
+    // 서로 의존하지 않는 4개 로드를 병렬로 실행해서 로그인 대기 시간을 줄인다 (예전엔 하나씩 순서대로 기다렸음).
+    const [configResult, uiStringsResult, controlsResult, logResult] = await Promise.allSettled([
+      loadIcsConfig(token),
+      loadIcsUiStrings(token),
+      loadIcsControls(),
+      loadIcsLog(),
+    ]);
+
+    if (configResult.status === "rejected") throw configResult.reason;
+
+    // UI 문구 커스터마이징은 선택 사항이라 실패해도 앱 진행을 막지 않는다 (파일이 아직 없으면 코드 내 기본 문구 사용).
+    if (uiStringsResult.status === "rejected") {
+      console.warn("[ICS] ics_ui_strings.xlsx 로드 실패, 코드 내 기본 문구로 진행:", uiStringsResult.reason.message);
+    }
+    // 통제 항목/로그 로드 실패 시에도 화면 자체는 뜨게 하고(빈 목록), 콘솔에만 경고를 남긴다.
+    if (controlsResult.status === "fulfilled") loadedControls = controlsResult.value;
+    else console.warn("[ICS] 통제 항목 로드 실패:", controlsResult.reason.message);
+    if (logResult.status === "fulfilled") loadedLog = logResult.value;
+    else console.warn("[ICS] 활동 로그 로드 실패:", logResult.reason.message);
   } catch (e) {
     // INITIAL_USERS를 코드에 하드코딩해두지 않으므로, 여기서 실패하면 사용자 목록이 비어있는 채로 남는다.
     // 그대로 진행하면 "권한 없음"으로 오인되니, 실제 원인(설정 파일 로드 실패)을 화면에 명확히 알린다.
     console.warn("[ICS] system_config_final.xlsx 로드 실패:", e.message);
     configLoadFailed = true;
-  }
-
-  // 화면 문구(STR) 커스터마이징은 선택 사항이라 실패해도 앱 진행을 막지 않는다 (파일이 아직 없으면 코드 내 기본 문구 사용).
-  if (token && _siteId) {
-    try {
-      await loadIcsUiStrings(token);
-    } catch (e) {
-      console.warn("[ICS] ics_ui_strings.xlsx 로드 실패, 코드 내 기본 문구로 진행:", e.message);
-    }
   }
 
   if (configLoadFailed || INITIAL_USERS.length === 0) {
@@ -4298,15 +4318,6 @@ async function icsBoot(account) {
   }
 
   window.icsSignOut = () => msalApp.logoutRedirect();
-
-  let loadedControls = null;
-  let loadedLog = null;
-  try {
-    [loadedControls, loadedLog] = await Promise.all([loadIcsControls(), loadIcsLog()]);
-  } catch (e) {
-    // SharePoint 통제 데이터 로드 실패 시, 코드 내 목업 데이터로 안전하게 대체 실행 (config 로드와 동일한 폴백 정책)
-    console.warn("[ICS] 통제 항목 로드 실패, 코드 내 목업 데이터로 진행:", e.message);
-  }
 
   const loadingEl = document.getElementById("loading");
   if (loadingEl) loadingEl.remove();
