@@ -3298,9 +3298,10 @@ function FinalReportPage({ controls, currentUser, activeYear, yearConfirmation, 
         ].map(({ role, allowed, info }) => {
           // CFO는 RD가 먼저 취소(=RD 미컨펌 상태)해야만 자신의 컨펌을 취소할 수 있음. RD는 제약 없음.
           const cancelBlocked = role === "cfo" && !!yearConfirmation.rd;
+          const designatedUser = users.find((u) => u.role === role); // system_config_final.xlsx의 ICS_CFO/ICS_RD로 지정된 실제 담당자
           return (
           <div key={role} className="bg-white rounded-xl border border-slate-100 p-5">
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center justify-between mb-1">
               <h3 className="text-sm font-semibold text-slate-700">{t(`roles.${role}`)} {t("finalReport.confirmTitle")}</h3>
               {info ? (
                 <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={{ backgroundColor: "#E4F3EC", color: "#166A43" }}>
@@ -3312,6 +3313,10 @@ function FinalReportPage({ controls, currentUser, activeYear, yearConfirmation, 
                 </span>
               )}
             </div>
+            <p className="text-[11px] text-slate-400 mb-3">
+              {lang === "en" ? "Designated approver: " : "지정된 승인자: "}
+              {designatedUser ? designatedUser.email : (lang === "en" ? "not set in config" : "config에 미설정")}
+            </p>
             {info ? (
               <div>
                 <p className="text-sm text-slate-500 mb-2">{personByEmail(info.by, lang, users)} · {info.at}</p>
