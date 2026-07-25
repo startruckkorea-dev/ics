@@ -1932,85 +1932,106 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
     XLSX.writeFile(wb, "internal_control_upload_template.xlsx");
   }
 
-  function handleUploadFile(e) {
+  async function handleUploadFile(e) {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      try {
-        const data = new Uint8Array(evt.target.result);
-        const wb = XLSX.read(data, { type: "array" });
-        const sheet = wb.Sheets[wb.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
-        let added = 0;
-        let updated = 0;
-        let skipped = 0;
-        setControls((prev) => {
-          let next = [...prev];
-          rows.forEach((row) => {
-            const code = String(row["코드"] || "").trim();
-            const name = String(row["통제명"] || "").trim();
-            const dept = findDeptByLabel(row["부서"], departments);
-            const cat = findCatByLabel(row["COSO영역"]);
-            const frequency = findFreqByLabel(row["점검빈도"]);
-            const importance = findImportanceByLabel(row["중요도"]);
-            const accessor = resolvePersonEmail(row["1차담당자"], users);
-            const reviewer = resolvePersonEmail(row["2차검토자"], users);
-            if (!code || !name || !dept || !cat || !frequency || !importance || !accessor || !reviewer) {
-              skipped++;
-              return;
-            }
-            const payload = {
-              code,
-              dept: dept.id,
-              cat: cat.id,
-              name,
-              nameEn: String(row["통제명(영문)"] || "").trim() || name,
-              desc: String(row["설명"] || "").trim(),
-              descEn: String(row["설명(영문)"] || "").trim(),
-              accessor,
-              reviewer,
-              frequency: frequency.id,
-              importance: importance.id,
-              sampleSize: recommendedSample(importance.id, frequency.id),
-            };
-            const existingIdx = next.findIndex((c) => c.year === year && c.code === code);
-            if (existingIdx >= 0) {
-              next[existingIdx] = { ...next[existingIdx], ...payload };
-              updated++;
-            } else {
-              next = [
-                {
-                  id: uid(),
-                  ...payload,
-                  year,
-                  status: "not_started",
-                  selfRisk: null, selfComment: "", selfCommentEn: "", selfDate: null,
-                  reviewRisk: null, reviewComment: "", reviewCommentEn: "", reviewDate: null,
-                  history: [], actualSample: null, attachments: [],
-                  fsaStatus: "not_started", fsaRisk: null, fsaComment: "", fsaCommentEn: "", fsaDate: null, fsaReviewRisk: null, fsaReviewComment: "", fsaReviewCommentEn: "", fsaReviewDate: null, pendingEdit: null,
-                },
-                ...next,
-              ];
-              added++;
-            }
-          });
-          return next;
-        });
-        addLog(
-          currentUser.email,
-          "bulk_upload",
-          "-",
-          `신규 ${added}건 · 수정 ${updated}건 · 오류 ${skipped}건`,
-          `${added} added · ${updated} updated · ${skipped} skipped`
-        );
-        setUploadResult({ added, updated, skipped });
-      } catch (err) {
-        setUploadResult({ error: true });
-      }
-    };
-    reader.readAsArrayBuffer(file);
     e.target.value = "";
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(new Uint8Array(buf), { type: "array" });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+
+      let skipped = 0;
+      const creates = [];
+      const updates = [];
+
+      rows.forEach((row) => {
+        const code = String(row["코드"] || "").trim();
+        const name = String(row["통제명"] || "").trim();
+        const dept = findDeptByLabel(row["부서"], departments);
+        const cat = findCatByLabel(row["COSO영역"]);
+        const frequency = findFreqByLabel(row["점검빈도"]);
+        const importance = findImportanceByLabel(row["중요도"]);
+        const accessor = resolvePersonEmail(row["1차담당자"], users);
+        const reviewer = resolvePersonEmail(row["2차검토자"], users);
+        if (!code || !name || !dept || !cat || !frequency || !importance || !accessor || !reviewer) {
+          skipped++;
+          return;
+        }
+        const nameEn = String(row["통제명(영문)"] || "").trim() || name;
+        const desc = String(row["설명"] || "").trim();
+        const descEn = String(row["설명(영문)"] || "").trim();
+        const payload = {
+          code, dept: dept.id, cat: cat.id, name, nameEn, desc, descEn,
+          accessor, reviewer, frequency: frequency.id, importance: importance.id,
+          sampleSize: recommendedSample(importance.id, frequency.id),
+        };
+        const fields = {
+          Title: code, Dept: dept.id, Category: cat.id, NameKo: name, NameEn: nameEn,
+          DescKo: desc, DescEn: descEn, AccessorEmail: accessor, ReviewerEmail: reviewer,
+          Year: year, Frequency: frequency.id, Importance: importance.id,
+        };
+        const existing = allControls.find((c) => c.year === year && c.code === code);
+        if (existing) updates.push({ localId: existing.id, spId: existing.spId, payload, fields });
+        else creates.push({ payload, fields });
+      });
+
+      // SharePoint 스로틀링 방지를 위해 순차적으로 반영 (동시 다발 요청 지양)
+      let added = 0, updated = 0;
+      const createdResults = [];
+      for (const item of creates) {
+        try {
+          const created = await icsCreateItem(ICS_LISTS.controls, item.fields);
+          createdResults.push({ ...item, spId: created.id });
+          added++;
+        } catch (err) {
+          skipped++;
+        }
+      }
+      const updatedResults = [];
+      for (const item of updates) {
+        try {
+          if (item.spId) await icsUpdateItem(ICS_LISTS.controls, item.spId, item.fields);
+          updatedResults.push(item);
+          updated++;
+        } catch (err) {
+          skipped++;
+        }
+      }
+
+      setControls((prev) => {
+        let next = [...prev];
+        updatedResults.forEach(({ localId, payload }) => {
+          const idx = next.findIndex((c) => c.id === localId);
+          if (idx >= 0) next[idx] = { ...next[idx], ...payload };
+        });
+        createdResults.forEach(({ payload, spId }) => {
+          next = [
+            {
+              id: uid(), spId, ...payload, year, status: "not_started",
+              selfRisk: null, selfComment: "", selfCommentEn: "", selfDate: null,
+              reviewRisk: null, reviewComment: "", reviewCommentEn: "", reviewDate: null,
+              history: [], actualSample: null, attachments: [],
+              fsaStatus: "not_started", fsaRisk: null, fsaComment: "", fsaCommentEn: "", fsaDate: null, fsaReviewRisk: null, fsaReviewComment: "", fsaReviewCommentEn: "", fsaReviewDate: null, pendingEdit: null,
+            },
+            ...next,
+          ];
+        });
+        return next;
+      });
+
+      addLog(
+        currentUser.email,
+        "bulk_upload",
+        "-",
+        `신규 ${added}건 · 수정 ${updated}건 · 오류 ${skipped}건`,
+        `${added} added · ${updated} updated · ${skipped} skipped`
+      );
+      setUploadResult({ added, updated, skipped });
+    } catch (err) {
+      setUploadResult({ error: true });
+    }
   }
 
   function openAdd() {
@@ -2022,38 +2043,68 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
     setForm({ code: src.code, dept: src.dept, cat: src.cat, name: src.name, desc: src.desc, accessor: src.accessor, reviewer: src.reviewer, frequency: src.frequency, importance: src.importance });
     setEditingId(c.id);
   }
-  function save() {
+  async function save() {
     if (!form.code.trim() || !form.name.trim()) return;
-    if (editingId) {
-      if (isAdmin) {
-        setControls((prev) => prev.map((c) => (c.id === editingId ? { ...c, ...form, sampleSize: recommendedSample(form.importance, form.frequency), pendingEdit: null } : c)));
-        addLog(currentUser.email, "edit_control", form.code, form.name, form.name);
+    const fields = {
+      Title: form.code,
+      Dept: form.dept,
+      Category: form.cat,
+      NameKo: form.name,
+      NameEn: form.name,
+      DescKo: form.desc,
+      DescEn: form.desc,
+      AccessorEmail: form.accessor,
+      ReviewerEmail: form.reviewer,
+      Year: year,
+      Frequency: form.frequency,
+      Importance: form.importance,
+    };
+    try {
+      if (editingId) {
+        const target = allControls.find((c) => c.id === editingId);
+        if (isAdmin) {
+          if (target?.spId) await icsUpdateItem(ICS_LISTS.controls, target.spId, fields);
+          setControls((prev) => prev.map((c) => (c.id === editingId ? { ...c, ...form, sampleSize: recommendedSample(form.importance, form.frequency), pendingEdit: null } : c)));
+          addLog(currentUser.email, "edit_control", form.code, form.name, form.name);
+          showToast(lang === "en" ? "Control item updated." : "통제 항목이 수정됐습니다.");
+        } else {
+          // Accessor의 수정은 SharePoint에 즉시 반영되지 않고, 검토자(또는 관리자)의 승인 후 반영된다 (2차 검토 화면에서 처리).
+          const today = new Date().toISOString().slice(0, 10);
+          setControls((prev) =>
+            prev.map((c) => (c.id === editingId ? { ...c, pendingEdit: { ...form, requestedBy: currentUser.email, requestedAt: today } } : c))
+          );
+          addLog(currentUser.email, "edit_request", form.code, form.name, form.name);
+          showToast(lang === "en" ? "Change request submitted for approval." : "수정 요청이 제출됐습니다 (승인 대기).");
+        }
       } else {
-        // Accessor의 수정은 즉시 반영되지 않고, 검토자(또는 관리자)의 승인을 받은 뒤 반영된다.
-        const today = new Date().toISOString().slice(0, 10);
-        setControls((prev) =>
-          prev.map((c) => (c.id === editingId ? { ...c, pendingEdit: { ...form, requestedBy: currentUser.email, requestedAt: today } } : c))
-        );
-        addLog(currentUser.email, "edit_request", form.code, form.name, form.name);
+        const created = await icsCreateItem(ICS_LISTS.controls, fields);
+        const newControl = {
+          id: uid(), spId: created.id, ...form, status: "not_started", year,
+          selfRisk: null, selfComment: "", selfCommentEn: "", selfDate: null,
+          reviewRisk: null, reviewComment: "", reviewCommentEn: "", reviewDate: null, history: [],
+          sampleSize: recommendedSample(form.importance, form.frequency), actualSample: null, attachments: [],
+          fsaStatus: "not_started", fsaRisk: null, fsaComment: "", fsaCommentEn: "", fsaDate: null, fsaReviewRisk: null, fsaReviewComment: "", fsaReviewCommentEn: "", fsaReviewDate: null, pendingEdit: null,
+        };
+        setControls((prev) => [newControl, ...prev]);
+        addLog(currentUser.email, "add_control", form.code, form.name, form.name);
+        showToast(lang === "en" ? "Control item added." : "통제 항목이 추가됐습니다.");
       }
-    } else {
-      const newControl = {
-        id: uid(), ...form, status: "not_started", year,
-        selfRisk: null, selfComment: "", selfCommentEn: "", selfDate: null,
-        reviewRisk: null, reviewComment: "", reviewCommentEn: "", reviewDate: null, history: [],
-        sampleSize: recommendedSample(form.importance, form.frequency), actualSample: null, attachments: [],
-        fsaStatus: "not_started", fsaRisk: null, fsaComment: "", fsaCommentEn: "", fsaDate: null, fsaReviewRisk: null, fsaReviewComment: "", fsaReviewCommentEn: "", fsaReviewDate: null, pendingEdit: null,
-      };
-      setControls((prev) => [newControl, ...prev]);
-      addLog(currentUser.email, "add_control", form.code, form.name, form.name);
+      setForm(null);
+      setEditingId(null);
+    } catch (e) {
+      alert("SharePoint 저장에 실패했습니다: " + e.message);
     }
-    setForm(null);
-    setEditingId(null);
   }
-  function remove(c) {
-    setControls((prev) => prev.filter((x) => x.id !== c.id));
-    addLog(currentUser.email, "delete_control", c.code, c.name, c.nameEn);
+  async function remove(c) {
     setConfirmDelete(null);
+    try {
+      if (c.spId) await icsDeleteItem(ICS_LISTS.controls, c.spId);
+      setControls((prev) => prev.filter((x) => x.id !== c.id));
+      addLog(currentUser.email, "delete_control", c.code, c.name, c.nameEn);
+      showToast(lang === "en" ? "Control item deleted." : "통제 항목이 삭제됐습니다.");
+    } catch (e) {
+      alert("SharePoint 삭제에 실패했습니다: " + e.message);
+    }
   }
 
   return (
@@ -2907,19 +2958,41 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, sh
   const done = controls.filter((c) => (c.status === "completed" || c.status === "returned") && (isAdmin || c.reviewer === currentUser.email));
   const pendingEdits = controls.filter((c) => c.pendingEdit && (isAdmin || c.reviewer === currentUser.email));
 
-  function approveEdit(c) {
-    setControls((prev) =>
-      prev.map((x) =>
-        x.id === c.id
-          ? { ...x, ...x.pendingEdit, sampleSize: recommendedSample(x.pendingEdit.importance, x.pendingEdit.frequency), pendingEdit: null }
-          : x
-      )
-    );
-    addLog(currentUser.email, "edit_approved", c.code, c.pendingEdit.name, c.pendingEdit.name);
+  async function approveEdit(c) {
+    const p = c.pendingEdit;
+    try {
+      if (c.spId) {
+        await icsUpdateItem(ICS_LISTS.controls, c.spId, {
+          Title: p.code,
+          Dept: p.dept,
+          Category: p.cat,
+          NameKo: p.name,
+          NameEn: p.name,
+          DescKo: p.desc,
+          DescEn: p.desc,
+          AccessorEmail: p.accessor,
+          ReviewerEmail: p.reviewer,
+          Frequency: p.frequency,
+          Importance: p.importance,
+        });
+      }
+      setControls((prev) =>
+        prev.map((x) =>
+          x.id === c.id
+            ? { ...x, ...p, sampleSize: recommendedSample(p.importance, p.frequency), pendingEdit: null }
+            : x
+        )
+      );
+      addLog(currentUser.email, "edit_approved", c.code, p.name, p.name);
+      if (showToast) showToast(lang === "en" ? "Change approved." : "변경이 승인됐습니다.");
+    } catch (e) {
+      alert("SharePoint 저장에 실패했습니다: " + e.message);
+    }
   }
   function rejectEdit(c) {
     setControls((prev) => prev.map((x) => (x.id === c.id ? { ...x, pendingEdit: null } : x)));
     addLog(currentUser.email, "edit_rejected", c.code, c.name, c.nameEn);
+    if (showToast) showToast(lang === "en" ? "Change rejected." : "변경이 반려됐습니다.");
   }
 
   function startEdit(c) {
@@ -4345,6 +4418,19 @@ async function icsUpdateItem(listName, itemId, fields) {
     throw new Error(`${listName} 수정 실패 (${res.status}): ${detail.slice(0, 300)}`);
   }
   return res.json();
+}
+
+async function icsDeleteItem(listName, itemId) {
+  const token = await getGraphToken();
+  const listId = await getIcsListId(listName);
+  const res = await fetch(`${GRAPH}/sites/${_siteId}/lists/${listId}/items/${itemId}`, {
+    method: "DELETE",
+    headers: { Authorization: "Bearer " + token },
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(`${listName} 삭제 실패 (${res.status}): ${detail.slice(0, 300)}`);
+  }
 }
 
 
