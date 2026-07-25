@@ -2205,6 +2205,18 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
 /* 1차 자가평가                                                         */
 /* ------------------------------------------------------------------ */
 
+function formatDateTime(iso, lang) {
+  if (!iso) return "-";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return String(iso).slice(0, 10); // 옛 데이터(날짜만 저장된 경우) 폴백
+  const y = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return lang === "en" ? `${y}-${mo}-${day} ${hh}:${mm}` : `${y}년 ${mo}월 ${day}일 ${hh}:${mm}`;
+}
+
 function formatBytes(bytes) {
   if (bytes < 1024) return `${bytes}B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
@@ -3322,7 +3334,8 @@ function FinalReportPage({ controls, currentUser, activeYear, yearConfirmation, 
             </p>
             {info ? (
               <div>
-                <p className="text-sm text-slate-500 mb-2">{personByEmail(info.by, lang, users)} · {info.at}</p>
+                <p className="text-sm text-slate-500 mb-0.5">{lang === "en" ? "Approver: " : "결재자: "}{personByEmail(info.by, lang, users)}</p>
+                <p className="text-sm text-slate-500 mb-2">{lang === "en" ? "Approved at: " : "결재 시간: "}{formatDateTime(info.at, lang)}</p>
                 <button
                   onClick={() => {
                     if (!allowed) {
@@ -3805,7 +3818,7 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
       const key = y + "_" + role;
       if (decided[key]) return; // 이미 이 연도·역할의 최신 이벤트를 확정함
       decided[key] = true;
-      result[y][role] = action === "confirm" ? { by: entry.actor, at: entry.date } : null;
+      result[y][role] = action === "confirm" ? { by: entry.actor, at: entry.dateTime || entry.date } : null;
     });
     return result;
   });
@@ -3856,10 +3869,10 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
   }
 
   function confirmYear(role) {
-    const today = new Date().toISOString().slice(0, 10);
+    const nowIso = new Date().toISOString();
     setYearConfirmations((prev) => ({
       ...prev,
-      [activeYear]: { ...(prev[activeYear] || { cfo: null, rd: null }), [role]: { by: currentUser.email, at: today } },
+      [activeYear]: { ...(prev[activeYear] || { cfo: null, rd: null }), [role]: { by: currentUser.email, at: nowIso } },
     }));
     addLog(currentUser.email, role === "cfo" ? "cfo_confirm" : "rd_confirm", "-", activeYear, activeYear);
   }
@@ -4269,6 +4282,7 @@ async function loadIcsLog() {
       return {
         id: it.id,
         date: created ? String(created).slice(0, 10) : new Date().toISOString().slice(0, 10),
+        dateTime: created || new Date().toISOString(), // 결재 시각(시:분까지) 표시용 전체 타임스탬프
         actor: f.ActorEmail || "",
         actionKey: f.Title || "edit_control",
         code: f.ControlId || "-",
