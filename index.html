@@ -189,6 +189,8 @@ const ACTION_LABELS = {
   bulk_upload: { ko: "엑셀 일괄 업로드", en: "Bulk upload from Excel" },
   cfo_confirm: { ko: "CFO 최종 결과 컨펌", en: "CFO confirmed final results" },
   rd_confirm: { ko: "RD 최종 결과 컨펌", en: "RD confirmed final results" },
+  cfo_cancel: { ko: "CFO 최종 결과 컨펌 취소", en: "CFO cancelled final confirmation" },
+  rd_cancel: { ko: "RD 최종 결과 컨펌 취소", en: "RD cancelled final confirmation" },
   reset_departments: { ko: "부서 전체 초기화", en: "All departments reset" },
   reset_users: { ko: "사용자 및 권한 전체 초기화", en: "All users & permissions reset" },
   reset_controls: { ko: "통제 항목 전체 초기화", en: "All control items reset" },
@@ -3161,7 +3163,7 @@ function HistoryPage({ controls, log }) {
 /* 최종 결과 보고 (CFO/RD 컨펌)                                          */
 /* ------------------------------------------------------------------ */
 
-function FinalReportPage({ controls, currentUser, activeYear, yearConfirmation, confirmYear, showToast }) {
+function FinalReportPage({ controls, currentUser, activeYear, yearConfirmation, confirmYear, cancelYearConfirm, showToast }) {
   const { lang, t } = useLang();
   const { departments, users } = useAppData();
   const [confirmingRole, setConfirmingRole] = useState(null);
@@ -3293,7 +3295,10 @@ function FinalReportPage({ controls, currentUser, activeYear, yearConfirmation, 
         {[
           { role: "cfo", allowed: isCfo, info: yearConfirmation.cfo },
           { role: "rd", allowed: isRd, info: yearConfirmation.rd },
-        ].map(({ role, allowed, info }) => (
+        ].map(({ role, allowed, info }) => {
+          // CFO는 RD가 먼저 취소(=RD 미컨펌 상태)해야만 자신의 컨펌을 취소할 수 있음. RD는 제약 없음.
+          const cancelBlocked = role === "cfo" && !!yearConfirmation.rd;
+          return (
           <div key={role} className="bg-white rounded-xl border border-slate-100 p-5">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-semibold text-slate-700">{t(`roles.${role}`)} {t("finalReport.confirmTitle")}</h3>
@@ -3308,7 +3313,28 @@ function FinalReportPage({ controls, currentUser, activeYear, yearConfirmation, 
               )}
             </div>
             {info ? (
-              <p className="text-sm text-slate-500">{personByEmail(info.by, lang, users)} · {info.at}</p>
+              <div>
+                <p className="text-sm text-slate-500 mb-2">{personByEmail(info.by, lang, users)} · {info.at}</p>
+                {allowed && (
+                  <button
+                    onClick={() => {
+                      if (cancelBlocked) return;
+                      cancelYearConfirm(role);
+                      showToast(lang === "en" ? "Confirmation cancelled." : "컨펌이 취소됐습니다.");
+                    }}
+                    disabled={cancelBlocked}
+                    className="w-full py-2 rounded-lg text-xs font-medium border transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    style={{ borderColor: "#F0B8B4", color: "#C1352E" }}
+                  >
+                    {lang === "en" ? "Cancel confirmation" : "컨펌 취소"}
+                  </button>
+                )}
+                {cancelBlocked && (
+                  <p className="text-[11px] text-slate-400 mt-1.5">
+                    {lang === "en" ? "RD must cancel first before CFO can cancel." : "RD가 먼저 취소해야 CFO도 취소할 수 있습니다."}
+                  </p>
+                )}
+              </div>
             ) : allowed ? (
               <button
                 onClick={() => setConfirmingRole(role)}
@@ -3321,7 +3347,8 @@ function FinalReportPage({ controls, currentUser, activeYear, yearConfirmation, 
               <p className="text-sm text-slate-400">{t("finalReport.notYourRole")}</p>
             )}
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {!bothConfirmed && (
@@ -3445,6 +3472,10 @@ function SettingsPage({ currentUser, years, selectedYear, activeYear, startNewYe
   const [confirming, setConfirming] = useState(false);
   const nextYear = String(Number(activeYear) + 1);
 
+  function confirmStart() {
+    startNewYear(nextYear);
+    setConfirming(false);
+  }
 
   return (
     <div>
@@ -3731,18 +3762,22 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
   const isArchived = selectedYear !== activeYear;
 
   // CFO/RD의 연도별 최종 결과 컨펌 상태. 별도 저장 없이, 이미 SharePoint(ICS_Log)에 저장된
-  // cfo_confirm/rd_confirm 로그를 읽어서 복원한다 (addLog가 항상 ICS_Log에 실제로 기록하므로 새로고침해도 유지됨).
+  // cfo_confirm/rd_confirm(및 취소 시 cfo_cancel/rd_cancel) 로그를 읽어서 복원한다.
+  // ICS_Log는 최신순으로 로드되므로, 연도·역할별로 "처음 만나는(=가장 최근) 이벤트"만 채택한다.
   const [yearConfirmations, setYearConfirmations] = useState(() => {
     const result = { [activeYear]: { cfo: null, rd: null } };
+    const decided = {};
     (initialLog || []).forEach((entry) => {
-      if (entry.actionKey !== "cfo_confirm" && entry.actionKey !== "rd_confirm") return;
+      const m = /^(cfo|rd)_(confirm|cancel)$/.exec(entry.actionKey);
+      if (!m) return;
+      const role = m[1];
+      const action = m[2];
       const y = entry.name || activeYear; // addLog는 연도를 name/nameEn 자리(SharePoint Detail 필드)에 기록함
       if (!result[y]) result[y] = { cfo: null, rd: null };
-      const role = entry.actionKey === "cfo_confirm" ? "cfo" : "rd";
-      const existing = result[y][role];
-      if (!existing || entry.date > existing.at) {
-        result[y][role] = { by: entry.actor, at: entry.date };
-      }
+      const key = y + "_" + role;
+      if (decided[key]) return; // 이미 이 연도·역할의 최신 이벤트를 확정함
+      decided[key] = true;
+      result[y][role] = action === "confirm" ? { by: entry.actor, at: entry.date } : null;
     });
     return result;
   });
@@ -3799,6 +3834,15 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
       [activeYear]: { ...(prev[activeYear] || { cfo: null, rd: null }), [role]: { by: currentUser.email, at: today } },
     }));
     addLog(currentUser.email, role === "cfo" ? "cfo_confirm" : "rd_confirm", "-", activeYear, activeYear);
+  }
+
+  // 컨펌 취소. RD는 언제든 취소 가능하지만, CFO는 RD가 먼저 취소한 뒤(=RD 미컨펌 상태)에만 취소할 수 있다.
+  function cancelYearConfirm(role) {
+    setYearConfirmations((prev) => ({
+      ...prev,
+      [activeYear]: { ...(prev[activeYear] || { cfo: null, rd: null }), [role]: null },
+    }));
+    addLog(currentUser.email, role === "cfo" ? "cfo_cancel" : "rd_cancel", "-", activeYear, activeYear);
   }
 
   const currentYearConfirmation = yearConfirmations[activeYear] || { cfo: null, rd: null };
@@ -3959,6 +4003,7 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
                 activeYear={activeYear}
                 yearConfirmation={currentYearConfirmation}
                 confirmYear={confirmYear}
+                cancelYearConfirm={cancelYearConfirm}
                 showToast={showToast}
               />
             )}
