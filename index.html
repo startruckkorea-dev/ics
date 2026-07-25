@@ -1013,7 +1013,7 @@ const MENU_GROUPS = [
     { key: "permissions", icon: KeyRound, adminOnly: true },
   ] },
   { label: "executive", items: [
-    { key: "finalReport", icon: FileCheck2, roles: ["admin", "cfo", "rd"] },
+    { key: "finalReport", icon: FileCheck2 },
   ] },
 ];
 
@@ -3315,36 +3315,42 @@ function FinalReportPage({ controls, currentUser, activeYear, yearConfirmation, 
             {info ? (
               <div>
                 <p className="text-sm text-slate-500 mb-2">{personByEmail(info.by, lang, users)} · {info.at}</p>
-                {allowed && (
-                  <button
-                    onClick={() => {
-                      if (cancelBlocked) return;
-                      cancelYearConfirm(role);
-                      showToast(lang === "en" ? "Confirmation cancelled." : "컨펌이 취소됐습니다.");
-                    }}
-                    disabled={cancelBlocked}
-                    className="w-full py-2 rounded-lg text-xs font-medium border transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                    style={{ borderColor: "#F0B8B4", color: "#C1352E" }}
-                  >
-                    {lang === "en" ? "Cancel confirmation" : "컨펌 취소"}
-                  </button>
-                )}
-                {cancelBlocked && (
+                <button
+                  onClick={() => {
+                    if (!allowed) {
+                      alert(lang === "en" ? "You must be signed in with the CFO/RD account for this role to cancel." : "이 역할(CFO/RD)의 계정으로 로그인해야 취소할 수 있습니다.");
+                      return;
+                    }
+                    if (cancelBlocked) return;
+                    cancelYearConfirm(role);
+                    showToast(lang === "en" ? "Confirmation cancelled." : "컨펌이 취소됐습니다.");
+                  }}
+                  disabled={allowed && cancelBlocked}
+                  className="w-full py-2 rounded-lg text-xs font-medium border transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  style={{ borderColor: "#F0B8B4", color: "#C1352E" }}
+                >
+                  {lang === "en" ? "Cancel confirmation" : "컨펌 취소"}
+                </button>
+                {allowed && cancelBlocked && (
                   <p className="text-[11px] text-slate-400 mt-1.5">
                     {lang === "en" ? "RD must cancel first before CFO can cancel." : "RD가 먼저 취소해야 CFO도 취소할 수 있습니다."}
                   </p>
                 )}
               </div>
-            ) : allowed ? (
+            ) : (
               <button
-                onClick={() => setConfirmingRole(role)}
+                onClick={() => {
+                  if (!allowed) {
+                    alert(lang === "en" ? "You must be signed in with the CFO/RD account for this role to confirm." : "이 역할(CFO/RD)의 계정으로 로그인해야 컨펌할 수 있습니다.");
+                    return;
+                  }
+                  setConfirmingRole(role);
+                }}
                 className="w-full py-2.5 rounded-lg text-sm font-medium text-white flex items-center justify-center gap-1.5"
-                style={{ backgroundColor: BRAND.accent }}
+                style={{ backgroundColor: allowed ? BRAND.accent : "#B9C2CE" }}
               >
                 <Check size={15} /> {t("finalReport.confirmBtn")}
               </button>
-            ) : (
-              <p className="text-sm text-slate-400">{t("finalReport.notYourRole")}</p>
             )}
           </div>
           );
@@ -3579,27 +3585,29 @@ function SettingsPage({ currentUser, years, selectedYear, activeYear, startNewYe
           })}
         </div>
 
-        {isAdmin ? (
-          bothConfirmed ? (
-            <button
-              onClick={() => setConfirming(true)}
-              className="flex items-center gap-1.5 text-sm font-medium px-4 py-2 rounded-lg text-white"
-              style={{ backgroundColor: BRAND.accent }}
-            >
-              <Archive size={15} /> {t("settings.startNewYearBtn")} ({nextYear})
-            </button>
-          ) : (
-            <div className="bg-amber-50 text-amber-700 text-sm px-4 py-3 rounded-lg flex items-center justify-between gap-3">
-              <span className="flex items-center gap-2"><AlertTriangle size={15} className="flex-shrink-0" /> {t("settings.yearConfirmRequired")}</span>
-              {goTo && (
-                <button onClick={() => goTo("finalReport")} className="text-xs font-medium underline flex-shrink-0 whitespace-nowrap">
-                  {t("nav.finalReport")} →
-                </button>
-              )}
-            </div>
-          )
+        {bothConfirmed ? (
+          <button
+            onClick={() => {
+              if (!isAdmin) {
+                alert(t("settings.startNewYearAdminOnly"));
+                return;
+              }
+              setConfirming(true);
+            }}
+            className="flex items-center gap-1.5 text-sm font-medium px-4 py-2 rounded-lg text-white"
+            style={{ backgroundColor: isAdmin ? BRAND.accent : "#B9C2CE" }}
+          >
+            <Archive size={15} /> {t("settings.startNewYearBtn")} ({nextYear})
+          </button>
         ) : (
-          <p className="text-xs text-slate-400">{t("settings.startNewYearAdminOnly")}</p>
+          <div className="bg-amber-50 text-amber-700 text-sm px-4 py-3 rounded-lg flex items-center justify-between gap-3">
+            <span className="flex items-center gap-2"><AlertTriangle size={15} className="flex-shrink-0" /> {t("settings.yearConfirmRequired")}</span>
+            {goTo && (
+              <button onClick={() => goTo("finalReport")} className="text-xs font-medium underline flex-shrink-0 whitespace-nowrap">
+                {t("nav.finalReport")} →
+              </button>
+            )}
+          </div>
         )}
       </div>
 
