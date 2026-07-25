@@ -3299,6 +3299,8 @@ function FinalReportPage({ controls, currentUser, activeYear, yearConfirmation, 
         ].map(({ role, allowed, info }) => {
           // CFO는 RD가 먼저 취소(=RD 미컨펌 상태)해야만 자신의 컨펌을 취소할 수 있음. RD는 제약 없음.
           const cancelBlocked = role === "cfo" && !!yearConfirmation.rd;
+          // RD는 CFO가 먼저 컨펌해야만 컨펌할 수 있음.
+          const confirmBlocked = role === "rd" && !yearConfirmation.cfo;
           const designatedUser = users.find((u) => u.role === role); // system_config_final.xlsx의 ICS_CFO/ICS_RD로 지정된 실제 담당자
           return (
           <div key={role} className="bg-white rounded-xl border border-slate-100 p-5">
@@ -3344,19 +3346,31 @@ function FinalReportPage({ controls, currentUser, activeYear, yearConfirmation, 
                 )}
               </div>
             ) : (
-              <button
-                onClick={() => {
-                  if (!allowed) {
-                    alert(lang === "en" ? "You must be signed in with the CFO/RD account for this role to confirm." : "이 역할(CFO/RD)의 계정으로 로그인해야 컨펌할 수 있습니다.");
-                    return;
-                  }
-                  setConfirmingRole(role);
-                }}
-                className="w-full py-2.5 rounded-lg text-sm font-medium text-white flex items-center justify-center gap-1.5"
-                style={{ backgroundColor: allowed ? BRAND.accent : "#B9C2CE" }}
-              >
-                <Check size={15} /> {t("finalReport.confirmBtn")}
-              </button>
+              <div>
+                <button
+                  onClick={() => {
+                    if (!allowed) {
+                      alert(lang === "en" ? "You must be signed in with the CFO/RD account for this role to confirm." : "이 역할(CFO/RD)의 계정으로 로그인해야 컨펌할 수 있습니다.");
+                      return;
+                    }
+                    if (confirmBlocked) {
+                      alert(lang === "en" ? "CFO must confirm first before RD can confirm." : "CFO가 먼저 컨펌해야 RD도 컨펌할 수 있습니다.");
+                      return;
+                    }
+                    setConfirmingRole(role);
+                  }}
+                  disabled={allowed && confirmBlocked}
+                  className="w-full py-2.5 rounded-lg text-sm font-medium text-white flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+                  style={{ backgroundColor: allowed && !confirmBlocked ? BRAND.accent : "#B9C2CE" }}
+                >
+                  <Check size={15} /> {t("finalReport.confirmBtn")}
+                </button>
+                {allowed && confirmBlocked && (
+                  <p className="text-[11px] text-slate-400 mt-1.5">
+                    {lang === "en" ? "CFO must confirm first before RD can confirm." : "CFO가 먼저 컨펌해야 RD도 컨펌할 수 있습니다."}
+                  </p>
+                )}
+              </div>
             )}
           </div>
           );
