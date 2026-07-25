@@ -2590,15 +2590,26 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
     setEditing(c.id);
     setDraft({ risk: c.fsaRisk, comment: c.fsaComment || "" });
   }
-  function submit(c) {
+  async function submit(c) {
     if (!draft.risk) return;
     const today = new Date().toISOString().slice(0, 10);
-    setControls((prev) =>
-      prev.map((x) => (x.id === c.id ? { ...x, fsaStatus: "submitted_self", fsaRisk: draft.risk, fsaComment: draft.comment, fsaCommentEn: draft.comment, fsaDate: today } : x))
-    );
-    addLog(c.accessor, "fsa_submit", c.code, c.name, c.nameEn);
-    showToast(lang === "en" ? "Final self-assessment submitted." : "최종자기평가가 제출됐습니다.");
     setEditing(null);
+    try {
+      await icsUpdateItem(ICS_LISTS.requests, c.requestSpId, {
+        FsaStatus: "submitted_self",
+        FsaRisk: draft.risk,
+        FsaCommentKo: draft.comment,
+        FsaCommentEn: draft.comment,
+        FsaDate: new Date().toISOString(),
+      });
+      setControls((prev) =>
+        prev.map((x) => (x.id === c.id ? { ...x, fsaStatus: "submitted_self", fsaRisk: draft.risk, fsaComment: draft.comment, fsaCommentEn: draft.comment, fsaDate: today } : x))
+      );
+      addLog(c.accessor, "fsa_submit", c.code, c.name, c.nameEn);
+      showToast(lang === "en" ? "Final self-assessment submitted." : "최종자기평가가 제출됐습니다.");
+    } catch (e) {
+      alert("SharePoint 저장에 실패했습니다: " + e.message);
+    }
   }
 
   return (
@@ -2724,29 +2735,51 @@ function FSAReviewPage({ controls, setControls, currentUser, addLog, isArchived,
     setEditing(c.id);
     setDraft({ risk: c.fsaRisk, comment: "" });
   }
-  function approve(c) {
+  async function approve(c) {
     if (!draft.risk) return;
     const today = new Date().toISOString().slice(0, 10);
-    setControls((prev) =>
-      prev.map((x) =>
-        x.id === c.id ? { ...x, fsaStatus: "completed", fsaReviewRisk: draft.risk, fsaReviewComment: draft.comment, fsaReviewCommentEn: draft.comment, fsaReviewDate: today } : x
-      )
-    );
-    addLog(c.reviewer, "fsa_review_complete", c.code, c.name, c.nameEn);
-    showToast(lang === "en" ? "FSA review confirmed." : "FSA 검토가 완료됐습니다.");
     setEditing(null);
+    try {
+      await icsUpdateItem(ICS_LISTS.requests, c.requestSpId, {
+        FsaStatus: "completed",
+        FsaReviewRisk: draft.risk,
+        FsaReviewCommentKo: draft.comment,
+        FsaReviewCommentEn: draft.comment,
+        FsaReviewDate: new Date().toISOString(),
+      });
+      setControls((prev) =>
+        prev.map((x) =>
+          x.id === c.id ? { ...x, fsaStatus: "completed", fsaReviewRisk: draft.risk, fsaReviewComment: draft.comment, fsaReviewCommentEn: draft.comment, fsaReviewDate: today } : x
+        )
+      );
+      addLog(c.reviewer, "fsa_review_complete", c.code, c.name, c.nameEn);
+      showToast(lang === "en" ? "FSA review confirmed." : "FSA 검토가 완료됐습니다.");
+    } catch (e) {
+      alert("SharePoint 저장에 실패했습니다: " + e.message);
+    }
   }
-  function reject(c) {
+  async function reject(c) {
     const today = new Date().toISOString().slice(0, 10);
-    setControls((prev) =>
-      prev.map((x) =>
-        x.id === c.id ? { ...x, fsaStatus: "returned", fsaReviewRisk: "red", fsaReviewComment: returnComment, fsaReviewCommentEn: returnComment, fsaReviewDate: today } : x
-      )
-    );
-    addLog(c.reviewer, "fsa_review_reject", c.code, c.name, c.nameEn);
-    showToast(lang === "en" ? "Returned to the accessor." : "담당자에게 반려됐습니다.");
     setReturning(null);
-    setReturnComment("");
+    try {
+      await icsUpdateItem(ICS_LISTS.requests, c.requestSpId, {
+        FsaStatus: "returned",
+        FsaReviewRisk: "red",
+        FsaReviewCommentKo: returnComment,
+        FsaReviewCommentEn: returnComment,
+        FsaReviewDate: new Date().toISOString(),
+      });
+      setControls((prev) =>
+        prev.map((x) =>
+          x.id === c.id ? { ...x, fsaStatus: "returned", fsaReviewRisk: "red", fsaReviewComment: returnComment, fsaReviewCommentEn: returnComment, fsaReviewDate: today } : x
+        )
+      );
+      addLog(c.reviewer, "fsa_review_reject", c.code, c.name, c.nameEn);
+      showToast(lang === "en" ? "Returned to the accessor." : "담당자에게 반려됐습니다.");
+      setReturnComment("");
+    } catch (e) {
+      alert("SharePoint 저장에 실패했습니다: " + e.message);
+    }
   }
 
   return (
@@ -2888,21 +2921,43 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, sh
     setEditing(c.id);
     setDraft({ risk: c.selfRisk, comment: "" });
   }
-  function approve(c) {
+  async function approve(c) {
     if (!draft.risk) return;
     const today = new Date().toISOString().slice(0, 10);
-    setControls((prev) => prev.map((x) => (x.id === c.id ? { ...x, status: "completed", reviewRisk: draft.risk, reviewComment: draft.comment, reviewCommentEn: draft.comment, reviewDate: today } : x)));
-    addLog(c.reviewer, "review_complete", c.code, c.name, c.nameEn);
-    showToast(lang === "en" ? "Review confirmed." : "검토가 완료됐습니다.");
     setEditing(null);
+    try {
+      await icsUpdateItem(ICS_LISTS.requests, c.requestSpId, {
+        Status: "completed",
+        ReviewRisk: draft.risk,
+        ReviewCommentKo: draft.comment,
+        ReviewCommentEn: draft.comment,
+        ReviewDate: new Date().toISOString(),
+      });
+      setControls((prev) => prev.map((x) => (x.id === c.id ? { ...x, status: "completed", reviewRisk: draft.risk, reviewComment: draft.comment, reviewCommentEn: draft.comment, reviewDate: today } : x)));
+      addLog(c.reviewer, "review_complete", c.code, c.name, c.nameEn);
+      showToast(lang === "en" ? "Review confirmed." : "검토가 완료됐습니다.");
+    } catch (e) {
+      alert("SharePoint 저장에 실패했습니다: " + e.message);
+    }
   }
-  function reject(c) {
+  async function reject(c) {
     const today = new Date().toISOString().slice(0, 10);
-    setControls((prev) => prev.map((x) => (x.id === c.id ? { ...x, status: "returned", reviewRisk: "red", reviewComment: returnComment, reviewCommentEn: returnComment, reviewDate: today } : x)));
-    addLog(c.reviewer, "review_reject", c.code, c.name, c.nameEn);
-    showToast(lang === "en" ? "Returned to the accessor." : "담당자에게 반려됐습니다.");
     setReturning(null);
-    setReturnComment("");
+    try {
+      await icsUpdateItem(ICS_LISTS.requests, c.requestSpId, {
+        Status: "returned",
+        ReviewRisk: "red",
+        ReviewCommentKo: returnComment,
+        ReviewCommentEn: returnComment,
+        ReviewDate: new Date().toISOString(),
+      });
+      setControls((prev) => prev.map((x) => (x.id === c.id ? { ...x, status: "returned", reviewRisk: "red", reviewComment: returnComment, reviewCommentEn: returnComment, reviewDate: today } : x)));
+      addLog(c.reviewer, "review_reject", c.code, c.name, c.nameEn);
+      showToast(lang === "en" ? "Returned to the accessor." : "담당자에게 반려됐습니다.");
+      setReturnComment("");
+    } catch (e) {
+      alert("SharePoint 저장에 실패했습니다: " + e.message);
+    }
   }
 
   return (
