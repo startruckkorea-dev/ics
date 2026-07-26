@@ -3693,63 +3693,7 @@ function SettingsPage({ currentUser, years, selectedYear, activeYear, startNewYe
     <div>
       <SectionHeader icon={Settings} title={t("settings.title")} subtitle={t("settings.subtitle")} />
 
-      <div className="rounded-xl border p-4 mb-4 flex items-start gap-2" style={{ backgroundColor: BRAND.accentSoft, borderColor: BRAND.accent + "40" }}>
-        <KeyRound size={16} style={{ color: BRAND.navy }} className="flex-shrink-0 mt-0.5" />
-        <div className="text-sm" style={{ color: BRAND.navy }}>
-          <p className="font-semibold mb-1">{t("permissions.requestGuideTitle")}</p>
-          <ol className="space-y-0.5 list-decimal list-inside">
-            <li>{t("permissions.requestGuideStep1")}</li>
-            <li>
-              {t("permissions.requestGuideStep2")}{" "}
-              <a href="https://itsm-ticket.startruckkorea.com/" target="_blank" rel="noreferrer" className="underline font-medium" style={{ color: BRAND.accent }}>
-                itsm-ticket.startruckkorea.com
-              </a>
-            </li>
-          </ol>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <div className="bg-white rounded-xl border border-slate-100 p-5">
-          <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2 mb-3"><Building2 size={15} /> {t("settings.deptListTitle")}</h3>
-          <div className="divide-y divide-slate-50">
-            {departments.map((d) => (
-              <div key={d.id} className="py-2.5 flex items-center justify-between text-sm">
-                <span className="text-slate-700">{d[lang]}</span>
-                <span className="text-xs text-slate-400">{d.id.toUpperCase()}</span>
-              </div>
-            ))}
-            {departments.length === 0 && <EmptyState text={t("list.emptyText")} />}
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl border border-slate-100 p-5">
-          <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2 mb-3"><Users size={15} /> {t("settings.userListTitle")}</h3>
-          <div className="divide-y divide-slate-50">
-            {users.map((u) => (
-              <div key={u.id} className="py-2.5 flex items-center justify-between text-sm">
-                <div className="min-w-0">
-                  <span className="text-slate-700">{pName(u.name, lang, users)}</span>
-                  <span className="text-xs text-slate-400 ml-2">{u.email}</span>
-                  {u.dept && <span className="text-xs text-slate-400 ml-2">· {deptName(u.dept, lang, departments)}</span>}
-                </div>
-                <span
-                  className="text-xs font-medium px-2 py-0.5 rounded-full flex-shrink-0"
-                  style={{
-                    backgroundColor: u.role === "admin" ? "#EDE9FE" : u.role === "reviewer" ? BRAND.accentSoft : "#F1F5F9",
-                    color: u.role === "admin" ? "#6D28D9" : u.role === "reviewer" ? BRAND.accent : "#475569",
-                  }}
-                >
-                  {t(`roles.${u.role}`)}
-                </span>
-              </div>
-            ))}
-            {users.length === 0 && <EmptyState text={t("list.emptyText")} />}
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-xl border border-slate-100 p-5 mt-5">
+      <div className="bg-white rounded-xl border border-slate-100 p-5">
         <h3 className="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2"><ClipboardList size={15} /> {t("settings.cosoTitle")}</h3>
         <p className="text-sm text-slate-500 mb-3">{t("settings.cosoDesc")}</p>
         <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
@@ -3972,6 +3916,46 @@ function PermissionsPage({ permissions, setPermissions }) {
             </a>
           </li>
         </ol>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
+        <div className="bg-white rounded-xl border border-slate-100 p-5">
+          <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2 mb-3"><Building2 size={15} /> {t("settings.deptListTitle")}</h3>
+          <div className="divide-y divide-slate-50">
+            {departments.map((d) => (
+              <div key={d.id} className="py-2.5 flex items-center justify-between text-sm">
+                <span className="text-slate-700">{d[lang]}</span>
+                <span className="text-xs text-slate-400">{d.id.toUpperCase()}</span>
+              </div>
+            ))}
+            {departments.length === 0 && <EmptyState text={t("list.emptyText")} />}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl border border-slate-100 p-5">
+          <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2 mb-3"><Users size={15} /> {t("settings.userListTitle")}</h3>
+          <div className="divide-y divide-slate-50">
+            {users.map((u) => (
+              <div key={u.id} className="py-2.5 flex items-center justify-between text-sm">
+                <div className="min-w-0">
+                  <span className="text-slate-700">{pName(u.name, lang, users)}</span>
+                  <span className="text-xs text-slate-400 ml-2">{u.email}</span>
+                  {u.dept && <span className="text-xs text-slate-400 ml-2">· {deptName(u.dept, lang, departments)}</span>}
+                </div>
+                <span
+                  className="text-xs font-medium px-2 py-0.5 rounded-full flex-shrink-0"
+                  style={{
+                    backgroundColor: u.role === "admin" ? "#EDE9FE" : u.role === "reviewer" ? BRAND.accentSoft : "#F1F5F9",
+                    color: u.role === "admin" ? "#6D28D9" : u.role === "reviewer" ? BRAND.accent : "#475569",
+                  }}
+                >
+                  {t(`roles.${u.role}`)}
+                </span>
+              </div>
+            ))}
+            {users.length === 0 && <EmptyState text={t("list.emptyText")} />}
+          </div>
+        </div>
       </div>
 
       <div className="bg-white rounded-xl border border-slate-100 overflow-hidden">
