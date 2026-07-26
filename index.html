@@ -126,7 +126,7 @@ const BRAND = {
 /* 다국어 데이터                                                        */
 /* ------------------------------------------------------------------ */
 
-// BU Admin 문의 이메일 (system_config_final.xlsx의 ICS_ACCESSOR_CONTACT 키에서 loadIcsConfig()가 채워 넣음)
+// BU Admin 문의 이메일 (ics_category_access.xlsx의 Contact 시트에서 loadIcsMasterConfig()가 채워 넣음)
 let ICS_CONTACT_EMAIL = "";
 
 // 카테고리(사이드바 그룹)별 접근 권한. ics_category_access.xlsx에서 loadIcsCategoryAccess()가 채워 넣음.
@@ -221,8 +221,8 @@ const ACTION_LABELS = {
   delete_control: { ko: "통제 항목 삭제", en: "Control item deleted" },
 };
 
-// 실제 사용자 목록은 로그인 시 system_config_final.xlsx(ICS_ACCESSOR_*/ICS_REVIEWER_*/ICS_ADMIN_*/ICS_CFO/ICS_RD)에서
-// loadIcsConfig()가 채워 넣는다. 이름·이메일 등 개인정보를 git 저장소에 하드코딩하지 않기 위해 여기서는 항상 빈 배열로 시작한다.
+// 실제 사용자 목록은 로그인 시 ics_category_access.xlsx의 Users 시트에서
+// loadIcsMasterConfig()가 채워 넣는다. 이름·이메일 등 개인정보를 git 저장소에 하드코딩하지 않기 위해 여기서는 항상 빈 배열로 시작한다.
 let INITIAL_USERS = [];
 
 function pName(koreanName, lang, users = INITIAL_USERS) {
@@ -3481,7 +3481,7 @@ function FinalReportPage({ controls, currentUser, activeYear, yearConfirmation, 
           const cancelBlocked = role === "cfo" && !!yearConfirmation.rd;
           // RD는 CFO가 먼저 컨펌해야만 컨펌할 수 있음.
           const confirmBlocked = role === "rd" && !yearConfirmation.cfo;
-          const designatedUser = users.find((u) => u.role === role); // system_config_final.xlsx의 ICS_CFO/ICS_RD로 지정된 실제 담당자
+          const designatedUser = users.find((u) => u.role === role); // ics_category_access.xlsx의 Users 시트에서 Role=cfo/rd로 지정된 실제 담당자
           return (
           <div key={role} className="bg-white rounded-xl border border-slate-100 p-5">
             <div className="flex items-center justify-between mb-1">
@@ -4578,7 +4578,7 @@ function setByKeyPath(obj, path, value) {
 }
 
 // system_config_final.xlsx / ics_ui_strings.xlsx가 들어있는 문서 라이브러리(driveId)를 한 번만 조회해서 캐싱.
-// loadIcsConfig와 loadIcsUiStrings가 같은 라이브러리를 각자 따로 조회하던 중복 호출을 줄인다.
+// loadIcsMasterConfig와 loadIcsUiStrings가 같은 라이브러리를 각자 따로 조회하던 중복 호출을 줄인다.
 let _icsDocDriveId = null;
 async function getIcsDocDriveId(token) {
   if (_icsDocDriveId) return _icsDocDriveId;
@@ -4610,119 +4610,118 @@ async function loadIcsUiStrings(token) {
   if (!applied) throw new Error("ics_ui_strings.xlsx에서 유효한 KEY_PATH를 하나도 찾지 못함");
 }
 
-// 사이드바 카테고리(ICS Overview/통제 관리/평가/관리자 전용/경영진 전용)별 접근 권한을
-// ics_category_access.xlsx(같은 문서 라이브러리)에서 읽어온다.
-// 1행: 헤더(Email, ICS_Overview, ControlMgmt, Assessment, AdminOnly, Executive), 2행부터 데이터.
-// 파일이 없어도 실패하지 않고 역할 기반 기본 권한으로 동작한다 (hasCategoryAccess 참고).
-async function loadIcsCategoryAccess(token) {
+// ICS 전용 마스터 설정 파일(ics_category_access.xlsx) 하나에서 사용자/부서/샘플링기준/문의이메일/카테고리권한을 전부 읽어온다.
+// 시트 구성: Users / Departments / SamplingMatrix / Contact / CategoryAccess (시트가 없으면 해당 항목만 코드 기본값 유지)
+async function loadIcsMasterConfig(token) {
   const docDriveId = await getIcsDocDriveId(token);
   const res = await fetch(`${GRAPH}/drives/${docDriveId}/root:/ics_category_access.xlsx:/content`, { headers: { Authorization: "Bearer " + token } });
   if (!res.ok) throw new Error(`ics_category_access.xlsx not found (${res.status})`);
   const buf = await res.arrayBuffer();
   const wb = XLSX.read(buf, { type: "array" });
-  const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
-  const header = (rows[0] || []).map((h) => String(h || "").trim());
-  const emailIdx = header.findIndex((h) => h.toLowerCase() === "email");
-  const catCols = { icsOverview: "ICS_Overview", controlMgmt: "ControlMgmt", assessment: "Assessment", adminOnly: "AdminOnly", executive: "Executive" };
-  const catIdx = {};
-  Object.entries(catCols).forEach(([key, colName]) => { catIdx[key] = header.indexOf(colName); });
 
-  const parsed = {};
-  let applied = 0;
-  rows.slice(1).forEach((row) => {
-    const email = emailIdx >= 0 ? String(row[emailIdx] || "").trim().toLowerCase() : "";
-    if (!email) return;
-    const entry = {};
-    Object.keys(catCols).forEach((key) => {
-      const idx = catIdx[key];
-      const val = idx >= 0 && row[idx] !== undefined && row[idx] !== null ? String(row[idx]).trim().toUpperCase() : "";
-      entry[key] = val === "Y" || val === "TRUE" || val === "1";
-    });
-    parsed[email] = entry;
-    applied++;
-  });
-  if (!applied) throw new Error("ics_category_access.xlsx에서 유효한 이메일 행을 하나도 찾지 못함");
-  ICS_CATEGORY_ACCESS = parsed;
-}
-
-async function loadIcsConfig(token) {
-  const docDriveId = await getIcsDocDriveId(token);
-  const res = await fetch(`${GRAPH}/drives/${docDriveId}/root:/system_config_final.xlsx:/content`, { headers: { Authorization: "Bearer " + token } });
-  if (!res.ok) throw new Error(`system_config_final.xlsx not found in STK-DB (${res.status})`);
-  const buf = await res.arrayBuffer();
-  const wb = XLSX.read(buf, { type: "array" });
-  const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
-
-  const cfg = {};
-  rows.forEach(row => {
-    const key = (row[0] || "").toString().trim();
-    if (!key || key.startsWith("[") || key === "설정 키 (KEY)" || key.startsWith("이 파일") || key.startsWith("STK Korea")) return;
-    cfg[key] = { name: (row[1] || "").toString().trim(), email: (row[2] || "").toString().trim().toLowerCase() };
-  });
-
-  // 부서 목록(ICS_DEPT_{코드}: 값1=한글명, 값2=영문명)이 config에 있으면 코드 내 기본값을 완전히 교체.
-  // deptIds를 구하기 전에 먼저 반영해야, config에 새 부서코드가 추가된 경우에도 그 아래 ICS_ACCESSOR_{새부서}가 정상 인식된다.
-  const deptKeys = Object.keys(cfg).filter((k) => k.startsWith("ICS_DEPT_"));
-  if (deptKeys.length) {
-    const newDepts = deptKeys.map((k) => {
-      const code = k.replace("ICS_DEPT_", "");
-      const v = cfg[k];
-      return { id: code, ko: v.name || code, en: v.email || v.name || code };
-    });
-    INITIAL_DEPARTMENTS.length = 0;
-    newDepts.forEach((d) => INITIAL_DEPARTMENTS.push(d));
+  function sheetRows(name) {
+    const sheet = wb.Sheets[name];
+    return sheet ? XLSX.utils.sheet_to_json(sheet, { header: 1 }) : null;
+  }
+  function colIdx(header, name) {
+    return header.findIndex((h) => String(h || "").trim().toLowerCase() === name.toLowerCase());
   }
 
-  // 샘플링 권장 건수(ICS_SAMPLE_{중요도}_{빈도}: 값1=건수)가 config에 있으면 해당 칸만 덮어씀 (일부만 등록돼도 나머지는 코드 기본값 유지)
-  Object.keys(cfg).forEach((k) => {
-    const m = k.match(/^ICS_SAMPLE_(high|medium|low)_(continuous|monthly|quarterly|semiannual|annual)$/);
-    if (m) {
-      const num = Number(cfg[k].name);
-      if (!Number.isNaN(num)) SAMPLE_TABLE[m[1]][m[2]] = num;
+  // --- Departments 시트: Code | NameKo | NameEn ---
+  const deptRows = sheetRows("Departments");
+  if (deptRows && deptRows.length > 1) {
+    const header = deptRows[0].map((h) => String(h || "").trim());
+    const codeIdx = colIdx(header, "Code");
+    const koIdx = colIdx(header, "NameKo");
+    const enIdx = colIdx(header, "NameEn");
+    const newDepts = [];
+    deptRows.slice(1).forEach((row) => {
+      const code = codeIdx >= 0 ? String(row[codeIdx] || "").trim() : "";
+      if (!code) return;
+      newDepts.push({ id: code, ko: (koIdx >= 0 && row[koIdx]) || code, en: (enIdx >= 0 && row[enIdx]) || (koIdx >= 0 && row[koIdx]) || code });
+    });
+    if (newDepts.length) {
+      INITIAL_DEPARTMENTS.length = 0;
+      newDepts.forEach((d) => INITIAL_DEPARTMENTS.push(d));
     }
-  });
-
-  // BU Admin 문의 이메일 (사이드바 하단에 표시)
-  if (cfg.ICS_ACCESSOR_CONTACT && cfg.ICS_ACCESSOR_CONTACT.email) {
-    ICS_CONTACT_EMAIL = cfg.ICS_ACCESSOR_CONTACT.email;
   }
 
-  const deptIds = INITIAL_DEPARTMENTS.map(d => d.id); // fin/hr/pur/sal/itd/prd (또는 config로 교체된 부서 목록)
-  const newUsers = [];
-  let seq = 1;
-
-  deptIds.forEach(dept => {
-    const v = cfg[`ICS_ACCESSOR_${dept}`];
-    if (v && v.email) newUsers.push({ id: `u${seq++}`, name: v.name || v.email, nameEn: v.name || v.email, email: v.email, dept, role: "accessor" });
-  });
-  for (let n = 1; n <= 20; n++) {
-    const v = cfg[`ICS_REVIEWER_${n}`];
-    if (!v) break; // 값이 없는 번호가 나오면 중단 (다른 시스템들의 자동확장 패턴과 동일)
-    if (v.email) newUsers.push({ id: `u${seq++}`, name: v.name || v.email, nameEn: v.name || v.email, email: v.email, dept: null, role: "reviewer" });
+  // --- SamplingMatrix 시트: Importance | Frequency | Count (있는 조합만 코드 기본값 위에 덮어씀) ---
+  const sampleRows = sheetRows("SamplingMatrix");
+  if (sampleRows && sampleRows.length > 1) {
+    const header = sampleRows[0].map((h) => String(h || "").trim());
+    const impIdx = colIdx(header, "Importance");
+    const freqIdx = colIdx(header, "Frequency");
+    const cntIdx = colIdx(header, "Count");
+    sampleRows.slice(1).forEach((row) => {
+      const imp = impIdx >= 0 ? String(row[impIdx] || "").trim().toLowerCase() : "";
+      const freq = freqIdx >= 0 ? String(row[freqIdx] || "").trim().toLowerCase() : "";
+      const num = cntIdx >= 0 ? Number(row[cntIdx]) : NaN;
+      if (SAMPLE_TABLE[imp] && freq && !Number.isNaN(num)) SAMPLE_TABLE[imp][freq] = num;
+    });
   }
-  for (let n = 1; n <= 20; n++) {
-    const v = cfg[`ICS_ADMIN_${n}`];
-    if (!v) break;
-    if (v.email) newUsers.push({ id: `u${seq++}`, name: v.name || v.email, nameEn: v.name || v.email, email: v.email, dept: null, role: "admin" });
-  }
-  if (cfg.ICS_CFO && cfg.ICS_CFO.email) newUsers.push({ id: `u${seq++}`, name: cfg.ICS_CFO.name || cfg.ICS_CFO.email, nameEn: cfg.ICS_CFO.name || cfg.ICS_CFO.email, email: cfg.ICS_CFO.email, dept: null, role: "cfo" });
-  if (cfg.ICS_RD && cfg.ICS_RD.email) newUsers.push({ id: `u${seq++}`, name: cfg.ICS_RD.name || cfg.ICS_RD.email, nameEn: cfg.ICS_RD.name || cfg.ICS_RD.email, email: cfg.ICS_RD.email, dept: null, role: "rd" });
 
-  // 한 이메일이 여러 역할(예: accessor이면서 admin)에 동시 등록된 경우, 더 높은 권한 역할을 우선 적용
-  // (이 앱은 사용자당 role 하나만 가지는 구조라, 우선순위로 하나를 골라야 함)
+  // --- Contact 시트: Email (BU Admin 문의 이메일, 사이드바 표시) ---
+  const contactRows = sheetRows("Contact");
+  if (contactRows && contactRows.length > 1) {
+    const header = contactRows[0].map((h) => String(h || "").trim());
+    const emailIdx = colIdx(header, "Email");
+    const email = emailIdx >= 0 ? String(contactRows[1][emailIdx] || "").trim().toLowerCase() : "";
+    if (email) ICS_CONTACT_EMAIL = email;
+  }
+
+  // --- Users 시트(필수): Email | NameKo | NameEn | Role(accessor/reviewer/admin/cfo/rd) | Dept(accessor/reviewer만 해당) ---
+  const userRows = sheetRows("Users");
+  if (!userRows || userRows.length < 2) throw new Error("ics_category_access.xlsx의 Users 시트에서 사용자 정보를 찾지 못함");
+  const uHeader = userRows[0].map((h) => String(h || "").trim());
+  const emailIdx = colIdx(uHeader, "Email");
+  const nameKoIdx = colIdx(uHeader, "NameKo");
+  const nameEnIdx = colIdx(uHeader, "NameEn");
+  const roleIdx = colIdx(uHeader, "Role");
+  const deptIdx = colIdx(uHeader, "Dept");
   const ROLE_PRIORITY = { admin: 0, rd: 1, cfo: 2, reviewer: 3, accessor: 4 };
   const byEmail = {};
-  newUsers.forEach(u => {
-    const existing = byEmail[u.email];
-    if (!existing || ROLE_PRIORITY[u.role] < ROLE_PRIORITY[existing.role]) byEmail[u.email] = u;
+  userRows.slice(1).forEach((row) => {
+    const email = emailIdx >= 0 ? String(row[emailIdx] || "").trim().toLowerCase() : "";
+    const role = roleIdx >= 0 ? String(row[roleIdx] || "").trim().toLowerCase() : "";
+    if (!email || !(role in ROLE_PRIORITY)) return;
+    const nameKo = nameKoIdx >= 0 ? String(row[nameKoIdx] || "").trim() : "";
+    const nameEn = nameEnIdx >= 0 ? String(row[nameEnIdx] || "").trim() : "";
+    const dept = deptIdx >= 0 ? String(row[deptIdx] || "").trim() : "";
+    const u = {
+      email, name: nameKo || email, nameEn: nameEn || nameKo || email, role,
+      dept: (role === "accessor" || role === "reviewer") && dept ? dept : null,
+    };
+    // 한 이메일이 여러 역할에 동시 등록된 경우, 더 높은 권한 역할을 우선 적용
+    const existing = byEmail[email];
+    if (!existing || ROLE_PRIORITY[role] < ROLE_PRIORITY[existing.role]) byEmail[email] = u;
   });
   const dedupedUsers = Object.values(byEmail);
+  if (!dedupedUsers.length) throw new Error("ics_category_access.xlsx Users 시트에서 유효한 사용자를 하나도 찾지 못함");
+  INITIAL_USERS.length = 0;
+  dedupedUsers.forEach((u, i) => { u.id = `u${i + 1}`; INITIAL_USERS.push(u); });
 
-  if (dedupedUsers.length) {
-    INITIAL_USERS.length = 0;
-    dedupedUsers.forEach((u, i) => { u.id = `u${i+1}`; INITIAL_USERS.push(u); });
-  } else {
-    throw new Error("system_config_final.xlsx에서 ICS_* 키를 하나도 못 찾음");
+  // --- CategoryAccess 시트: Email | ICS_Overview | ControlMgmt | Assessment | AdminOnly | Executive ---
+  const catRows = sheetRows("CategoryAccess");
+  if (catRows && catRows.length > 1) {
+    const header = catRows[0].map((h) => String(h || "").trim());
+    const catEmailIdx = colIdx(header, "Email");
+    const catCols = { icsOverview: "ICS_Overview", controlMgmt: "ControlMgmt", assessment: "Assessment", adminOnly: "AdminOnly", executive: "Executive" };
+    const catIdx = {};
+    Object.entries(catCols).forEach(([key, colName]) => { catIdx[key] = header.findIndex((h) => h === colName); });
+    const parsedCat = {};
+    catRows.slice(1).forEach((row) => {
+      const email = catEmailIdx >= 0 ? String(row[catEmailIdx] || "").trim().toLowerCase() : "";
+      if (!email) return;
+      const entry = {};
+      Object.keys(catCols).forEach((key) => {
+        const idx = catIdx[key];
+        const val = idx >= 0 && row[idx] !== undefined && row[idx] !== null ? String(row[idx]).trim().toUpperCase() : "";
+        entry[key] = val === "Y" || val === "TRUE" || val === "1";
+      });
+      parsedCat[email] = entry;
+    });
+    ICS_CATEGORY_ACCESS = parsedCat;
   }
 }
 
@@ -4738,11 +4737,10 @@ async function icsBoot(account) {
     const siteRes = await apiGet(`/sites/${SITE_PATH}`, token);
     _siteId = siteRes.id;
 
-    // 서로 의존하지 않는 5개 로드를 병렬로 실행해서 로그인 대기 시간을 줄인다 (예전엔 하나씩 순서대로 기다렸음).
-    const [configResult, uiStringsResult, categoryAccessResult, controlsResult, logResult] = await Promise.allSettled([
-      loadIcsConfig(token),
+    // 서로 의존하지 않는 4개 로드를 병렬로 실행해서 로그인 대기 시간을 줄인다 (예전엔 하나씩 순서대로 기다렸음).
+    const [configResult, uiStringsResult, controlsResult, logResult] = await Promise.allSettled([
+      loadIcsMasterConfig(token),
       loadIcsUiStrings(token),
-      loadIcsCategoryAccess(token),
       loadIcsControls(),
       loadIcsLog(),
     ]);
@@ -4753,10 +4751,6 @@ async function icsBoot(account) {
     if (uiStringsResult.status === "rejected") {
       console.warn("[ICS] ics_ui_strings.xlsx 로드 실패, 코드 내 기본 문구로 진행:", uiStringsResult.reason.message);
     }
-    // 카테고리 접근 권한도 선택 사항 — 파일이 없으면 역할 기반 기본 권한만 적용된다.
-    if (categoryAccessResult.status === "rejected") {
-      console.warn("[ICS] ics_category_access.xlsx 로드 실패, 역할 기반 기본 권한으로 진행:", categoryAccessResult.reason.message);
-    }
     // 통제 항목/로그 로드 실패 시에도 화면 자체는 뜨게 하고(빈 목록), 콘솔에만 경고를 남긴다.
     if (controlsResult.status === "fulfilled") loadedControls = controlsResult.value;
     else console.warn("[ICS] 통제 항목 로드 실패:", controlsResult.reason.message);
@@ -4765,14 +4759,14 @@ async function icsBoot(account) {
   } catch (e) {
     // INITIAL_USERS를 코드에 하드코딩해두지 않으므로, 여기서 실패하면 사용자 목록이 비어있는 채로 남는다.
     // 그대로 진행하면 "권한 없음"으로 오인되니, 실제 원인(설정 파일 로드 실패)을 화면에 명확히 알린다.
-    console.warn("[ICS] system_config_final.xlsx 로드 실패:", e.message);
+    console.warn("[ICS] ics_category_access.xlsx 로드 실패:", e.message);
     configLoadFailed = true;
   }
 
   if (configLoadFailed || INITIAL_USERS.length === 0) {
     document.getElementById("loading").style.display = "none";
     document.getElementById("login-screen").style.display = "flex";
-    showLoginErr("사용자 설정(system_config_final.xlsx)을 불러오지 못했습니다. 잠시 후 새로고침하거나 관리자에게 문의해주세요.");
+    showLoginErr("사용자 설정(ics_category_access.xlsx)을 불러오지 못했습니다. 잠시 후 새로고침하거나 관리자에게 문의해주세요.");
     return;
   }
 
