@@ -3847,6 +3847,22 @@ function CategoryAccessPage() {
     <div>
       <SectionHeader icon={KeyRound} title={t("categoryAccess.title")} subtitle={t("categoryAccess.subtitle")} />
 
+      <div className="rounded-xl border p-4 mb-4 flex items-start gap-2" style={{ backgroundColor: BRAND.accentSoft, borderColor: BRAND.accent + "40" }}>
+        <KeyRound size={16} style={{ color: BRAND.navy }} className="flex-shrink-0 mt-0.5" />
+        <div className="text-sm" style={{ color: BRAND.navy }}>
+          <p className="font-semibold mb-1">{t("categoryAccess.requestGuideTitle")}</p>
+          <ol className="space-y-0.5 list-decimal list-inside">
+            <li>{t("permissions.requestGuideStep1")}</li>
+            <li>
+              {t("permissions.requestGuideStep2")}{" "}
+              <a href="https://itsm-ticket.startruckkorea.com/" target="_blank" rel="noreferrer" className="underline font-medium" style={{ color: BRAND.accent }}>
+                itsm-ticket.startruckkorea.com
+              </a>
+            </li>
+          </ol>
+        </div>
+      </div>
+
       <div className="bg-slate-50 text-slate-500 text-xs px-4 py-3 rounded-lg mb-4 flex items-start gap-2">
         <ClipboardList size={14} className="flex-shrink-0 mt-0.5" />
         {t("categoryAccess.defaultNote")}
