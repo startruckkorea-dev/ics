@@ -4463,6 +4463,11 @@ function stripSpRichText(value) {
   return div.textContent || div.innerText || "";
 }
 
+// 부서 체계를 25개 팀 단위로 새로 짜면서 예전 코드를 새 코드로 재배치.
+// (sal은 이름 그대로 유지) 이 표에 있는 옛 코드를 만나면 새 코드로 바꿔서 화면에 보여주고,
+// 동시에 SharePoint ICS_Controls의 Dept 값도 조용히 고쳐써서(자가 치유) 다음부터는 재매핑이 필요 없게 한다.
+const LEGACY_DEPT_REMAP = { fin: "fnc", hr: "hrt", pur: "pcm", itd: "itt" };
+
 async function loadIcsControls() {
   const [controlItems, requestItems] = await Promise.all([
     icsListAll(ICS_LISTS.controls),
@@ -4471,12 +4476,20 @@ async function loadIcsControls() {
 
   const controls = controlItems.map((it) => {
     const f = it.fields;
+    const rawDept = f.Dept || "";
+    const dept = LEGACY_DEPT_REMAP[rawDept] || rawDept;
+    if (dept !== rawDept) {
+      // 예전 부서 코드였던 항목 — 백그라운드에서 SharePoint에도 새 코드로 조용히 반영 (실패해도 화면엔 이미 새 코드로 보이므로 무해함)
+      icsUpdateItem(ICS_LISTS.controls, it.id, { Dept: dept }).catch((e) =>
+        console.warn(`[ICS] 부서 코드 마이그레이션 실패 (${f.Title}):`, e.message)
+      );
+    }
     return {
       id: uid(),
       spId: it.id,
       requestSpId: null,
       code: f.Title || "",
-      dept: f.Dept || "",
+      dept,
       cat: f.Category || "",
       name: f.NameKo || "",
       nameEn: f.NameEn || f.NameKo || "",
