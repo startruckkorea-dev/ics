@@ -1313,7 +1313,12 @@ function Dashboard({ controls: allControls, goTo, isAdmin, allowedDepts }) {
 /* 학습                                                                 */
 /* ------------------------------------------------------------------ */
 
-const MAX_LEARN_VIDEOS = 2;
+const MAX_VIDEO_SIZE = 100 * 1024 * 1024; // 100MB
+const MAX_IMAGE_SIZE = 20 * 1024 * 1024;  // 20MB
+
+function formatMB(bytes) {
+  return (bytes / (1024 * 1024)).toFixed(1) + "MB";
+}
 
 function LearnPage({ currentUser, learnContent, setLearnContent, learnVideos, setLearnVideos, learnImages, setLearnImages }) {
   const { lang, t } = useLang();
@@ -1326,10 +1331,36 @@ function LearnPage({ currentUser, learnContent, setLearnContent, learnVideos, se
   const [draftTips, setDraftTips] = useState([]);
   const [previewImage, setPreviewImage] = useState(null);
   const [zoom, setZoom] = useState(1);
+  const [mediaLoaded, setMediaLoaded] = useState(false);
+  const [upload, setUpload] = useState(null); // { name, percent } - 업로드 진행 중인 파일 (한 번에 하나씩 순차 처리)
 
   const content = learnContent[lang];
 
+  // ICS_Media-Files 폴더의 실제 파일 목록을 화면 진입 시 한 번 불러온다 (폴더 자체가 데이터 소스라 별도 목록 불필요)
+  useEffect(() => {
+    let cancelled = false;
+    icsListMediaFiles()
+      .then(({ videos, images }) => {
+        if (cancelled) return;
+        setLearnVideos(videos.map((v) => ({ id: v.id, url: v.url, name: v.name, size: v.size })));
+        setLearnImages(images.map((i) => ({ id: i.id, url: i.url, name: i.name, size: i.size })));
+      })
+      .catch((e) => console.warn("[ICS] 학습 미디어 로드 실패:", e.message))
+      .finally(() => { if (!cancelled) setMediaLoaded(true); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function requireAdmin(action) {
+    if (!isAdmin) {
+      alert(lang === "en" ? "Only admins can do this." : "관리자만 할 수 있는 작업입니다.");
+      return false;
+    }
+    return action ? action() : true;
+  }
+
   function startEdit() {
+    if (!requireAdmin()) return;
     setDraftIntro(content.intro);
     setDraftTips([...content.tips]);
     setEditing(true);
@@ -1348,36 +1379,60 @@ function LearnPage({ currentUser, learnContent, setLearnContent, learnVideos, se
     setDraftTips((prev) => [...prev, ""]);
   }
 
-  function handleVideoUpload(e) {
-    const files = Array.from(e.target.files || []);
-    if (!files.length) return;
-    setLearnVideos((prev) => {
-      const room = Math.max(0, MAX_LEARN_VIDEOS - prev.length);
-      const toAdd = files.slice(0, room).map((file) => ({ id: uid("video"), url: URL.createObjectURL(file), name: file.name }));
-      return [...prev, ...toAdd];
-    });
-    e.target.value = "";
+  async function uploadFiles(files, kind) {
+    const maxSize = kind === "video" ? MAX_VIDEO_SIZE : MAX_IMAGE_SIZE;
+    const setList = kind === "video" ? setLearnVideos : setLearnImages;
+    for (const file of files) {
+      if (file.size > maxSize) {
+        alert(
+          lang === "en"
+            ? `${file.name} exceeds the ${formatMB(maxSize)} limit and was skipped.`
+            : `${file.name} 파일이 ${formatMB(maxSize)} 제한을 초과해 건너뜁니다.`
+        );
+        continue;
+      }
+      try {
+        setUpload({ name: file.name, percent: 0 });
+        const uploaded = await icsUploadMediaFile(file, (percent) => setUpload({ name: file.name, percent }));
+        setList((prev) => [...prev, { id: uploaded.id, url: uploaded["@microsoft.graph.downloadUrl"] || uploaded.webUrl, name: uploaded.name, size: uploaded.size }]);
+      } catch (e) {
+        alert("업로드에 실패했습니다: " + e.message);
+      } finally {
+        setUpload(null);
+      }
+    }
   }
-  function removeVideo(videoId) {
-    setLearnVideos((prev) => {
-      const target = prev.find((v) => v.id === videoId);
-      if (target?.url) URL.revokeObjectURL(target.url);
-      return prev.filter((v) => v.id !== videoId);
-    });
+
+  function handleVideoUpload(e) {
+    if (!requireAdmin()) { e.target.value = ""; return; }
+    const files = Array.from(e.target.files || []);
+    e.target.value = "";
+    if (files.length) uploadFiles(files, "video");
+  }
+  async function removeVideo(videoId) {
+    if (!requireAdmin()) return;
+    try {
+      await icsDeleteDriveItem(videoId);
+      setLearnVideos((prev) => prev.filter((v) => v.id !== videoId));
+    } catch (e) {
+      alert("삭제에 실패했습니다: " + e.message);
+    }
   }
 
   function handleImageUpload(e) {
+    if (!requireAdmin()) { e.target.value = ""; return; }
     const files = Array.from(e.target.files || []);
-    if (!files.length) return;
-    setLearnImages((prev) => [...prev, ...files.map((file) => ({ id: uid("image"), url: URL.createObjectURL(file), name: file.name }))]);
     e.target.value = "";
+    if (files.length) uploadFiles(files, "image");
   }
-  function removeImage(imageId) {
-    setLearnImages((prev) => {
-      const target = prev.find((v) => v.id === imageId);
-      if (target?.url) URL.revokeObjectURL(target.url);
-      return prev.filter((v) => v.id !== imageId);
-    });
+  async function removeImage(imageId) {
+    if (!requireAdmin()) return;
+    try {
+      await icsDeleteDriveItem(imageId);
+      setLearnImages((prev) => prev.filter((v) => v.id !== imageId));
+    } catch (e) {
+      alert("삭제에 실패했습니다: " + e.message);
+    }
   }
 
   return (
@@ -1387,7 +1442,6 @@ function LearnPage({ currentUser, learnContent, setLearnContent, learnVideos, se
         title={t("learn.title")}
         subtitle={t("learn.subtitle")}
         action={
-          isAdmin &&
           !editing && (
             <button onClick={startEdit} className="flex items-center gap-1.5 text-sm font-medium px-4 py-2 rounded-lg border border-slate-200 text-slate-600 hover:border-teal-400 hover:text-teal-600">
               <Pencil size={15} /> {t("learn.editBtn")}
@@ -1446,18 +1500,28 @@ function LearnPage({ currentUser, learnContent, setLearnContent, learnVideos, se
         <div className="flex items-center justify-between mb-1">
           <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
             <PlayCircle size={16} className="text-teal-600" /> {t("learn.videoTitle")}
-            <span className="text-xs font-normal text-slate-400">({learnVideos.length}/{MAX_LEARN_VIDEOS})</span>
+            {learnVideos.length > 0 && <span className="text-xs font-normal text-slate-400">({learnVideos.length})</span>}
           </h3>
-          {isAdmin && learnVideos.length < MAX_LEARN_VIDEOS && (
-            <div className="flex items-center gap-2">
-              <button onClick={() => videoInputRef.current?.click()} className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:border-teal-400 hover:text-teal-600">
-                <UploadCloud size={13} /> {t("learn.uploadBtn")}
-              </button>
-              <input ref={videoInputRef} type="file" accept="video/*" multiple className="hidden" onChange={handleVideoUpload} />
-            </div>
-          )}
+          <div className="flex items-center gap-2">
+            <button onClick={() => (requireAdmin() ? videoInputRef.current?.click() : null)} className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:border-teal-400 hover:text-teal-600">
+              <UploadCloud size={13} /> {t("learn.uploadBtn")}
+            </button>
+            <input ref={videoInputRef} type="file" accept="video/*" multiple className="hidden" onChange={handleVideoUpload} />
+          </div>
         </div>
-        <p className="text-xs text-slate-400 mb-3">{t("learn.videoLimitNotice")}</p>
+        <p className="text-xs text-slate-400 mb-3">{lang === "en" ? `Up to ${formatMB(MAX_VIDEO_SIZE)} per video, any number of videos.` : `동영상 1개당 최대 ${formatMB(MAX_VIDEO_SIZE)}까지, 개수 제한은 없습니다.`}</p>
+
+        {upload && (
+          <div className="mb-3 bg-slate-50 rounded-lg p-3">
+            <div className="flex items-center justify-between text-xs text-slate-500 mb-1.5">
+              <span className="truncate">{lang === "en" ? "Uploading" : "업로드 중"} · {upload.name}</span>
+              <span className="flex-shrink-0 font-medium">{upload.percent}%</span>
+            </div>
+            <div className="w-full h-1.5 rounded-full bg-slate-200 overflow-hidden">
+              <div className="h-full rounded-full transition-all" style={{ width: `${upload.percent}%`, backgroundColor: BRAND.accent }} />
+            </div>
+          </div>
+        )}
 
         {learnVideos.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1465,11 +1529,9 @@ function LearnPage({ currentUser, learnContent, setLearnContent, learnVideos, se
               <div key={v.id}>
                 <div className="flex items-center justify-between gap-2 mb-1.5">
                   <p className="text-xs text-slate-500 truncate">{t("learn.videoCaption")} · {v.name}</p>
-                  {isAdmin && (
-                    <button onClick={() => removeVideo(v.id)} className="text-slate-300 hover:text-red-500 flex-shrink-0" title={t("learn.removeVideoBtn")}>
-                      <Trash2 size={14} />
-                    </button>
-                  )}
+                  <button onClick={() => removeVideo(v.id)} className="text-slate-300 hover:text-red-500 flex-shrink-0" title={t("learn.removeVideoBtn")}>
+                    <Trash2 size={14} />
+                  </button>
                 </div>
                 <video controls src={v.url} className="w-full rounded-lg bg-slate-900" style={{ maxHeight: 280 }} />
               </div>
@@ -1478,8 +1540,8 @@ function LearnPage({ currentUser, learnContent, setLearnContent, learnVideos, se
         ) : (
           <div className="border border-dashed border-slate-200 rounded-lg py-10 flex flex-col items-center justify-center gap-1.5 mt-3">
             <PlayCircle size={26} className="text-slate-300" />
-            <p className="text-sm text-slate-400">{t("learn.noVideo")}</p>
-            {isAdmin && <p className="text-xs text-slate-400">{t("learn.noVideoAdminHint")}</p>}
+            <p className="text-sm text-slate-400">{mediaLoaded ? t("learn.noVideo") : (lang === "en" ? "Loading…" : "불러오는 중…")}</p>
+            <p className="text-xs text-slate-400">{t("learn.noVideoAdminHint")}</p>
           </div>
         )}
       </div>
@@ -1490,14 +1552,12 @@ function LearnPage({ currentUser, learnContent, setLearnContent, learnVideos, se
             <ImageIcon size={16} className="text-teal-600" /> {t("learn.imageTitle")}
             {learnImages.length > 0 && <span className="text-xs font-normal text-slate-400">({learnImages.length})</span>}
           </h3>
-          {isAdmin && (
-            <div className="flex items-center gap-2">
-              <button onClick={() => imageInputRef.current?.click()} className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:border-teal-400 hover:text-teal-600">
-                <UploadCloud size={13} /> {t("learn.uploadImageBtn")}
-              </button>
-              <input ref={imageInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleImageUpload} />
-            </div>
-          )}
+          <div className="flex items-center gap-2">
+            <button onClick={() => (requireAdmin() ? imageInputRef.current?.click() : null)} className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:border-teal-400 hover:text-teal-600">
+              <UploadCloud size={13} /> {t("learn.uploadImageBtn")}
+            </button>
+            <input ref={imageInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleImageUpload} />
+          </div>
         </div>
 
         {learnImages.length > 0 ? (
@@ -1528,7 +1588,7 @@ function LearnPage({ currentUser, learnContent, setLearnContent, learnVideos, se
                     >
                       <Download size={12} />
                     </a>
-                    {isAdmin && (
+                    {(
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -1549,8 +1609,8 @@ function LearnPage({ currentUser, learnContent, setLearnContent, learnVideos, se
         ) : (
           <div className="border border-dashed border-slate-200 rounded-lg py-10 flex flex-col items-center justify-center gap-1.5 mt-3">
             <ImageIcon size={26} className="text-slate-300" />
-            <p className="text-sm text-slate-400">{t("learn.noImage")}</p>
-            {isAdmin && <p className="text-xs text-slate-400">{t("learn.noImageAdminHint")}</p>}
+            <p className="text-sm text-slate-400">{mediaLoaded ? t("learn.noImage") : (lang === "en" ? "Loading…" : "불러오는 중…")}</p>
+            <p className="text-xs text-slate-400">{t("learn.noImageAdminHint")}</p>
           </div>
         )}
       </div>
@@ -4405,6 +4465,78 @@ async function icsUploadAttachment(requestItemId, file) {
   );
   if (!res.ok) throw new Error(`파일 업로드 실패: ${file.name} (${res.status})`);
   return res.json(); // { webUrl, name, ... }
+}
+
+// 학습 영상/이미지 목록을 SharePoint의 ICS_Media-Files 폴더 안 실제 파일 목록에서 그대로 읽어온다 (별도 목록/manifest 없이 폴더 자체가 데이터).
+// @microsoft.graph.downloadUrl은 임시(약 1시간) 직접 스트리밍 링크라, <video>/<img> 태그에 바로 넣어 재생/표시 가능.
+async function icsListMediaFiles() {
+  const token = await getGraphToken();
+  const driveId = await getIcsAttachedFilesDriveId();
+  const res = await fetch(
+    `${GRAPH}/drives/${driveId}/root:/ICS_Media-Files:/children?$select=id,name,size,file,webUrl,@microsoft.graph.downloadUrl`,
+    { headers: { Authorization: "Bearer " + token } }
+  );
+  if (!res.ok) throw new Error(`ICS_Media-Files 폴더 조회 실패 (${res.status})`);
+  const data = await res.json();
+  const items = (data.value || []).map((it) => ({
+    id: it.id,
+    name: it.name,
+    size: it.size,
+    url: it["@microsoft.graph.downloadUrl"] || it.webUrl,
+    mime: (it.file && it.file.mimeType) || "",
+  }));
+  return {
+    videos: items.filter((it) => it.mime.startsWith("video/")),
+    images: items.filter((it) => it.mime.startsWith("image/")),
+  };
+}
+
+// 4MB를 넘는 파일은 Graph의 단순 PUT(:/content)으로 못 올리므로, 업로드 세션(resumable upload)으로 5MB(320KiB의 배수)씩 나눠 올린다.
+// onProgress(percent:0~100)로 진행률을 알려준다.
+async function icsUploadMediaFile(file, onProgress) {
+  const token = await getGraphToken();
+  const driveId = await getIcsAttachedFilesDriveId();
+  const path = `ICS_Media-Files/${file.name}`;
+  const sessionRes = await fetch(`${GRAPH}/drives/${driveId}/root:/${path}:/createUploadSession`, {
+    method: "POST",
+    headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+    body: JSON.stringify({ item: { "@microsoft.graph.conflictBehavior": "rename" } }),
+  });
+  if (!sessionRes.ok) throw new Error(`업로드 세션 생성 실패 (${sessionRes.status})`);
+  const { uploadUrl } = await sessionRes.json();
+
+  const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB (320KiB의 배수, Graph 권장값)
+  const total = file.size;
+  let start = 0;
+  let lastItem = null;
+  while (start < total) {
+    const end = Math.min(start + CHUNK_SIZE, total);
+    const chunk = file.slice(start, end);
+    const chunkRes = await fetch(uploadUrl, {
+      method: "PUT",
+      headers: { "Content-Range": `bytes ${start}-${end - 1}/${total}`, "Content-Length": String(end - start) },
+      body: chunk,
+    });
+    if (!chunkRes.ok && chunkRes.status !== 202) {
+      throw new Error(`업로드 실패 (${chunkRes.status}) - ${file.name}`);
+    }
+    if (onProgress) onProgress(Math.round((end / total) * 100));
+    if (chunkRes.status !== 202) {
+      lastItem = await chunkRes.json(); // 마지막 조각 응답에 완료된 driveItem 정보 포함
+    }
+    start = end;
+  }
+  return lastItem;
+}
+
+async function icsDeleteDriveItem(itemId) {
+  const token = await getGraphToken();
+  const driveId = await getIcsAttachedFilesDriveId();
+  const res = await fetch(`${GRAPH}/drives/${driveId}/items/${itemId}`, {
+    method: "DELETE",
+    headers: { Authorization: "Bearer " + token },
+  });
+  if (!res.ok) throw new Error(`파일 삭제 실패 (${res.status})`);
 }
 
 async function icsCreateItem(listName, fields) {
