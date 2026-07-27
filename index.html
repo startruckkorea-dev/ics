@@ -279,7 +279,7 @@ function computeInitialPermissions(initialControls, users = INITIAL_USERS, depar
   return perm;
 }
 function getAllowedDepts(user, permissions, departments = INITIAL_DEPARTMENTS) {
-  if (user.role === "admin") return departments.map((d) => d.id);
+  if (user.role === "admin" || user.role === "guest") return departments.map((d) => d.id);
   return permissions[user.email]?.depts || (user.dept ? [user.dept] : []);
 }
 
@@ -343,7 +343,7 @@ const STR = {
     tagline: "내부통제관리시스템",
     currentLogin: "현재 로그인",
     logout: "로그아웃",
-    roles: { accessor: "Accessor", reviewer: "Reviewer", admin: "Admin", cfo: "CFO", rd: "RD" },
+    roles: { accessor: "Accessor", reviewer: "Reviewer", admin: "Admin", cfo: "CFO", rd: "RD", guest: "Guest" },
     navGroup: { icsOverview: "ICS Overview", controlMgmt: "통제 관리", assessment: "평가", adminOnly: "관리자 전용", executive: "경영진 전용" },
     nav: {
       dashboard: "대시보드",
@@ -610,7 +610,7 @@ const STR = {
     tagline: "Internal Control Management System",
     currentLogin: "Signed in as",
     logout: "Sign out",
-    roles: { accessor: "Accessor", reviewer: "Reviewer", admin: "Admin", cfo: "CFO", rd: "RD" },
+    roles: { accessor: "Accessor", reviewer: "Reviewer", admin: "Admin", cfo: "CFO", rd: "RD", guest: "Guest" },
     navGroup: { icsOverview: "ICS Overview", controlMgmt: "Control Management", assessment: "Assessment", adminOnly: "Admin only", executive: "Executive" },
     nav: {
       dashboard: "Dashboard",
@@ -4925,12 +4925,19 @@ async function icsBoot(account) {
   }
 
   const myEmail = (account.username || "").toLowerCase();
-  const matched = INITIAL_USERS.find(u => u.email.toLowerCase() === myEmail);
+  let matched = INITIAL_USERS.find(u => u.email.toLowerCase() === myEmail);
   if (!matched) {
-    document.getElementById("loading").style.display = "none";
-    document.getElementById("login-screen").style.display = "flex";
-    showLoginErr(`접근 권한이 없습니다 (${myEmail}). 관리자에게 문의해주세요.`);
-    return;
+    // Entra ID(MSAL) 로그인 자체가 성공했다는 건 이미 접근이 허용된 그룹의 계정이라는 뜻이므로,
+    // Users 시트에 아직 등록 안 된 사람이어도 차단하지 않고 최소 권한(guest)으로 들여보낸다.
+    // 실제 화면별 접근 통제는 ics_category_access.xlsx의 CategoryAccess 시트가 담당한다 (hasCategoryAccess 참고).
+    if (!myEmail) {
+      document.getElementById("loading").style.display = "none";
+      document.getElementById("login-screen").style.display = "flex";
+      showLoginErr("접근 권한이 없습니다. BU Admin에게 문의해주세요.");
+      return;
+    }
+    matched = { id: "guest", name: myEmail, nameEn: myEmail, email: myEmail, dept: null, role: "guest" };
+    INITIAL_USERS.push(matched);
   }
 
   window.icsSignOut = () => msalApp.logoutRedirect();
