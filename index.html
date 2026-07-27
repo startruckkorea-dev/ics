@@ -1315,6 +1315,8 @@ function Dashboard({ controls: allControls, goTo, isAdmin, allowedDepts }) {
 
 const MAX_VIDEO_SIZE = 100 * 1024 * 1024; // 100MB
 const MAX_IMAGE_SIZE = 20 * 1024 * 1024;  // 20MB
+const MAX_VIDEO_COUNT = 10;
+const MAX_IMAGE_COUNT = 20;
 
 function formatMB(bytes) {
   return (bytes / (1024 * 1024)).toFixed(1) + "MB";
@@ -1381,8 +1383,18 @@ function LearnPage({ currentUser, learnContent, setLearnContent, learnVideos, se
 
   async function uploadFiles(files, kind) {
     const maxSize = kind === "video" ? MAX_VIDEO_SIZE : MAX_IMAGE_SIZE;
+    const maxCount = kind === "video" ? MAX_VIDEO_COUNT : MAX_IMAGE_COUNT;
     const setList = kind === "video" ? setLearnVideos : setLearnImages;
+    let currentCount = kind === "video" ? learnVideos.length : learnImages.length;
     for (const file of files) {
+      if (currentCount >= maxCount) {
+        alert(
+          lang === "en"
+            ? `You can register up to ${maxCount} ${kind === "video" ? "videos" : "images"}. ${file.name} was skipped.`
+            : `${kind === "video" ? "동영상" : "이미지"}은 최대 ${maxCount}개까지 등록할 수 있습니다. ${file.name}은(는) 건너뜁니다.`
+        );
+        continue;
+      }
       if (file.size > maxSize) {
         alert(
           lang === "en"
@@ -1395,6 +1407,7 @@ function LearnPage({ currentUser, learnContent, setLearnContent, learnVideos, se
         setUpload({ name: file.name, percent: 0 });
         const uploaded = await icsUploadMediaFile(file, (percent) => setUpload({ name: file.name, percent }));
         setList((prev) => [...prev, { id: uploaded.id, url: uploaded["@microsoft.graph.downloadUrl"] || uploaded.webUrl, name: uploaded.name, size: uploaded.size }]);
+        currentCount++;
       } catch (e) {
         alert("업로드에 실패했습니다: " + e.message);
       } finally {
@@ -1500,7 +1513,7 @@ function LearnPage({ currentUser, learnContent, setLearnContent, learnVideos, se
         <div className="flex items-center justify-between mb-1">
           <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
             <PlayCircle size={16} className="text-teal-600" /> {t("learn.videoTitle")}
-            {learnVideos.length > 0 && <span className="text-xs font-normal text-slate-400">({learnVideos.length})</span>}
+            <span className="text-xs font-normal text-slate-400">({learnVideos.length}/{MAX_VIDEO_COUNT})</span>
           </h3>
           <div className="flex items-center gap-2">
             <button onClick={() => (requireAdmin() ? videoInputRef.current?.click() : null)} className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:border-teal-400 hover:text-teal-600">
@@ -1509,7 +1522,7 @@ function LearnPage({ currentUser, learnContent, setLearnContent, learnVideos, se
             <input ref={videoInputRef} type="file" accept="video/*" multiple className="hidden" onChange={handleVideoUpload} />
           </div>
         </div>
-        <p className="text-xs text-slate-400 mb-3">{lang === "en" ? `Up to ${formatMB(MAX_VIDEO_SIZE)} per video, any number of videos.` : `동영상 1개당 최대 ${formatMB(MAX_VIDEO_SIZE)}까지, 개수 제한은 없습니다.`}</p>
+        <p className="text-xs text-slate-400 mb-3">{lang === "en" ? `Up to ${formatMB(MAX_VIDEO_SIZE)} per video, up to ${MAX_VIDEO_COUNT} videos total.` : `동영상 1개당 최대 ${formatMB(MAX_VIDEO_SIZE)}까지, 최대 ${MAX_VIDEO_COUNT}개까지 등록할 수 있습니다.`}</p>
 
         {upload && (
           <div className="mb-3 bg-slate-50 rounded-lg p-3">
@@ -1550,7 +1563,7 @@ function LearnPage({ currentUser, learnContent, setLearnContent, learnVideos, se
         <div className="flex items-center justify-between mb-1">
           <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
             <ImageIcon size={16} className="text-teal-600" /> {t("learn.imageTitle")}
-            {learnImages.length > 0 && <span className="text-xs font-normal text-slate-400">({learnImages.length})</span>}
+            <span className="text-xs font-normal text-slate-400">({learnImages.length}/{MAX_IMAGE_COUNT})</span>
           </h3>
           <div className="flex items-center gap-2">
             <button onClick={() => (requireAdmin() ? imageInputRef.current?.click() : null)} className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:border-teal-400 hover:text-teal-600">
@@ -1559,6 +1572,7 @@ function LearnPage({ currentUser, learnContent, setLearnContent, learnVideos, se
             <input ref={imageInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleImageUpload} />
           </div>
         </div>
+        <p className="text-xs text-slate-400 mb-3">{lang === "en" ? `Up to ${formatMB(MAX_IMAGE_SIZE)} per image, up to ${MAX_IMAGE_COUNT} images total.` : `이미지 1개당 최대 ${formatMB(MAX_IMAGE_SIZE)}까지, 최대 ${MAX_IMAGE_COUNT}개까지 등록할 수 있습니다.`}</p>
 
         {learnImages.length > 0 ? (
           <>
