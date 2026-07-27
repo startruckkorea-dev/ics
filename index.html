@@ -217,6 +217,7 @@ const ACTION_LABELS = {
   reset_controls: { ko: "통제 항목 전체 초기화", en: "All control items reset" },
   reset_password_changed: { ko: "초기화 비밀번호 변경", en: "Reset password changed" },
   edit_control: { ko: "통제 항목 수정", en: "Control item edited" },
+  edit_learn_content: { ko: "학습 콘텐츠 수정", en: "Learning content edited" },
   add_control: { ko: "통제 항목 신규 등록", en: "Control item added" },
   delete_control: { ko: "통제 항목 삭제", en: "Control item deleted" },
 };
@@ -1322,7 +1323,7 @@ function formatMB(bytes) {
   return (bytes / (1024 * 1024)).toFixed(1) + "MB";
 }
 
-function LearnPage({ currentUser, learnContent, setLearnContent, learnVideos, setLearnVideos, learnImages, setLearnImages }) {
+function LearnPage({ currentUser, learnContent, setLearnContent, learnVideos, setLearnVideos, learnImages, setLearnImages, addLog }) {
   const { lang, t } = useLang();
   const isAdmin = currentUser.role === "admin";
   const videoInputRef = useRef(null);
@@ -1339,7 +1340,7 @@ function LearnPage({ currentUser, learnContent, setLearnContent, learnVideos, se
 
   const content = learnContent[lang];
 
-  // ICS_Media-Files 폴더의 실제 파일 목록을 화면 진입 시 한 번 불러온다 (폴더 자체가 데이터 소스라 별도 목록 불필요)
+  // ICS_Media-Files 폴더의 실제 파일 목록 + 저장된 학습 콘텐츠(JSON)를 화면 진입 시 한 번 불러온다.
   useEffect(() => {
     let cancelled = false;
     icsListMediaFiles()
@@ -1351,6 +1352,12 @@ function LearnPage({ currentUser, learnContent, setLearnContent, learnVideos, se
       })
       .catch((e) => console.warn("[ICS] 학습 미디어 로드 실패:", e.message))
       .finally(() => { if (!cancelled) setMediaLoaded(true); });
+
+    // 저장된 콘텐츠(learn_content.json)가 있으면 코드 내 기본 문구를 덮어씀 (없으면 기본 문구 그대로 사용 - 실패해도 무해함)
+    loadIcsLearnContent()
+      .then((saved) => { if (!cancelled && saved) setLearnContent(saved); })
+      .catch((e) => console.warn("[ICS] learn_content.json 로드 실패, 기본 문구 사용:", e.message));
+
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1369,9 +1376,16 @@ function LearnPage({ currentUser, learnContent, setLearnContent, learnVideos, se
     setDraftTips([...content.tips]);
     setEditing(true);
   }
-  function saveEdit() {
-    setLearnContent((prev) => ({ ...prev, [lang]: { intro: draftIntro, tips: draftTips.filter((x) => x.trim() !== "") } }));
+  async function saveEdit() {
+    const updated = { ...learnContent, [lang]: { intro: draftIntro, tips: draftTips.filter((x) => x.trim() !== "") } };
+    setLearnContent(updated);
     setEditing(false);
+    try {
+      await saveIcsLearnContent(updated);
+      if (addLog) addLog(currentUser.email, "edit_learn_content", "-", t("learn.title"), t("learn.title"));
+    } catch (e) {
+      alert("SharePoint 저장에 실패했습니다: " + e.message);
+    }
   }
   function updateTip(i, value) {
     setDraftTips((prev) => prev.map((x, idx) => (idx === i ? value : x)));
@@ -4340,6 +4354,7 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
                 setLearnVideos={setLearnVideos}
                 learnImages={learnImages}
                 setLearnImages={setLearnImages}
+                addLog={addLog}
               />
             )}
             {page === "list" && <ControlList controls={controlsForYear} filter={listFilter} setFilter={setListFilter} isAdmin={isAdmin} allowedDepts={allowedDepts} />}
@@ -4517,6 +4532,30 @@ async function icsUploadAttachment(requestItemId, file) {
 
 // 학습 영상/이미지 목록을 SharePoint의 ICS_Media-Files 폴더 안 실제 파일 목록에서 그대로 읽어온다 (별도 목록/manifest 없이 폴더 자체가 데이터).
 // @microsoft.graph.downloadUrl은 임시(약 1시간) 직접 스트리밍 링크라, <video>/<img> 태그에 바로 넣어 재생/표시 가능.
+// 학습 화면의 소개 문구/유의사항(learnContent)을 ICS_Media-Files 폴더의 작은 JSON 파일로 저장·조회한다.
+// (영상/이미지와 같은 폴더를 재사용 - 별도 폴더 생성 필요 없음, 크기가 작아 단순 PUT으로 충분)
+async function loadIcsLearnContent() {
+  const token = await getGraphToken();
+  const driveId = await getIcsAttachedFilesDriveId();
+  const res = await fetch(`${GRAPH}/drives/${driveId}/root:/ICS_Media-Files/learn_content.json:/content`, {
+    headers: { Authorization: "Bearer " + token },
+  });
+  if (!res.ok) throw new Error(`learn_content.json 조회 실패 (${res.status})`);
+  return res.json();
+}
+
+async function saveIcsLearnContent(content) {
+  const token = await getGraphToken();
+  const driveId = await getIcsAttachedFilesDriveId();
+  const res = await fetch(`${GRAPH}/drives/${driveId}/root:/ICS_Media-Files/learn_content.json:/content`, {
+    method: "PUT",
+    headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+    body: JSON.stringify(content),
+  });
+  if (!res.ok) throw new Error(`learn_content.json 저장 실패 (${res.status})`);
+  return res.json();
+}
+
 async function icsListMediaFiles() {
   const token = await getGraphToken();
   const driveId = await getIcsAttachedFilesDriveId();
