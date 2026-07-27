@@ -229,6 +229,7 @@ const ACTION_LABELS = {
   reset_password_changed: { ko: "초기화 비밀번호 변경", en: "Reset password changed" },
   edit_control: { ko: "통제 항목 수정", en: "Control item edited" },
   edit_learn_content: { ko: "학습 콘텐츠 수정", en: "Learning content edited" },
+  edit_category_access: { ko: "카테고리 접근 권한 변경", en: "Category access changed" },
   add_control: { ko: "통제 항목 신규 등록", en: "Control item added" },
   delete_control: { ko: "통제 항목 삭제", en: "Control item deleted" },
 };
@@ -596,11 +597,12 @@ const STR = {
     },
     categoryAccess: {
       title: "카테고리 접근 권한",
-      subtitle: "ics_category_access.xlsx(SharePoint)로 등록된 사용자별 카테고리 접근 권한 현황입니다. 등록되지 않은 사용자는 역할(Role)에 따른 기본 권한이 적용됩니다.",
+      subtitle: "직원별 카테고리 접근 권한을 관리자가 직접 체크박스로 부여·변경할 수 있습니다. 변경 즉시 SharePoint(ICS_CategoryAccess)에 저장되고 활동 로그에도 기록됩니다.",
       colUser: "사용자", colCategory: "카테고리",
-      defaultNote: "기본 권한: ICS Overview·통제 관리는 전체 공개, 관리자 전용은 Admin, 경영진 전용은 Admin/CFO/RD만 기본 접근 가능. 단, ISA 1차 자가평가·ISA 2차 검토·FSA 최종자기평가·FSA 2차검토 4개 화면은 역할(Admin 포함)과 무관하게 아래 표에 Y로 등록된 계정만 접근 가능합니다 (기본 허용 없음). 평가 이력·리포트는 이 4개 중 검토·FSA·FSA검토 중 하나라도 있으면 별도 등록 없이 접근 가능합니다.",
-      emptyText: "ics_category_access.xlsx에 등록된 사용자가 없습니다 (기본 권한만 적용 중).",
+      defaultNote: "기본 권한: ICS Overview·통제 관리는 전체 공개, 관리자 전용은 Admin, 경영진 전용은 Admin/CFO/RD만 기본 접근 가능. 단, ISA 1차 자가평가·ISA 2차 검토·FSA 최종자기평가·FSA 2차검토 4개 화면은 역할(Admin 포함)과 무관하게 아래 표에 체크된 계정만 접근 가능합니다 (기본 허용 없음). 평가 이력·리포트는 이 4개 중 검토·FSA·FSA검토 중 하나라도 있으면 별도 등록 없이 접근 가능합니다.",
+      emptyText: "검색 결과가 없습니다.",
       requestGuideTitle: "카테고리 접근 권한 신청 방법",
+      viewOnlyNotice: "이 화면은 조회 전용입니다. 권한 변경은 Admin 계정으로 로그인해서 진행해 주세요.",
       notice: "이 화면은 조회 전용입니다. 권한을 추가/변경하려면 BU Admin에게 IT Ticket으로 요청해 ics_category_access.xlsx를 수정해 주세요.",
     },
     permissions: {
@@ -863,11 +865,12 @@ const STR = {
     },
     categoryAccess: {
       title: "Category Access",
-      subtitle: "Category-level access granted via ics_category_access.xlsx (SharePoint). Users not listed there get the default access for their role.",
+      subtitle: "Admins can grant or change category access per employee directly with checkboxes. Changes save immediately to SharePoint (ICS_CategoryAccess) and are logged.",
       colUser: "User", colCategory: "Category",
-      defaultNote: "Defaults: ICS Overview and Control Management are open to everyone. Admin only is Admin by default; Executive is Admin/CFO/RD by default. However, ISA 1st Self-Assessment, ISA 2nd Review, FSA Final Self-Assessment, and FSA 2nd Review are only accessible to accounts marked Y in the table below, regardless of role (including Admin) — there is no default access. History & Reports is accessible if the account has access to any of Review, FSA, or FSA Review, with no separate entry needed.",
-      emptyText: "No users are registered in ics_category_access.xlsx (only default access applies).",
+      defaultNote: "Defaults: ICS Overview and Control Management are open to everyone. Admin only is Admin by default; Executive is Admin/CFO/RD by default. However, ISA 1st Self-Assessment, ISA 2nd Review, FSA Final Self-Assessment, and FSA 2nd Review are only accessible to accounts checked below, regardless of role (including Admin) — there is no default access. History & Reports is accessible if the account has access to any of Review, FSA, or FSA Review, with no separate entry needed.",
+      emptyText: "No results found.",
       requestGuideTitle: "How to request category access",
+      viewOnlyNotice: "This screen is view-only. Please sign in with an Admin account to change permissions.",
       notice: "This screen is view-only. To add or change access, request it from your BU Admin via IT Ticket to update ics_category_access.xlsx.",
     },
     permissions: {
@@ -3951,12 +3954,16 @@ function SettingsPage({ currentUser, years, selectedYear, activeYear, startNewYe
 /* 카테고리 접근 권한 (조회 전용, ics_category_access.xlsx 기반)            */
 /* ------------------------------------------------------------------ */
 
-function CategoryAccessPage() {
+function CategoryAccessPage({ currentUser, addLog, showToast }) {
   const { lang, t } = useLang();
   const { users } = useAppData();
-  const categoryKeys = ["icsOverview", "controlMgmt", "self", "review", "fsa", "fsaReview", "adminOnly", "executive"];
+  const isAdmin = currentUser.role === "admin";
+  const [access, setAccess] = useState(() => ({ ...ICS_CATEGORY_ACCESS }));
+  const [search, setSearch] = useState("");
+  const [savingKey, setSavingKey] = useState(null); // "email:categoryKey" 저장 중 표시
+
+  const categoryKeys = ["controlMgmt", "self", "review", "fsa", "fsaReview", "adminOnly", "executive"];
   const categoryLabelPath = {
-    icsOverview: "navGroup.icsOverview",
     controlMgmt: "navGroup.controlMgmt",
     self: "nav.self",
     review: "nav.review",
@@ -3965,68 +3972,132 @@ function CategoryAccessPage() {
     adminOnly: "navGroup.adminOnly",
     executive: "navGroup.executive",
   };
-  const emails = Object.keys(ICS_CATEGORY_ACCESS).sort();
+
+  const q = search.trim().toLowerCase();
+  const rows = users
+    .filter((u) => !q || u.email.toLowerCase().includes(q) || (u.name || "").toLowerCase().includes(q) || (u.nameEn || "").toLowerCase().includes(q))
+    .slice()
+    .sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email));
+
+  async function toggle(user, categoryKey) {
+    if (!isAdmin) {
+      alert(lang === "en" ? "Only admins can change this." : "관리자만 변경할 수 있습니다.");
+      return;
+    }
+    const email = user.email.toLowerCase();
+    const existing = access[email] || {};
+    const newValue = !existing[categoryKey];
+    const updatedEntry = { ...existing, [categoryKey]: newValue };
+    setAccess((prev) => ({ ...prev, [email]: updatedEntry }));
+    setSavingKey(`${email}:${categoryKey}`);
+
+    const fields = {
+      ICS_Overview: !!updatedEntry.icsOverview,
+      ControlMgmt: !!updatedEntry.controlMgmt,
+      Self: !!updatedEntry.self,
+      Review: !!updatedEntry.review,
+      FSA: !!updatedEntry.fsa,
+      FSAReview: !!updatedEntry.fsaReview,
+      AdminOnly: !!updatedEntry.adminOnly,
+      Executive: !!updatedEntry.executive,
+    };
+    try {
+      if (existing.spId) {
+        await icsUpdateItem(ICS_LISTS.categoryAccess, existing.spId, fields);
+      } else {
+        const created = await icsCreateItem(ICS_LISTS.categoryAccess, { Title: email, ...fields });
+        updatedEntry.spId = created.id;
+        setAccess((prev) => ({ ...prev, [email]: updatedEntry }));
+      }
+      ICS_CATEGORY_ACCESS[email] = updatedEntry; // 전역 캐시도 갱신해서 이번 세션 내 다른 화면에도 즉시 반영
+      addLog(
+        currentUser.email,
+        "edit_category_access",
+        "-",
+        `${email} · ${t(categoryLabelPath[categoryKey])} -> ${newValue ? "Y" : "N"}`,
+        `${email} · ${t(categoryLabelPath[categoryKey])} -> ${newValue ? "Y" : "N"}`
+      );
+      if (showToast) showToast(lang === "en" ? "Permission updated." : "권한이 반영됐습니다.");
+    } catch (e) {
+      // 실패 시 되돌림
+      setAccess((prev) => ({ ...prev, [email]: existing }));
+      alert("저장에 실패했습니다: " + e.message);
+    } finally {
+      setSavingKey(null);
+    }
+  }
 
   return (
     <div>
       <SectionHeader icon={KeyRound} title={t("categoryAccess.title")} subtitle={t("categoryAccess.subtitle")} />
-
-      <div className="rounded-xl border p-4 mb-4 flex items-start gap-2" style={{ backgroundColor: BRAND.accentSoft, borderColor: BRAND.accent + "40" }}>
-        <KeyRound size={16} style={{ color: BRAND.navy }} className="flex-shrink-0 mt-0.5" />
-        <div className="text-sm" style={{ color: BRAND.navy }}>
-          <p className="font-semibold mb-1">{t("categoryAccess.requestGuideTitle")}</p>
-          <ol className="space-y-0.5 list-decimal list-inside">
-            <li>{t("permissions.requestGuideStep1")}</li>
-            <li>
-              {t("permissions.requestGuideStep2")}{" "}
-              <a href="https://itsm-ticket.startruckkorea.com/" target="_blank" rel="noreferrer" className="underline font-medium" style={{ color: BRAND.accent }}>
-                itsm-ticket.startruckkorea.com
-              </a>
-            </li>
-          </ol>
-        </div>
-      </div>
 
       <div className="bg-slate-50 text-slate-500 text-xs px-4 py-3 rounded-lg mb-4 flex items-start gap-2">
         <ClipboardList size={14} className="flex-shrink-0 mt-0.5" />
         {t("categoryAccess.defaultNote")}
       </div>
 
-      <div className="bg-white rounded-xl border border-slate-100 overflow-hidden">
+      {!isAdmin && (
+        <div className="rounded-xl border p-4 mb-4 flex items-start gap-2" style={{ backgroundColor: BRAND.accentSoft, borderColor: BRAND.accent + "40" }}>
+          <KeyRound size={16} style={{ color: BRAND.navy }} className="flex-shrink-0 mt-0.5" />
+          <p className="text-sm" style={{ color: BRAND.navy }}>{t("categoryAccess.viewOnlyNotice")}</p>
+        </div>
+      )}
+
+      <input
+        type="text"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder={t("common.search")}
+        className={`${inputCls} max-w-xs mb-4`}
+      />
+
+      <div className="bg-white rounded-xl border border-slate-100 overflow-hidden overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-slate-500 text-xs">
             <tr>
-              <th className="text-left font-medium px-4 py-3">{t("categoryAccess.colUser")}</th>
+              <th className="text-left font-medium px-4 py-3 sticky left-0 bg-slate-50">{t("categoryAccess.colUser")}</th>
               {categoryKeys.map((k) => (
-                <th key={k} className="text-center font-medium px-3 py-3">{t(categoryLabelPath[k])}</th>
+                <th key={k} className="text-center font-medium px-3 py-3 whitespace-nowrap">{t(categoryLabelPath[k])}</th>
               ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-50">
-            {emails.map((email) => {
-              const u = users.find((x) => x.email === email);
-              const grant = ICS_CATEGORY_ACCESS[email];
+            {rows.map((u) => {
+              const email = u.email.toLowerCase();
+              const grant = access[email] || {};
               return (
-                <tr key={email}>
-                  <td className="px-4 py-3">
-                    <p className="text-slate-700 font-medium">{u ? pName(u.name, lang, users) : email}</p>
-                    <p className="text-xs text-slate-400">{email}</p>
+                <tr key={u.id}>
+                  <td className="px-4 py-2.5 sticky left-0 bg-white">
+                    <p className="text-slate-700 font-medium whitespace-nowrap">{pName(u.name, lang, users)}</p>
+                    <p className="text-xs text-slate-400 whitespace-nowrap">{u.email}</p>
                   </td>
-                  {categoryKeys.map((k) => (
-                    <td key={k} className="text-center px-3 py-3">
-                      {grant[k] ? <Check size={15} className="inline-block" style={{ color: BRAND.accent }} /> : <span className="text-slate-200">–</span>}
-                    </td>
-                  ))}
+                  {categoryKeys.map((k) => {
+                    const saving = savingKey === `${email}:${k}`;
+                    return (
+                      <td key={k} className="text-center px-3 py-2.5">
+                        <input
+                          type="checkbox"
+                          checked={!!grant[k]}
+                          disabled={!isAdmin || saving}
+                          onChange={() => toggle(u, k)}
+                          className="w-4 h-4 cursor-pointer disabled:cursor-not-allowed"
+                          style={{ accentColor: BRAND.accent }}
+                        />
+                      </td>
+                    );
+                  })}
                 </tr>
               );
             })}
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={categoryKeys.length + 1}>
+                  <EmptyState text={t("categoryAccess.emptyText")} />
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
-        {emails.length === 0 && <EmptyState text={t("categoryAccess.emptyText")} />}
-      </div>
-
-      <div className="bg-amber-50 text-amber-700 text-sm px-4 py-3 rounded-lg mt-4 flex items-center gap-2">
-        <AlertTriangle size={16} className="flex-shrink-0" /> {t("categoryAccess.notice")}
       </div>
     </div>
   );
@@ -4477,7 +4548,7 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
                 setResetPassword={setResetPassword}
               />
             )}
-            {page === "categoryAccess" && (hasCategoryAccess(currentUser, "adminOnly") ? <CategoryAccessPage /> : <EmptyState text="Access denied" />)}
+            {page === "categoryAccess" && (hasCategoryAccess(currentUser, "adminOnly") ? <CategoryAccessPage currentUser={currentUser} addLog={addLog} showToast={showToast} /> : <EmptyState text="Access denied" />)}
             {page === "permissions" && (hasCategoryAccess(currentUser, "adminOnly") ? <PermissionsPage permissions={permissions} setPermissions={setPermissions} /> : <EmptyState text="Access denied" />)}
             {page === "finalReport" && (
               <FinalReportPage
@@ -4540,7 +4611,7 @@ async function apiGet(path, token) {
  * ICS_* SharePoint 목록 연동 (Controls / Requests / Log)
  * 목록 GUID를 하드코딩하지 않고 displayName으로 조회해서 캐싱한다 (오타/재생성에 안전).
  * ------------------------------------------------------------------ */
-const ICS_LISTS = { controls: "ICS_Controls", requests: "ICS_Requests", approvals: "ICS_Approvals", log: "ICS_Log" };
+const ICS_LISTS = { controls: "ICS_Controls", requests: "ICS_Requests", approvals: "ICS_Approvals", log: "ICS_Log", categoryAccess: "ICS_CategoryAccess" };
 const _icsListIds = {};
 
 async function getGraphToken() {
@@ -4826,6 +4897,30 @@ function stripSpRichText(value) {
 // 동시에 SharePoint ICS_Controls의 Dept 값도 조용히 고쳐써서(자가 치유) 다음부터는 재매핑이 필요 없게 한다.
 const LEGACY_DEPT_REMAP = { fin: "fnc", hr: "hrt", pur: "pcm", itd: "itt" };
 
+// 카테고리 접근 권한을 ICS_CategoryAccess SharePoint 목록에서 읽어온다 (관리자 화면에서 실시간으로 켜고 끌 수 있도록 Excel 대신 목록 사용).
+// 목록 컬럼: Title(이메일) | ICS_Overview | ControlMgmt | Self | Review | FSA | FSAReview | AdminOnly | Executive (전부 예/아니오 형식)
+async function loadIcsCategoryAccessList() {
+  const items = await icsListAll(ICS_LISTS.categoryAccess);
+  const parsed = {};
+  items.forEach((it) => {
+    const f = it.fields;
+    const email = (f.Title || "").trim().toLowerCase();
+    if (!email) return;
+    parsed[email] = {
+      spId: it.id,
+      icsOverview: !!f.ICS_Overview,
+      controlMgmt: !!f.ControlMgmt,
+      self: !!f.Self,
+      review: !!f.Review,
+      fsa: !!f.FSA,
+      fsaReview: !!f.FSAReview,
+      adminOnly: !!f.AdminOnly,
+      executive: !!f.Executive,
+    };
+  });
+  return parsed;
+}
+
 async function loadIcsControls() {
   const [controlItems, requestItems] = await Promise.all([
     icsListAll(ICS_LISTS.controls),
@@ -5049,7 +5144,8 @@ async function loadIcsMasterConfig(token) {
     if (email) ICS_CONTACT_EMAIL = email;
   }
 
-  // --- Users 시트(필수): Email | NameKo | NameEn | Role(accessor/reviewer/admin/cfo/rd) | Dept(accessor/reviewer만 해당) ---
+  // --- Users 시트(필수): Email | NameKo | NameEn | Role(accessor/reviewer/admin/cfo/rd, 비어있으면 guest) | Dept(accessor/reviewer만 해당) ---
+  // 전 직원 명단을 그대로 긁어와도(Role 빈칸인 사람 다수) 전부 포함시킨다 - 카테고리 접근 권한 화면에서 누구에게나 권한을 부여할 수 있어야 하므로.
   const userRows = sheetRows("Users");
   if (!userRows || userRows.length < 2) throw new Error("ics_category_access.xlsx의 Users 시트에서 사용자 정보를 찾지 못함");
   const uHeader = userRows[0].map((h) => String(h || "").trim());
@@ -5058,12 +5154,13 @@ async function loadIcsMasterConfig(token) {
   const nameEnIdx = colIdx(uHeader, "NameEn");
   const roleIdx = colIdx(uHeader, "Role");
   const deptIdx = colIdx(uHeader, "Dept");
-  const ROLE_PRIORITY = { admin: 0, rd: 1, cfo: 2, reviewer: 3, accessor: 4 };
+  const ROLE_PRIORITY = { admin: 0, rd: 1, cfo: 2, reviewer: 3, accessor: 4, guest: 5 };
   const byEmail = {};
   userRows.slice(1).forEach((row) => {
     const email = emailIdx >= 0 ? String(row[emailIdx] || "").trim().toLowerCase() : "";
-    const role = roleIdx >= 0 ? String(row[roleIdx] || "").trim().toLowerCase() : "";
-    if (!email || !(role in ROLE_PRIORITY)) return;
+    if (!email) return;
+    let role = roleIdx >= 0 ? String(row[roleIdx] || "").trim().toLowerCase() : "";
+    if (!(role in ROLE_PRIORITY)) role = "guest"; // ICS 역할이 없는 일반 직원 - 로그인은 가능, 카테고리 권한으로만 화면 노출 제어
     const nameKo = nameKoIdx >= 0 ? String(row[nameKoIdx] || "").trim() : "";
     const nameEn = nameEnIdx >= 0 ? String(row[nameEnIdx] || "").trim() : "";
     const dept = deptIdx >= 0 ? String(row[deptIdx] || "").trim() : "";
@@ -5079,29 +5176,9 @@ async function loadIcsMasterConfig(token) {
   if (!dedupedUsers.length) throw new Error("ics_category_access.xlsx Users 시트에서 유효한 사용자를 하나도 찾지 못함");
   INITIAL_USERS.length = 0;
   dedupedUsers.forEach((u, i) => { u.id = `u${i + 1}`; INITIAL_USERS.push(u); });
+  // 카테고리 접근 권한은 더 이상 이 Excel 시트에서 읽지 않는다 - loadIcsCategoryAccessList()가 ICS_CategoryAccess
+  // SharePoint 목록에서 읽어오며, 관리자 화면에서 직접 켜고 끄면 그 목록에 실시간으로 저장된다.
 
-  // --- CategoryAccess 시트: Email | ICS_Overview | ControlMgmt | Assessment | AdminOnly | Executive ---
-  const catRows = sheetRows("CategoryAccess");
-  if (catRows && catRows.length > 1) {
-    const header = catRows[0].map((h) => String(h || "").trim());
-    const catEmailIdx = colIdx(header, "Email");
-    const catCols = { icsOverview: "ICS_Overview", controlMgmt: "ControlMgmt", adminOnly: "AdminOnly", executive: "Executive", self: "Self", review: "Review", fsa: "FSA", fsaReview: "FSAReview" };
-    const catIdx = {};
-    Object.entries(catCols).forEach(([key, colName]) => { catIdx[key] = header.findIndex((h) => h === colName); });
-    const parsedCat = {};
-    catRows.slice(1).forEach((row) => {
-      const email = catEmailIdx >= 0 ? String(row[catEmailIdx] || "").trim().toLowerCase() : "";
-      if (!email) return;
-      const entry = {};
-      Object.keys(catCols).forEach((key) => {
-        const idx = catIdx[key];
-        const val = idx >= 0 && row[idx] !== undefined && row[idx] !== null ? String(row[idx]).trim().toUpperCase() : "";
-        entry[key] = val === "Y" || val === "TRUE" || val === "1";
-      });
-      parsedCat[email] = entry;
-    });
-    ICS_CATEGORY_ACCESS = parsedCat;
-  }
 }
 
 async function icsBoot(account) {
@@ -5116,12 +5193,13 @@ async function icsBoot(account) {
     const siteRes = await apiGet(`/sites/${SITE_PATH}`, token);
     _siteId = siteRes.id;
 
-    // 서로 의존하지 않는 4개 로드를 병렬로 실행해서 로그인 대기 시간을 줄인다 (예전엔 하나씩 순서대로 기다렸음).
-    const [configResult, uiStringsResult, controlsResult, logResult] = await Promise.allSettled([
+    // 서로 의존하지 않는 5개 로드를 병렬로 실행해서 로그인 대기 시간을 줄인다 (예전엔 하나씩 순서대로 기다렸음).
+    const [configResult, uiStringsResult, controlsResult, logResult, categoryAccessResult] = await Promise.allSettled([
       loadIcsMasterConfig(token),
       loadIcsUiStrings(token),
       loadIcsControls(),
       loadIcsConfirmEvents(),
+      loadIcsCategoryAccessList(),
     ]);
 
     if (configResult.status === "rejected") throw configResult.reason;
@@ -5135,6 +5213,9 @@ async function icsBoot(account) {
     else console.warn("[ICS] 통제 항목 로드 실패:", controlsResult.reason.message);
     if (logResult.status === "fulfilled") loadedLog = logResult.value;
     else console.warn("[ICS] 활동 로그 로드 실패:", logResult.reason.message);
+    // ICS_CategoryAccess 목록이 아직 없어도(첫 설치 등) 실패로 앱을 막지 않고 기본 권한(역할 기반)으로 진행.
+    if (categoryAccessResult.status === "fulfilled") ICS_CATEGORY_ACCESS = categoryAccessResult.value;
+    else console.warn("[ICS] ICS_CategoryAccess 목록 로드 실패, 기본 권한으로 진행:", categoryAccessResult.reason.message);
   } catch (e) {
     // INITIAL_USERS를 코드에 하드코딩해두지 않으므로, 여기서 실패하면 사용자 목록이 비어있는 채로 남는다.
     // 그대로 진행하면 "권한 없음"으로 오인되니, 실제 원인(설정 파일 로드 실패)을 화면에 명확히 알린다.
