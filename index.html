@@ -1081,10 +1081,7 @@ function Sidebar({ page, setPage, currentUser }) {
 
       <nav className="flex-1 px-3 py-4 overflow-y-auto">
         {MENU_GROUPS.map((group, gi) => {
-          if (group.key && !hasCategoryAccess(currentUser, group.key)) return null;
           const items = group.items.filter((item) => {
-            if (item.adminOnly && currentUser.role !== "admin") return false;
-            if (item.roles && !item.roles.includes(currentUser.role)) return false;
             if (item.hiddenFor && item.hiddenFor.includes(currentUser.role)) return false;
             return true;
           });
@@ -1099,14 +1096,25 @@ function Sidebar({ page, setPage, currentUser }) {
               {items.map((item) => {
                 const active = page === item.key;
                 const Icon = item.icon;
+                const allowed = !group.key || hasCategoryAccess(currentUser, group.key);
                 return (
                   <button
                     key={item.key}
-                    onClick={() => setPage(item.key)}
+                    onClick={() => {
+                      if (!allowed) {
+                        alert(
+                          lang === "en"
+                            ? "You don't have access to this category. Please contact your BU Admin."
+                            : "이 카테고리에 접근 권한이 없습니다. BU Admin에게 문의해주세요."
+                        );
+                        return;
+                      }
+                      setPage(item.key);
+                    }}
                     className="w-full flex items-start text-left gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 transition-colors"
                     style={{
                       backgroundColor: active ? BRAND.navySoft : "transparent",
-                      color: active ? "#fff" : "#B7C0D1",
+                      color: active ? "#fff" : allowed ? "#B7C0D1" : "#5B6472",
                       borderLeft: active ? `3px solid ${BRAND.accent}` : "3px solid transparent",
                     }}
                     onMouseEnter={(e) => { if (!active) e.currentTarget.style.backgroundColor = BRAND.navyHover; }}
