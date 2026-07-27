@@ -1384,8 +1384,8 @@ function LearnPage({ currentUser, learnContent, setLearnContent, learnVideos, se
   async function uploadFiles(files, kind) {
     const maxSize = kind === "video" ? MAX_VIDEO_SIZE : MAX_IMAGE_SIZE;
     const maxCount = kind === "video" ? MAX_VIDEO_COUNT : MAX_IMAGE_COUNT;
-    const setList = kind === "video" ? setLearnVideos : setLearnImages;
     let currentCount = kind === "video" ? learnVideos.length : learnImages.length;
+    let anyUploaded = false;
     for (const file of files) {
       if (currentCount >= maxCount) {
         alert(
@@ -1405,13 +1405,24 @@ function LearnPage({ currentUser, learnContent, setLearnContent, learnVideos, se
       }
       try {
         setUpload({ name: file.name, percent: 0 });
-        const uploaded = await icsUploadMediaFile(file, (percent) => setUpload({ name: file.name, percent }));
-        setList((prev) => [...prev, { id: uploaded.id, url: uploaded["@microsoft.graph.downloadUrl"] || uploaded.webUrl, name: uploaded.name, size: uploaded.size }]);
+        await icsUploadMediaFile(file, (percent) => setUpload({ name: file.name, percent }));
         currentCount++;
+        anyUploaded = true;
       } catch (e) {
         alert("업로드에 실패했습니다: " + e.message);
       } finally {
         setUpload(null);
+      }
+    }
+    if (anyUploaded) {
+      // 업로드 완료 응답의 webUrl은 <video>/<img>로 바로 재생·표시가 안 되는 SharePoint 뷰어 링크라,
+      // 폴더를 다시 조회해서 재생 가능한 @microsoft.graph.downloadUrl을 새로 받아온다.
+      try {
+        const { videos, images } = await icsListMediaFiles();
+        setLearnVideos(videos.map((v) => ({ id: v.id, url: v.url, name: v.name, size: v.size })));
+        setLearnImages(images.map((i) => ({ id: i.id, url: i.url, name: i.name, size: i.size })));
+      } catch (e) {
+        console.warn("[ICS] 업로드 후 미디어 목록 갱신 실패:", e.message);
       }
     }
   }
