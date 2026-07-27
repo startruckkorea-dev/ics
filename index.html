@@ -138,10 +138,19 @@ let ICS_CATEGORY_ACCESS = {};
 // 2) 등록이 없으면 역할 기반 기본값을 따른다 (ICS Overview/통제 관리/평가는 전체 공개, 관리자 전용은 Admin, 경영진 전용은 Admin/CFO/RD).
 function hasCategoryAccess(user, categoryKey) {
   const grant = ICS_CATEGORY_ACCESS[(user.email || "").toLowerCase()];
+  // 평가 관련 4개 화면은 역할(Admin 포함)과 무관하게 ics_category_access.xlsx의 CategoryAccess 시트에
+  // 명시적으로 등록된 계정만 접근 가능 (다른 카테고리처럼 기본 허용 없음).
+  if (categoryKey === "self" || categoryKey === "review" || categoryKey === "fsa" || categoryKey === "fsaReview") {
+    return !!(grant && grant[categoryKey]);
+  }
+  // 평가 이력·리포트는 위 4개 중 review/fsa/fsaReview 셋 중 하나라도 권한이 있으면 접근 가능 (별도 컬럼 없음).
+  if (categoryKey === "history") {
+    return hasCategoryAccess(user, "review") || hasCategoryAccess(user, "fsa") || hasCategoryAccess(user, "fsaReview");
+  }
   if (grant && grant[categoryKey]) return true;
   if (categoryKey === "adminOnly") return user.role === "admin";
   if (categoryKey === "executive") return user.role === "admin" || user.role === "cfo" || user.role === "rd";
-  return true; // icsOverview / controlMgmt / assessment
+  return true; // icsOverview / controlMgmt
 }
 
 let INITIAL_DEPARTMENTS = [
@@ -587,7 +596,7 @@ const STR = {
       title: "카테고리 접근 권한",
       subtitle: "ics_category_access.xlsx(SharePoint)로 등록된 사용자별 카테고리 접근 권한 현황입니다. 등록되지 않은 사용자는 역할(Role)에 따른 기본 권한이 적용됩니다.",
       colUser: "사용자", colCategory: "카테고리",
-      defaultNote: "기본 권한: ICS Overview·통제 관리·평가는 전체 공개, 관리자 전용은 Admin, 경영진 전용은 Admin/CFO/RD만 기본 접근 가능. 아래 표는 Excel로 추가 부여된 권한만 표시합니다.",
+      defaultNote: "기본 권한: ICS Overview·통제 관리는 전체 공개, 관리자 전용은 Admin, 경영진 전용은 Admin/CFO/RD만 기본 접근 가능. 단, ISA 1차 자가평가·ISA 2차 검토·FSA 최종자기평가·FSA 2차검토 4개 화면은 역할(Admin 포함)과 무관하게 아래 표에 Y로 등록된 계정만 접근 가능합니다 (기본 허용 없음). 평가 이력·리포트는 이 4개 중 검토·FSA·FSA검토 중 하나라도 있으면 별도 등록 없이 접근 가능합니다.",
       emptyText: "ics_category_access.xlsx에 등록된 사용자가 없습니다 (기본 권한만 적용 중).",
       requestGuideTitle: "카테고리 접근 권한 신청 방법",
       notice: "이 화면은 조회 전용입니다. 권한을 추가/변경하려면 BU Admin에게 IT Ticket으로 요청해 ics_category_access.xlsx를 수정해 주세요.",
@@ -854,7 +863,7 @@ const STR = {
       title: "Category Access",
       subtitle: "Category-level access granted via ics_category_access.xlsx (SharePoint). Users not listed there get the default access for their role.",
       colUser: "User", colCategory: "Category",
-      defaultNote: "Defaults: ICS Overview, Control Management, and Assessment are open to everyone. Admin only is Admin by default; Executive is Admin/CFO/RD by default. The table below shows only additional grants from Excel.",
+      defaultNote: "Defaults: ICS Overview and Control Management are open to everyone. Admin only is Admin by default; Executive is Admin/CFO/RD by default. However, ISA 1st Self-Assessment, ISA 2nd Review, FSA Final Self-Assessment, and FSA 2nd Review are only accessible to accounts marked Y in the table below, regardless of role (including Admin) — there is no default access. History & Reports is accessible if the account has access to any of Review, FSA, or FSA Review, with no separate entry needed.",
       emptyText: "No users are registered in ics_category_access.xlsx (only default access applies).",
       requestGuideTitle: "How to request category access",
       notice: "This screen is view-only. To add or change access, request it from your BU Admin via IT Ticket to update ics_category_access.xlsx.",
@@ -1042,11 +1051,11 @@ const MENU_GROUPS = [
     { key: "manage", icon: ClipboardEdit },
   ] },
   { key: "assessment", label: "assessment", items: [
-    { key: "self", icon: ClipboardList, hiddenFor: ["cfo", "rd"] },
-    { key: "review", icon: ClipboardCheck },
-    { key: "fsa", icon: ShieldCheck, hiddenFor: ["cfo", "rd"] },
-    { key: "fsaReview", icon: CheckCircle2 },
-    { key: "history", icon: History },
+    { key: "self", icon: ClipboardList, hiddenFor: ["cfo", "rd"], categoryKey: "self" },
+    { key: "review", icon: ClipboardCheck, categoryKey: "review" },
+    { key: "fsa", icon: ShieldCheck, hiddenFor: ["cfo", "rd"], categoryKey: "fsa" },
+    { key: "fsaReview", icon: CheckCircle2, categoryKey: "fsaReview" },
+    { key: "history", icon: History, categoryKey: "history" },
   ] },
   { key: "adminOnly", label: "adminOnly", items: [
     { key: "categoryAccess", icon: KeyRound },
@@ -1096,7 +1105,7 @@ function Sidebar({ page, setPage, currentUser }) {
               {items.map((item) => {
                 const active = page === item.key;
                 const Icon = item.icon;
-                const allowed = !group.key || hasCategoryAccess(currentUser, group.key);
+                const allowed = hasCategoryAccess(currentUser, item.categoryKey || group.key);
                 return (
                   <button
                     key={item.key}
@@ -3939,7 +3948,17 @@ function SettingsPage({ currentUser, years, selectedYear, activeYear, startNewYe
 function CategoryAccessPage() {
   const { lang, t } = useLang();
   const { users } = useAppData();
-  const categoryKeys = ["icsOverview", "controlMgmt", "assessment", "adminOnly", "executive"];
+  const categoryKeys = ["icsOverview", "controlMgmt", "self", "review", "fsa", "fsaReview", "adminOnly", "executive"];
+  const categoryLabelPath = {
+    icsOverview: "navGroup.icsOverview",
+    controlMgmt: "navGroup.controlMgmt",
+    self: "nav.self",
+    review: "nav.review",
+    fsa: "nav.fsa",
+    fsaReview: "nav.fsaReview",
+    adminOnly: "navGroup.adminOnly",
+    executive: "navGroup.executive",
+  };
   const emails = Object.keys(ICS_CATEGORY_ACCESS).sort();
 
   return (
@@ -3973,7 +3992,7 @@ function CategoryAccessPage() {
             <tr>
               <th className="text-left font-medium px-4 py-3">{t("categoryAccess.colUser")}</th>
               {categoryKeys.map((k) => (
-                <th key={k} className="text-center font-medium px-3 py-3">{t(`navGroup.${k}`)}</th>
+                <th key={k} className="text-center font-medium px-3 py-3">{t(categoryLabelPath[k])}</th>
               ))}
             </tr>
           </thead>
@@ -4403,18 +4422,30 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
               />
             )}
             {page === "self" && (
-              <SelfAssessment controls={controlsForYear} setControls={setControls} currentUser={currentUser} addLog={addLog} isArchived={isArchived} showToast={showToast} />
+              hasCategoryAccess(currentUser, "self")
+                ? <SelfAssessment controls={controlsForYear} setControls={setControls} currentUser={currentUser} addLog={addLog} isArchived={isArchived} showToast={showToast} />
+                : <EmptyState text="Access denied" />
             )}
             {page === "review" && (
-              <ReviewPage controls={controlsForYear} setControls={setControls} currentUser={currentUser} addLog={addLog} isArchived={isArchived} isAdmin={isAdmin} showToast={showToast} />
+              hasCategoryAccess(currentUser, "review")
+                ? <ReviewPage controls={controlsForYear} setControls={setControls} currentUser={currentUser} addLog={addLog} isArchived={isArchived} isAdmin={isAdmin} showToast={showToast} />
+                : <EmptyState text="Access denied" />
             )}
             {page === "fsa" && (
-              <FSAPage controls={controlsForYear} setControls={setControls} currentUser={currentUser} addLog={addLog} isArchived={isArchived} showToast={showToast} />
+              hasCategoryAccess(currentUser, "fsa")
+                ? <FSAPage controls={controlsForYear} setControls={setControls} currentUser={currentUser} addLog={addLog} isArchived={isArchived} showToast={showToast} />
+                : <EmptyState text="Access denied" />
             )}
             {page === "fsaReview" && (
-              <FSAReviewPage controls={controlsForYear} setControls={setControls} currentUser={currentUser} addLog={addLog} isArchived={isArchived} showToast={showToast} />
+              hasCategoryAccess(currentUser, "fsaReview")
+                ? <FSAReviewPage controls={controlsForYear} setControls={setControls} currentUser={currentUser} addLog={addLog} isArchived={isArchived} showToast={showToast} />
+                : <EmptyState text="Access denied" />
             )}
-            {page === "history" && <HistoryPage controls={controlsForYear} log={logForYear} />}
+            {page === "history" && (
+              hasCategoryAccess(currentUser, "history")
+                ? <HistoryPage controls={controlsForYear} log={logForYear} />
+                : <EmptyState text="Access denied" />
+            )}
             {page === "settings" && (
               <SettingsPage
                 currentUser={currentUser}
@@ -5040,7 +5071,7 @@ async function loadIcsMasterConfig(token) {
   if (catRows && catRows.length > 1) {
     const header = catRows[0].map((h) => String(h || "").trim());
     const catEmailIdx = colIdx(header, "Email");
-    const catCols = { icsOverview: "ICS_Overview", controlMgmt: "ControlMgmt", assessment: "Assessment", adminOnly: "AdminOnly", executive: "Executive" };
+    const catCols = { icsOverview: "ICS_Overview", controlMgmt: "ControlMgmt", adminOnly: "AdminOnly", executive: "Executive", self: "Self", review: "Review", fsa: "FSA", fsaReview: "FSAReview" };
     const catIdx = {};
     Object.entries(catCols).forEach(([key, colName]) => { catIdx[key] = header.findIndex((h) => h === colName); });
     const parsedCat = {};
