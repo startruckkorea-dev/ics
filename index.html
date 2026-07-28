@@ -4233,23 +4233,27 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
                   {t("permissions.adminAllDeptsNote")}
                 </p>
               )}
-              <div className="divide-y divide-slate-50 max-h-80 overflow-y-auto">
+              <div className="divide-y divide-slate-50 max-h-80 overflow-y-auto pr-2">
                 {departments.map((d) => (
-                  <div key={d.id} className="py-2 flex items-center justify-between text-sm">
+                  <label
+                    key={d.id}
+                    className="py-3 px-2 -mx-2 flex items-center justify-between text-sm rounded-lg hover:bg-slate-50 cursor-pointer"
+                    style={{ cursor: selectedUser.role === "admin" || !isAdmin ? "default" : "pointer" }}
+                  >
                     <span className="text-slate-600">{d[lang]}</span>
                     {selectedUser.role === "admin" ? (
-                      <Check size={15} style={{ color: BRAND.accent }} />
+                      <Check size={15} className="flex-shrink-0" style={{ color: BRAND.accent }} />
                     ) : (
                       <input
                         type="checkbox"
                         checked={selectedDepts.includes(d.id)}
                         disabled={!isAdmin || savingDept === d.id}
                         onChange={() => toggleDept(d.id)}
-                        className="w-4 h-4 cursor-pointer disabled:cursor-not-allowed"
+                        className="w-4 h-4 flex-shrink-0 cursor-pointer disabled:cursor-not-allowed"
                         style={{ accentColor: BRAND.accent }}
                       />
                     )}
-                  </div>
+                  </label>
                 ))}
               </div>
             </div>
