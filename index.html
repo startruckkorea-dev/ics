@@ -612,6 +612,9 @@ const STR = {
       title: "권한 관리",
       subtitle: "관리자는 항상 전체 부서에 접근할 수 있습니다. 담당자는 이메일 주소로 등록하여 체크한 부서의 내용만 조회·평가할 수 있도록 권한을 부여합니다.",
       colUser: "사용자", colRole: "역할", colAll: "전체",
+      selectedDeptTitle: "선택한 사용자의 부서 접근 권한",
+      selectUserHint: "왼쪽 목록에서 사용자를 선택하면 부서별 접근 권한이 여기 표시됩니다.",
+      adminAllDeptsNote: "Admin은 역할상 항상 전체 부서에 접근합니다 (아래는 참고용 표시).",
       selectAll: "전체선택", deselectAll: "전체해제",
       addTitle: "이메일로 담당자 권한 부여",
       emailPlaceholder: "이메일 주소 입력 (예: hong.gildong@startruckkorea.com)",
@@ -880,6 +883,9 @@ const STR = {
       title: "Access Control",
       subtitle: "Admins always have access to all departments. Grant access by email address so each person can only view and assess the departments checked for them.",
       colUser: "User", colRole: "Role", colAll: "All",
+      selectedDeptTitle: "Selected user's department access",
+      selectUserHint: "Select a user from the list on the left to see their department access here.",
+      adminAllDeptsNote: "Admins always have access to all departments by role (shown below for reference).",
       selectAll: "Select all", deselectAll: "Clear all",
       addTitle: "Grant access by email",
       emailPlaceholder: "Enter email address (e.g. jane.doe@startruckkorea.com)",
@@ -4108,76 +4114,38 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
 
 function PermissionsPage({ permissions, setPermissions }) {
   const { lang, t } = useLang();
-  const { departments, users, setUsers } = useAppData();
+  const { departments, users } = useAppData();
 
-  // 최초 시드 데모 계정(9명)은 설정 페이지에서만 이름 등 상세정보를 관리하도록, 권한관리 화면에서는 삭제할 수 없게 보호한다.
-  const protectedEmails = new Set(INITIAL_USERS.filter((u) => u.role !== "admin").map((u) => u.email));
-  const fixedEmails = new Set(users.filter((u) => u.role !== "admin").map((u) => u.email));
-  const adminEmails = new Set(users.filter((u) => u.role === "admin").map((u) => u.email));
-  const allEmails = Array.from(new Set([...fixedEmails, ...Object.keys(permissions).filter((e) => !adminEmails.has(e))]));
-  const rows = allEmails
-    .map((email) => {
-      const u = users.find((x) => x.email === email);
-      return {
-        email,
-        name: u ? pName(u.name, lang, users) : null,
-        role: u?.role || permissions[email]?.role || "accessor",
-        depts: permissions[email]?.depts || [],
-        isCustom: !protectedEmails.has(email),
-      };
-    })
-    .filter((r) => r.role !== "admin" && r.role !== "rd");
-
-  const [matrixSearch, setMatrixSearch] = useState("");
-  const qMatrix = matrixSearch.trim().toLowerCase();
-  const matrixRows = rows.filter((r) => !qMatrix || r.email.toLowerCase().includes(qMatrix) || (r.name || "").toLowerCase().includes(qMatrix));
-
-  function toggle(email, deptId) {
-    setPermissions((prev) => {
-      const cur = prev[email]?.depts || [];
-      const next = cur.includes(deptId) ? cur.filter((d) => d !== deptId) : [...cur, deptId];
-      return { ...prev, [email]: { ...(prev[email] || { role: "accessor" }), depts: next } };
-    });
-  }
-  function setAll(email, allOn) {
-    setPermissions((prev) => ({ ...prev, [email]: { ...(prev[email] || { role: "accessor" }), depts: allOn ? departments.map((d) => d.id) : [] } }));
-  }
-  function removeEmail(email) {
-    setPermissions((prev) => {
-      const next = { ...prev };
-      delete next[email];
-      return next;
-    });
-    // 보호된 시드 계정이 아니라면 사용자 목록에서도 함께 제거해 두 화면이 어긋나지 않도록 한다.
-    if (!protectedEmails.has(email)) {
-      setUsers((prev) => prev.filter((u) => u.email !== email));
-    }
-  }
+  const [selectedEmail, setSelectedEmail] = useState(null);
+  const selectedUser = users.find((u) => u.email === selectedEmail) || null;
+  const selectedDepts = selectedUser
+    ? selectedUser.role === "admin"
+      ? departments.map((d) => d.id)
+      : permissions[selectedUser.email]?.depts || []
+    : [];
 
   const [userSearch, setUserSearch] = useState("");
   const qUser = userSearch.trim().toLowerCase();
-  const searchedUsers = users.filter(
-    (u) => !qUser || u.email.toLowerCase().includes(qUser) || (u.name || "").toLowerCase().includes(qUser) || (u.nameEn || "").toLowerCase().includes(qUser)
-  );
+  const searchedUsers = users.filter((u) => !qUser || u.email.toLowerCase().includes(qUser));
 
   return (
     <div>
       <SectionHeader icon={KeyRound} title={t("permissions.title")} subtitle={t("permissions.subtitle")} />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
-        <div className="bg-white rounded-xl border border-slate-100 p-5">
-          <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2 mb-3"><Building2 size={15} /> {t("settings.deptListTitle")}</h3>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-            {departments.map((d) => (
-              <div key={d.id} className="flex items-center justify-between gap-1.5 px-2.5 py-2 rounded-lg bg-slate-50 text-xs">
-                <span className="text-slate-700 truncate">{d[lang]}</span>
-                <span className="text-slate-400 font-medium flex-shrink-0">{d.id.toUpperCase()}</span>
-              </div>
-            ))}
-            {departments.length === 0 && <EmptyState text={t("list.emptyText")} />}
-          </div>
+      <div className="bg-white rounded-xl border border-slate-100 p-5 mb-5">
+        <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2 mb-3"><Building2 size={15} /> {t("settings.deptListTitle")}</h3>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+          {departments.map((d) => (
+            <div key={d.id} className="flex items-center justify-between gap-1.5 px-2.5 py-2 rounded-lg bg-slate-50 text-xs">
+              <span className="text-slate-700 truncate">{d[lang]}</span>
+              <span className="text-slate-400 font-medium flex-shrink-0">{d.id.toUpperCase()}</span>
+            </div>
+          ))}
+          {departments.length === 0 && <EmptyState text={t("list.emptyText")} />}
         </div>
+      </div>
 
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <div className="bg-white rounded-xl border border-slate-100 p-5">
           <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2 mb-3"><Users size={15} /> {t("settings.userListTitle")}</h3>
           <input
@@ -4187,14 +4155,15 @@ function PermissionsPage({ permissions, setPermissions }) {
             placeholder={t("common.search")}
             className={`${inputCls} mb-2`}
           />
-          <div className="divide-y divide-slate-50 max-h-80 overflow-y-auto">
+          <div className="divide-y divide-slate-50 max-h-96 overflow-y-auto">
             {searchedUsers.map((u) => (
-              <div key={u.id} className="py-2.5 flex items-center justify-between text-sm gap-2">
-                <div className="min-w-0">
-                  <span className="text-slate-700">{pName(u.name, lang, users)}</span>
-                  <span className="text-xs text-slate-400 ml-2">{u.email}</span>
-                  {u.dept && <span className="text-xs text-slate-400 ml-2">· {deptName(u.dept, lang, departments)}</span>}
-                </div>
+              <button
+                key={u.id}
+                onClick={() => setSelectedEmail(u.email)}
+                className="w-full py-2 flex items-center justify-between text-sm gap-2 text-left rounded-lg px-2 -mx-2"
+                style={{ backgroundColor: selectedEmail === u.email ? BRAND.accentSoft : "transparent" }}
+              >
+                <span className="text-slate-600 truncate">{u.email}</span>
                 <span
                   className="text-xs font-medium px-2 py-0.5 rounded-full flex-shrink-0"
                   style={{
@@ -4204,62 +4173,42 @@ function PermissionsPage({ permissions, setPermissions }) {
                 >
                   {t(`roles.${u.role}`)}
                 </span>
-              </div>
+              </button>
             ))}
             {searchedUsers.length === 0 && <EmptyState text={t("categoryAccess.emptyText")} />}
           </div>
         </div>
-      </div>
 
-      <input
-        type="text"
-        value={matrixSearch}
-        onChange={(e) => setMatrixSearch(e.target.value)}
-        placeholder={t("common.search")}
-        className={`${inputCls} max-w-xs mb-3`}
-      />
-
-      <div className="bg-white rounded-xl border border-slate-100 overflow-auto" style={{ maxHeight: 480 }}>
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-slate-500 text-xs sticky top-0">
-            <tr>
-              <th className="text-left font-medium px-4 py-3 sticky left-0 bg-slate-50">{t("permissions.colUser")}</th>
-              <th className="text-left font-medium px-4 py-3 whitespace-nowrap">{t("permissions.colRole")}</th>
-              {departments.map((d) => <th key={d.id} className="text-center font-medium px-2 py-3 whitespace-nowrap">{d[lang]}</th>)}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-50">
-            {matrixRows.map((r) => (
-              <tr key={r.email}>
-                <td className="px-4 py-3 sticky left-0 bg-white">
-                  <p className="text-slate-700 font-medium whitespace-nowrap">{r.name || r.email}</p>
-                  {r.name && <p className="text-xs text-slate-400 whitespace-nowrap">{r.email}</p>}
-                </td>
-                <td className="px-4 py-3 whitespace-nowrap">
-                  <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={{ backgroundColor: r.role === "reviewer" ? BRAND.accentSoft : "#F1F5F9", color: r.role === "reviewer" ? BRAND.accent : "#475569" }}>
-                    {t(`roles.${r.role}`)}
-                  </span>
-                </td>
+        <div className="bg-white rounded-xl border border-slate-100 p-5">
+          <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2 mb-3">
+            <Building2 size={15} /> {t("permissions.selectedDeptTitle")}
+          </h3>
+          {!selectedUser ? (
+            <EmptyState text={t("permissions.selectUserHint")} />
+          ) : (
+            <div>
+              <p className="text-sm font-medium text-slate-700 mb-0.5">{selectedUser.email}</p>
+              <p className="text-xs text-slate-400 mb-3">{t(`roles.${selectedUser.role}`)}</p>
+              {selectedUser.role === "admin" && (
+                <p className="text-xs px-2.5 py-1.5 rounded-lg mb-2" style={{ backgroundColor: BRAND.accentSoft, color: BRAND.accent }}>
+                  {t("permissions.adminAllDeptsNote")}
+                </p>
+              )}
+              <div className="divide-y divide-slate-50 max-h-80 overflow-y-auto">
                 {departments.map((d) => (
-                  <td key={d.id} className="text-center px-2 py-3">
-                    {r.depts.includes(d.id) ? (
-                      <Check size={15} className="inline-block" style={{ color: BRAND.accent }} />
+                  <div key={d.id} className="py-2 flex items-center justify-between text-sm">
+                    <span className="text-slate-600">{d[lang]}</span>
+                    {selectedDepts.includes(d.id) ? (
+                      <Check size={15} style={{ color: BRAND.accent }} />
                     ) : (
                       <span className="text-slate-200">–</span>
                     )}
-                  </td>
+                  </div>
                 ))}
-              </tr>
-            ))}
-            {matrixRows.length === 0 && (
-              <tr>
-                <td colSpan={departments.length + 2}>
-                  <EmptyState text={t("categoryAccess.emptyText")} />
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="bg-amber-50 text-amber-700 text-sm px-4 py-3 rounded-lg mt-4 flex items-center gap-2">
