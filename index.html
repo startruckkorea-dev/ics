@@ -4129,6 +4129,10 @@ function PermissionsPage({ permissions, setPermissions }) {
     })
     .filter((r) => r.role !== "admin" && r.role !== "rd");
 
+  const [matrixSearch, setMatrixSearch] = useState("");
+  const qMatrix = matrixSearch.trim().toLowerCase();
+  const matrixRows = rows.filter((r) => !qMatrix || r.email.toLowerCase().includes(qMatrix) || (r.name || "").toLowerCase().includes(qMatrix));
+
   function toggle(email, deptId) {
     setPermissions((prev) => {
       const cur = prev[email]?.depts || [];
@@ -4208,23 +4212,31 @@ function PermissionsPage({ permissions, setPermissions }) {
         </div>
       </div>
 
-      <div className="bg-white rounded-xl border border-slate-100 overflow-hidden">
+      <input
+        type="text"
+        value={matrixSearch}
+        onChange={(e) => setMatrixSearch(e.target.value)}
+        placeholder={t("common.search")}
+        className={`${inputCls} max-w-xs mb-3`}
+      />
+
+      <div className="bg-white rounded-xl border border-slate-100 overflow-auto" style={{ maxHeight: 480 }}>
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-slate-500 text-xs">
+          <thead className="bg-slate-50 text-slate-500 text-xs sticky top-0">
             <tr>
-              <th className="text-left font-medium px-4 py-3">{t("permissions.colUser")}</th>
-              <th className="text-left font-medium px-4 py-3">{t("permissions.colRole")}</th>
-              {departments.map((d) => <th key={d.id} className="text-center font-medium px-2 py-3">{d[lang]}</th>)}
+              <th className="text-left font-medium px-4 py-3 sticky left-0 bg-slate-50">{t("permissions.colUser")}</th>
+              <th className="text-left font-medium px-4 py-3 whitespace-nowrap">{t("permissions.colRole")}</th>
+              {departments.map((d) => <th key={d.id} className="text-center font-medium px-2 py-3 whitespace-nowrap">{d[lang]}</th>)}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-50">
-            {rows.map((r) => (
+            {matrixRows.map((r) => (
               <tr key={r.email}>
-                <td className="px-4 py-3">
-                  <p className="text-slate-700 font-medium">{r.name || r.email}</p>
-                  {r.name && <p className="text-xs text-slate-400">{r.email}</p>}
+                <td className="px-4 py-3 sticky left-0 bg-white">
+                  <p className="text-slate-700 font-medium whitespace-nowrap">{r.name || r.email}</p>
+                  {r.name && <p className="text-xs text-slate-400 whitespace-nowrap">{r.email}</p>}
                 </td>
-                <td className="px-4 py-3">
+                <td className="px-4 py-3 whitespace-nowrap">
                   <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={{ backgroundColor: r.role === "reviewer" ? BRAND.accentSoft : "#F1F5F9", color: r.role === "reviewer" ? BRAND.accent : "#475569" }}>
                     {t(`roles.${r.role}`)}
                   </span>
@@ -4240,6 +4252,13 @@ function PermissionsPage({ permissions, setPermissions }) {
                 ))}
               </tr>
             ))}
+            {matrixRows.length === 0 && (
+              <tr>
+                <td colSpan={departments.length + 2}>
+                  <EmptyState text={t("categoryAccess.emptyText")} />
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
