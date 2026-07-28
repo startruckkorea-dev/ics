@@ -285,8 +285,11 @@ function computeInitialPermissions(initialControls, users = INITIAL_USERS, depar
         new Set(initialControls.filter((c) => c.reviewer === u.email).map((c) => c.dept))
       );
       perm[u.email] = { depts, role: u.role };
-    } else {
+    } else if (u.role === "admin") {
       perm[u.email] = { depts: departments.map((d) => d.id), role: u.role };
+    } else {
+      // cfo/rd/guest 등: 기본으로 부여된 부서 없음 (필요하면 권한 관리 화면에서 직접 체크)
+      perm[u.email] = { depts: [], role: u.role };
     }
   });
   return perm;
@@ -4148,31 +4151,24 @@ function PermissionsPage({ permissions, setPermissions }) {
     }
   }
 
+  const [userSearch, setUserSearch] = useState("");
+  const qUser = userSearch.trim().toLowerCase();
+  const searchedUsers = users.filter(
+    (u) => !qUser || u.email.toLowerCase().includes(qUser) || (u.name || "").toLowerCase().includes(qUser) || (u.nameEn || "").toLowerCase().includes(qUser)
+  );
+
   return (
     <div>
       <SectionHeader icon={KeyRound} title={t("permissions.title")} subtitle={t("permissions.subtitle")} />
 
-      <div className="rounded-xl border p-4 mb-4" style={{ backgroundColor: BRAND.accentSoft, borderColor: BRAND.accent + "40" }}>
-        <p className="text-sm font-semibold mb-2" style={{ color: BRAND.navy }}>{t("permissions.requestGuideTitle")}</p>
-        <ol className="text-sm space-y-1 list-decimal list-inside" style={{ color: BRAND.navy }}>
-          <li>{t("permissions.requestGuideStep1")}</li>
-          <li>
-            {t("permissions.requestGuideStep2")}{" "}
-            <a href="https://itsm-ticket.startruckkorea.com/" target="_blank" rel="noreferrer" className="underline font-medium" style={{ color: BRAND.accent }}>
-              itsm-ticket.startruckkorea.com
-            </a>
-          </li>
-        </ol>
-      </div>
-
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
         <div className="bg-white rounded-xl border border-slate-100 p-5">
           <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2 mb-3"><Building2 size={15} /> {t("settings.deptListTitle")}</h3>
-          <div className="divide-y divide-slate-50">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             {departments.map((d) => (
-              <div key={d.id} className="py-2.5 flex items-center justify-between text-sm">
-                <span className="text-slate-700">{d[lang]}</span>
-                <span className="text-xs text-slate-400">{d.id.toUpperCase()}</span>
+              <div key={d.id} className="flex items-center justify-between gap-1.5 px-2.5 py-2 rounded-lg bg-slate-50 text-xs">
+                <span className="text-slate-700 truncate">{d[lang]}</span>
+                <span className="text-slate-400 font-medium flex-shrink-0">{d.id.toUpperCase()}</span>
               </div>
             ))}
             {departments.length === 0 && <EmptyState text={t("list.emptyText")} />}
@@ -4181,9 +4177,16 @@ function PermissionsPage({ permissions, setPermissions }) {
 
         <div className="bg-white rounded-xl border border-slate-100 p-5">
           <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2 mb-3"><Users size={15} /> {t("settings.userListTitle")}</h3>
-          <div className="divide-y divide-slate-50">
-            {users.map((u) => (
-              <div key={u.id} className="py-2.5 flex items-center justify-between text-sm">
+          <input
+            type="text"
+            value={userSearch}
+            onChange={(e) => setUserSearch(e.target.value)}
+            placeholder={t("common.search")}
+            className={`${inputCls} mb-2`}
+          />
+          <div className="divide-y divide-slate-50 max-h-80 overflow-y-auto">
+            {searchedUsers.map((u) => (
+              <div key={u.id} className="py-2.5 flex items-center justify-between text-sm gap-2">
                 <div className="min-w-0">
                   <span className="text-slate-700">{pName(u.name, lang, users)}</span>
                   <span className="text-xs text-slate-400 ml-2">{u.email}</span>
@@ -4200,7 +4203,7 @@ function PermissionsPage({ permissions, setPermissions }) {
                 </span>
               </div>
             ))}
-            {users.length === 0 && <EmptyState text={t("list.emptyText")} />}
+            {searchedUsers.length === 0 && <EmptyState text={t("categoryAccess.emptyText")} />}
           </div>
         </div>
       </div>
@@ -4533,21 +4536,25 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
                 : <EmptyState text="Access denied" />
             )}
             {page === "settings" && (
-              <SettingsPage
-                currentUser={currentUser}
-                years={years}
-                selectedYear={selectedYear}
-                activeYear={activeYear}
-                startNewYear={startNewYear}
-                controls={controls}
-                permissions={permissions}
-                setPermissions={setPermissions}
-                bothConfirmed={bothConfirmed}
-                goTo={goTo}
-                addLog={addLog}
-                resetPassword={resetPassword}
-                setResetPassword={setResetPassword}
-              />
+              hasCategoryAccess(currentUser, "adminOnly") ? (
+                <SettingsPage
+                  currentUser={currentUser}
+                  years={years}
+                  selectedYear={selectedYear}
+                  activeYear={activeYear}
+                  startNewYear={startNewYear}
+                  controls={controls}
+                  permissions={permissions}
+                  setPermissions={setPermissions}
+                  bothConfirmed={bothConfirmed}
+                  goTo={goTo}
+                  addLog={addLog}
+                  resetPassword={resetPassword}
+                  setResetPassword={setResetPassword}
+                />
+              ) : (
+                <EmptyState text="Access denied" />
+              )
             )}
             {page === "categoryAccess" && (hasCategoryAccess(currentUser, "adminOnly") ? <CategoryAccessPage currentUser={currentUser} addLog={addLog} showToast={showToast} /> : <EmptyState text="Access denied" />)}
             {page === "permissions" && (hasCategoryAccess(currentUser, "adminOnly") ? <PermissionsPage permissions={permissions} setPermissions={setPermissions} /> : <EmptyState text="Access denied" />)}
