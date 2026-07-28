@@ -4209,6 +4209,39 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
           .slice(0, 6)
       : [];
 
+  async function setAllDeptsForUser(targetUser, allOn) {
+    if (!isAdmin || !targetUser || targetUser.role === "admin") return;
+    const email = targetUser.email.toLowerCase();
+    const current = permissions[targetUser.email]?.depts || [];
+    const next = allOn ? departments.map((d) => d.id) : [];
+    setPermissions((prev) => ({ ...prev, [targetUser.email]: { ...(prev[targetUser.email] || { role: targetUser.role }), depts: next } }));
+    setSavingDept("__all__");
+    try {
+      const existing = ICS_CATEGORY_ACCESS[email];
+      const fields = { Depts: next.join(",") };
+      if (existing?.spId) {
+        await icsUpdateItem(ICS_LISTS.categoryAccess, existing.spId, fields);
+      } else {
+        const created = await icsCreateItem(ICS_LISTS.categoryAccess, { Title: email, ...fields });
+        ICS_CATEGORY_ACCESS[email] = { spId: created.id };
+      }
+      ICS_CATEGORY_ACCESS[email] = { ...(ICS_CATEGORY_ACCESS[email] || {}), depts: next };
+      addLog(
+        currentUser.email,
+        "edit_category_access",
+        "-",
+        `${email} · ${allOn ? (lang === "en" ? "all departments granted" : "전체 부서 부여") : (lang === "en" ? "all departments cleared" : "전체 부서 해제")}`,
+        `${email} · ${allOn ? "all departments granted" : "all departments cleared"}`
+      );
+      if (showToast) showToast(lang === "en" ? "Permission updated." : "권한이 반영되었습니다.");
+    } catch (e) {
+      setPermissions((prev) => ({ ...prev, [targetUser.email]: { ...(prev[targetUser.email] || { role: targetUser.role }), depts: current } }));
+      alert("저장에 실패했습니다: " + e.message);
+    } finally {
+      setSavingDept(null);
+    }
+  }
+
   const [userSearch, setUserSearch] = useState("");
   const qUser = userSearch.trim().toLowerCase();
   const searchedUsers = users.filter((u) => !qUser || u.email.toLowerCase().includes(qUser));
@@ -4347,16 +4380,35 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
             <div>
               <p className="text-sm font-medium text-slate-700 mb-0.5">{selectedUser.email}</p>
               <p className="text-xs text-slate-400 mb-3">{t(`roles.${selectedUser.role}`)}</p>
-              {selectedUser.role === "admin" && (
+              {selectedUser.role === "admin" ? (
                 <p className="text-xs px-2.5 py-1.5 rounded-lg mb-2" style={{ backgroundColor: BRAND.accentSoft, color: BRAND.accent }}>
                   {t("permissions.adminAllDeptsNote")}
                 </p>
+              ) : (
+                isAdmin && (
+                  <div className="flex items-center gap-2 mb-2">
+                    <button
+                      onClick={() => setAllDeptsForUser(selectedUser, true)}
+                      disabled={savingDept === "__all__"}
+                      className="text-xs font-medium px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 hover:border-teal-400 hover:text-teal-600 disabled:opacity-50"
+                    >
+                      {t("permissions.selectAll")}
+                    </button>
+                    <button
+                      onClick={() => setAllDeptsForUser(selectedUser, false)}
+                      disabled={savingDept === "__all__"}
+                      className="text-xs font-medium px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 hover:border-red-300 hover:text-red-500 disabled:opacity-50"
+                    >
+                      {t("permissions.deselectAll")}
+                    </button>
+                  </div>
+                )
               )}
               <div className="divide-y divide-slate-50 max-h-80 overflow-y-auto pr-2">
                 {departments.map((d) => (
                   <label
                     key={d.id}
-                    className="py-3 px-2 -mx-2 flex items-center justify-between text-sm rounded-lg hover:bg-slate-50 cursor-pointer"
+                    className="py-3 pl-2 pr-6 -mx-2 flex items-center justify-between text-sm rounded-lg hover:bg-slate-50 cursor-pointer"
                     style={{ cursor: selectedUser.role === "admin" || !isAdmin ? "default" : "pointer" }}
                   >
                     <span className="text-slate-600">{d[lang]}</span>
@@ -4366,7 +4418,7 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
                       <input
                         type="checkbox"
                         checked={selectedDepts.includes(d.id)}
-                        disabled={!isAdmin || savingDept === d.id}
+                        disabled={!isAdmin || savingDept === d.id || savingDept === "__all__"}
                         onChange={() => toggleDept(d.id)}
                         className="w-4 h-4 flex-shrink-0 cursor-pointer disabled:cursor-not-allowed"
                         style={{ accentColor: BRAND.accent }}
