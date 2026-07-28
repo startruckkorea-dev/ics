@@ -4055,13 +4055,13 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
         className={`${inputCls} max-w-xs mb-4`}
       />
 
-      <div className="bg-white rounded-xl border border-slate-100 overflow-hidden overflow-x-auto">
+      <div className="bg-white rounded-xl border border-slate-100 overflow-auto" style={{ maxHeight: 520 }}>
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-slate-500 text-xs">
+          <thead className="bg-slate-50 text-slate-500 text-xs sticky top-0">
             <tr>
-              <th className="text-left font-medium px-4 py-3 sticky left-0 bg-slate-50">{t("categoryAccess.colUser")}</th>
+              <th className="text-left font-medium px-4 py-2.5 sticky left-0 bg-slate-50">{t("categoryAccess.colUser")}</th>
               {categoryKeys.map((k) => (
-                <th key={k} className="text-center font-medium px-3 py-3 whitespace-nowrap">{t(categoryLabelPath[k])}</th>
+                <th key={k} className="text-center font-medium px-3 py-2.5 whitespace-nowrap">{t(categoryLabelPath[k])}</th>
               ))}
             </tr>
           </thead>
@@ -4071,14 +4071,13 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
               const grant = access[email] || {};
               return (
                 <tr key={u.id}>
-                  <td className="px-4 py-2.5 sticky left-0 bg-white">
-                    <p className="text-slate-700 font-medium whitespace-nowrap">{pName(u.name, lang, users)}</p>
-                    <p className="text-xs text-slate-400 whitespace-nowrap">{u.email}</p>
+                  <td className="px-4 py-1.5 sticky left-0 bg-white">
+                    <p className="text-slate-600 whitespace-nowrap">{u.email}</p>
                   </td>
                   {categoryKeys.map((k) => {
                     const saving = savingKey === `${email}:${k}`;
                     return (
-                      <td key={k} className="text-center px-3 py-2.5">
+                      <td key={k} className="text-center px-3 py-1.5">
                         <input
                           type="checkbox"
                           checked={!!grant[k]}
