@@ -1839,7 +1839,7 @@ function ControlList({ controls: allControls, filter, setFilter, isAdmin, allowe
   const [search, setSearch] = useState("");
 
   const myEmail = (currentUser?.email || "").toLowerCase();
-  const scoped = isAdmin ? allControls : allControls.filter((c) => c.accessor === myEmail || c.reviewer === myEmail);
+  const scoped = isAdmin ? allControls : allControls.filter((c) => c.accessor === myEmail || c.reviewer === myEmail || (currentUser.dept && c.dept === currentUser.dept));
   const scopedDeptIds = [...new Set(scoped.map((c) => c.dept))];
   const visibleDeptOptions = isAdmin ? departments : departments.filter((d) => scopedDeptIds.includes(d.id));
 
@@ -2092,7 +2092,7 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
   const fileInputRef = useRef(null);
 
   const myEmail = (currentUser?.email || "").toLowerCase();
-  const scoped = isAdmin ? allControls : allControls.filter((c) => c.accessor === myEmail || c.reviewer === myEmail);
+  const scoped = isAdmin ? allControls : allControls.filter((c) => c.accessor === myEmail || c.reviewer === myEmail || (currentUser.dept && c.dept === currentUser.dept));
   const scopedDeptIds = [...new Set(scoped.map((c) => c.dept))];
   const visibleDeptOptions = isAdmin ? departments : departments.filter((d) => scopedDeptIds.includes(d.id));
   const list = deptFilter ? scoped.filter((c) => c.dept === deptFilter) : scoped;
@@ -2511,7 +2511,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
   const [draft, setDraft] = useState({ risk: null, comment: "", sampleSize: 0, attachments: [] });
 
   const isAdmin = currentUser.role === "admin";
-  const myControls = isAdmin ? controls : controls.filter((c) => c.accessor === currentUser.email);
+  const myControls = isAdmin ? controls : controls.filter((c) => c.accessor === currentUser.email || (currentUser.dept && c.dept === currentUser.dept));
 
   const todo = myControls.filter((c) => c.status === "not_started" || c.status === "returned");
   const inProgress = myControls.filter((c) => c.status === "submitted_self" || c.status === "completed");
@@ -2825,7 +2825,7 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
   const [draft, setDraft] = useState({ risk: null, comment: "" });
 
   const isAdmin = currentUser.role === "admin";
-  const myControls = isAdmin ? controls : controls.filter((c) => c.accessor === currentUser.email);
+  const myControls = isAdmin ? controls : controls.filter((c) => c.accessor === currentUser.email || (currentUser.dept && c.dept === currentUser.dept));
 
   const isaDone = myControls.filter((c) => c.status === "completed");
   const todo = isaDone.filter((c) => c.fsaStatus === "not_started" || c.fsaStatus === "returned" || !c.fsaStatus);
@@ -2974,8 +2974,8 @@ function FSAReviewPage({ controls, setControls, currentUser, addLog, isArchived,
   const [returnComment, setReturnComment] = useState("");
 
   const isAdmin = currentUser.role === "admin";
-  const pending = controls.filter((c) => c.fsaStatus === "submitted_self" && (isAdmin || c.reviewer === currentUser.email));
-  const done = controls.filter((c) => (c.fsaStatus === "completed" || c.fsaStatus === "returned") && (isAdmin || c.reviewer === currentUser.email));
+  const pending = controls.filter((c) => c.fsaStatus === "submitted_self" && (isAdmin || c.reviewer === currentUser.email || (currentUser.dept && c.dept === currentUser.dept)));
+  const done = controls.filter((c) => (c.fsaStatus === "completed" || c.fsaStatus === "returned") && (isAdmin || c.reviewer === currentUser.email || (currentUser.dept && c.dept === currentUser.dept)));
 
   function startEdit(c) {
     setEditing(c.id);
@@ -3144,9 +3144,9 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, sh
   const [returnComment, setReturnComment] = useState("");
 
   const isAdmin = currentUser.role === "admin";
-  const pending = controls.filter((c) => c.status === "submitted_self" && (isAdmin || c.reviewer === currentUser.email));
-  const done = controls.filter((c) => (c.status === "completed" || c.status === "returned") && (isAdmin || c.reviewer === currentUser.email));
-  const pendingEdits = controls.filter((c) => c.pendingEdit && (isAdmin || c.reviewer === currentUser.email));
+  const pending = controls.filter((c) => c.status === "submitted_self" && (isAdmin || c.reviewer === currentUser.email || (currentUser.dept && c.dept === currentUser.dept)));
+  const done = controls.filter((c) => (c.status === "completed" || c.status === "returned") && (isAdmin || c.reviewer === currentUser.email || (currentUser.dept && c.dept === currentUser.dept)));
+  const pendingEdits = controls.filter((c) => c.pendingEdit && (isAdmin || c.reviewer === currentUser.email || (currentUser.dept && c.dept === currentUser.dept)));
 
   async function approveEdit(c) {
     const p = c.pendingEdit;
@@ -3451,7 +3451,7 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser }) {
   const isAdmin = currentUser.role === "admin";
   const myEmail = (currentUser.email || "").toLowerCase();
   // 부서별 통제 현황/통제 항목 관리와 동일하게, Admin이 아니면 본인이 Accessor/Reviewer로 배정된 항목만 보이도록 스코프를 좁힌다.
-  const controls = isAdmin ? allControls : allControls.filter((c) => c.accessor === myEmail || c.reviewer === myEmail);
+  const controls = isAdmin ? allControls : allControls.filter((c) => c.accessor === myEmail || c.reviewer === myEmail || (currentUser.dept && c.dept === currentUser.dept));
   const myCodes = new Set(controls.map((c) => c.code));
   // 활동 로그는 ISA/FSA 평가 흐름(자가평가·검토·FSA)에서 발생한 기록만 보여준다 - 권한 변경, 부서 초기화 등 시스템/관리 로그는 제외.
   const ASSESSMENT_ACTIONS = new Set(["submit_self", "review_complete", "review_reject", "fsa_submit", "fsa_review_complete", "fsa_review_reject"]);
