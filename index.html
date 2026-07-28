@@ -1881,18 +1881,18 @@ function ControlList({ controls: allControls, filter, setFilter, isAdmin, allowe
         <span className="text-xs text-slate-400 ml-auto">{filtered.length}{t("common.items")}</span>
       </div>
 
-      <div className="bg-white rounded-xl border border-slate-100 overflow-hidden">
+      <div className="bg-white rounded-xl border border-slate-100 overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wide">
             <tr>
-              <th className="text-left font-semibold px-4 py-3">{t("list.colCode")}</th>
-              <th className="text-left font-semibold px-4 py-3">{t("list.colName")}</th>
-              <th className="text-left font-semibold px-4 py-3">{t("list.colDept")}</th>
-              <th className="text-left font-semibold px-4 py-3">{t("list.colCat")}</th>
-              <th className="text-left font-semibold px-4 py-3">{t("list.colAccessor")}</th>
-              <th className="text-left font-semibold px-4 py-3">{t("list.colReviewer")}</th>
-              <th className="text-left font-semibold px-4 py-3">{t("list.colStatus")}</th>
-              <th className="text-left font-semibold px-4 py-3">{t("list.colRisk")}</th>
+              <th className="text-left font-semibold px-4 py-3 whitespace-nowrap">{t("list.colCode")}</th>
+              <th className="text-left font-semibold px-4 py-3 whitespace-nowrap">{t("list.colName")}</th>
+              <th className="text-left font-semibold px-4 py-3 whitespace-nowrap">{t("list.colDept")}</th>
+              <th className="text-left font-semibold px-4 py-3 whitespace-nowrap">{t("list.colCat")}</th>
+              <th className="text-left font-semibold px-4 py-3 whitespace-nowrap">{t("list.colAccessor")}</th>
+              <th className="text-left font-semibold px-4 py-3 whitespace-nowrap">{t("list.colReviewer")}</th>
+              <th className="text-left font-semibold px-4 py-3 whitespace-nowrap">{t("list.colStatus")}</th>
+              <th className="text-left font-semibold px-4 py-3 whitespace-nowrap">{t("list.colRisk")}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-50">
@@ -1901,13 +1901,13 @@ function ControlList({ controls: allControls, filter, setFilter, isAdmin, allowe
               return (
                 <tr key={c.id} onClick={() => setDetail(c)} className={`cursor-pointer transition-colors hover:bg-slate-100/70 ${i % 2 === 1 ? "bg-slate-50/50" : ""}`}>
                   <td className="pl-3 pr-4 py-3 text-slate-500 text-xs font-mono whitespace-nowrap" style={{ boxShadow: `inset 3px 0 0 ${RISK_META[risk].color}` }}>{c.code}</td>
-                  <td className="px-4 py-3 text-slate-700 font-medium">{cName(c, lang)}</td>
-                  <td className="px-4 py-3 text-slate-600">{deptName(c.dept, lang, departments)}</td>
-                  <td className="px-4 py-3 text-slate-600">{catName(c.cat, lang)}</td>
-                  <td className="px-4 py-3 text-slate-600">{personByEmail(c.accessor, lang, users)}</td>
-                  <td className="px-4 py-3 text-slate-600">{personByEmail(c.reviewer, lang, users)}</td>
-                  <td className="px-4 py-3"><StatusBadge status={c.status} /></td>
-                  <td className="px-4 py-3"><RiskBadge risk={risk} /></td>
+                  <td className="px-4 py-3 text-slate-700 font-medium whitespace-nowrap">{cName(c, lang)}</td>
+                  <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{deptName(c.dept, lang, departments)}</td>
+                  <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{catName(c.cat, lang)}</td>
+                  <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{personByEmail(c.accessor, lang, users)}</td>
+                  <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{personByEmail(c.reviewer, lang, users)}</td>
+                  <td className="px-4 py-3 whitespace-nowrap"><StatusBadge status={c.status} /></td>
+                  <td className="px-4 py-3 whitespace-nowrap"><RiskBadge risk={risk} /></td>
                 </tr>
               );
             })}
@@ -2364,7 +2364,7 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
         </select>
       </div>
 
-      <div className="bg-white rounded-xl border border-slate-100 overflow-hidden">
+      <div className="bg-white rounded-xl border border-slate-100 overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-slate-500 text-xs">
             <tr>
@@ -3495,32 +3495,34 @@ function HistoryPage({ controls, log }) {
             <Download size={13} /> {t("history.downloadBtn")}
           </button>
         </div>
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-slate-500 text-xs">
             <tr>
-              <th className="text-left font-medium px-4 py-3">{t("list.colCode")}</th>
-              <th className="text-left font-medium px-4 py-3">{t("list.colName")}</th>
-              <th className="text-left font-medium px-4 py-3">{t("list.colDept")}</th>
-              <th className="text-left font-medium px-4 py-3">{t("history.colSample")}</th>
-              <th className="text-left font-medium px-4 py-3">{lang === "en" ? "1st result" : "1차평가"}</th>
-              <th className="text-left font-medium px-4 py-3">{lang === "en" ? "2nd result" : "2차검토"}</th>
-              <th className="text-left font-medium px-4 py-3">{t("list.colStatus")}</th>
+              <th className="text-left font-medium px-4 py-3 whitespace-nowrap">{t("list.colCode")}</th>
+              <th className="text-left font-medium px-4 py-3 whitespace-nowrap">{t("list.colName")}</th>
+              <th className="text-left font-medium px-4 py-3 whitespace-nowrap">{t("list.colDept")}</th>
+              <th className="text-left font-medium px-4 py-3 whitespace-nowrap">{t("history.colSample")}</th>
+              <th className="text-left font-medium px-4 py-3 whitespace-nowrap">{lang === "en" ? "1st result" : "1차평가"}</th>
+              <th className="text-left font-medium px-4 py-3 whitespace-nowrap">{lang === "en" ? "2nd result" : "2차검토"}</th>
+              <th className="text-left font-medium px-4 py-3 whitespace-nowrap">{t("list.colStatus")}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-50">
             {controls.map((c) => (
               <tr key={c.id}>
                 <td className="px-4 py-2.5 text-slate-500 text-xs font-mono whitespace-nowrap">{c.code}</td>
-                <td className="px-4 py-2.5 text-slate-700">{cName(c, lang)}</td>
-                <td className="px-4 py-2.5 text-slate-600">{deptName(c.dept, lang, departments)}</td>
-                <td className="px-4 py-2.5 text-slate-500 text-xs">{c.actualSample ?? "-"}/{recommendedSample(c.importance, c.frequency)}{t("common.items")}</td>
-                <td className="px-4 py-2.5"><RiskBadge risk={c.selfRisk || "none"} /></td>
-                <td className="px-4 py-2.5"><RiskBadge risk={c.reviewRisk || "none"} /></td>
-                <td className="px-4 py-2.5"><StatusBadge status={c.status} /></td>
+                <td className="px-4 py-2.5 text-slate-700 whitespace-nowrap">{cName(c, lang)}</td>
+                <td className="px-4 py-2.5 text-slate-600 whitespace-nowrap">{deptName(c.dept, lang, departments)}</td>
+                <td className="px-4 py-2.5 text-slate-500 text-xs whitespace-nowrap">{c.actualSample ?? "-"}/{recommendedSample(c.importance, c.frequency)}{t("common.items")}</td>
+                <td className="px-4 py-2.5 whitespace-nowrap"><RiskBadge risk={c.selfRisk || "none"} /></td>
+                <td className="px-4 py-2.5 whitespace-nowrap"><RiskBadge risk={c.reviewRisk || "none"} /></td>
+                <td className="px-4 py-2.5 whitespace-nowrap"><StatusBadge status={c.status} /></td>
               </tr>
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );
