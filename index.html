@@ -4683,7 +4683,7 @@ async function icsUploadAttachment(requestItemId, file) {
 async function loadIcsLearnContentFromMaster() {
   const token = await getGraphToken();
   const docDriveId = await getIcsDocDriveId(token);
-  const res = await fetch(`${GRAPH}/drives/${docDriveId}/root:/ics_category_access.xlsx:/content`, { headers: { Authorization: "Bearer " + token } });
+  const res = await fetch(`${GRAPH}/drives/${docDriveId}/root:/ics_category_access.xlsx:/content`, { headers: { Authorization: "Bearer " + token }, cache: "no-store" });
   if (!res.ok) throw new Error(`ics_category_access.xlsx not found (${res.status})`);
   const buf = await res.arrayBuffer();
   const wb = XLSX.read(buf, { type: "array" });
@@ -5068,7 +5068,7 @@ async function getIcsDocDriveId(token) {
 // 파일이 없거나 일부 KEY만 있어도 문제없음 — 못 찾은 문구는 코드 내 기본 문구가 그대로 쓰인다 (실패해도 화면이 깨지지 않음).
 async function loadIcsUiStrings(token) {
   const docDriveId = await getIcsDocDriveId(token);
-  const res = await fetch(`${GRAPH}/drives/${docDriveId}/root:/ics_ui_strings.xlsx:/content`, { headers: { Authorization: "Bearer " + token } });
+  const res = await fetch(`${GRAPH}/drives/${docDriveId}/root:/ics_ui_strings.xlsx:/content`, { headers: { Authorization: "Bearer " + token }, cache: "no-store" });
   if (!res.ok) throw new Error(`ics_ui_strings.xlsx not found (${res.status})`);
   const buf = await res.arrayBuffer();
   const wb = XLSX.read(buf, { type: "array" });
@@ -5090,7 +5090,7 @@ async function loadIcsUiStrings(token) {
 // 시트 구성: Users / Departments / SamplingMatrix / Contact / CategoryAccess (시트가 없으면 해당 항목만 코드 기본값 유지)
 async function loadIcsMasterConfig(token) {
   const docDriveId = await getIcsDocDriveId(token);
-  const res = await fetch(`${GRAPH}/drives/${docDriveId}/root:/ics_category_access.xlsx:/content`, { headers: { Authorization: "Bearer " + token } });
+  const res = await fetch(`${GRAPH}/drives/${docDriveId}/root:/ics_category_access.xlsx:/content`, { headers: { Authorization: "Bearer " + token }, cache: "no-store" });
   if (!res.ok) throw new Error(`ics_category_access.xlsx not found (${res.status})`);
   const buf = await res.arrayBuffer();
   const wb = XLSX.read(buf, { type: "array" });
