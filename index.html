@@ -615,6 +615,8 @@ const STR = {
       subtitle: "관리자는 항상 전체 부서에 접근할 수 있습니다. 담당자는 이메일 주소로 등록하여 체크한 부서의 내용만 조회·평가할 수 있도록 권한을 부여합니다.",
       colUser: "사용자", colRole: "역할", colAll: "전체",
       selectedDeptTitle: "선택한 사용자의 부서 접근 권한",
+      deptUsersTitle: "이 부서에 접근 가능한 사용자",
+      noDeptUsers: "이 부서에 접근 권한을 가진 사용자가 없습니다.",
       selectUserHint: "왼쪽 목록에서 사용자를 선택하면 부서별 접근 권한이 여기 표시됩니다.",
       adminAllDeptsNote: "Admin은 역할상 항상 전체 부서에 접근합니다 (아래는 참고용 표시).",
       selectAll: "전체선택", deselectAll: "전체해제",
@@ -886,6 +888,8 @@ const STR = {
       subtitle: "Admins always have access to all departments. Grant access by email address so each person can only view and assess the departments checked for them.",
       colUser: "User", colRole: "Role", colAll: "All",
       selectedDeptTitle: "Selected user's department access",
+      deptUsersTitle: "Users with access to this department",
+      noDeptUsers: "No users have access to this department.",
       selectUserHint: "Select a user from the list on the left to see their department access here.",
       adminAllDeptsNote: "Admins always have access to all departments by role (shown below for reference).",
       selectAll: "Select all", deselectAll: "Clear all",
@@ -1402,7 +1406,7 @@ function LearnPage({ currentUser, learnContent, setLearnContent, learnVideos, se
         if (cancelled) return;
         if (saved) {
           setLearnContent(saved);
-          if (showToast) showToast(lang === "en" ? "Learning content applied." : "학습 콘텐츠가 반영됐습니다.");
+          if (showToast) showToast(lang === "en" ? "Learning content applied." : "학습 콘텐츠가 반영되었습니다.");
         }
       })
       .catch((e) => console.warn("[ICS] LearnContent 시트 로드 실패, 기본 문구 사용:", e.message));
@@ -2248,7 +2252,7 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
           if (target?.spId) await icsUpdateItem(ICS_LISTS.controls, target.spId, fields);
           setControls((prev) => prev.map((c) => (c.id === editingId ? { ...c, ...form, sampleSize: recommendedSample(form.importance, form.frequency), pendingEdit: null } : c)));
           addLog(currentUser.email, "edit_control", form.code, form.name, form.name);
-          showToast(lang === "en" ? "Control item updated." : "통제 항목이 수정됐습니다.");
+          showToast(lang === "en" ? "Control item updated." : "통제 항목이 수정되었습니다.");
         } else {
           // Accessor의 수정은 SharePoint에 즉시 반영되지 않고, 검토자(또는 관리자)의 승인 후 반영된다 (2차 검토 화면에서 처리).
           const today = new Date().toISOString().slice(0, 10);
@@ -2256,7 +2260,7 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
             prev.map((c) => (c.id === editingId ? { ...c, pendingEdit: { ...form, requestedBy: currentUser.email, requestedAt: today } } : c))
           );
           addLog(currentUser.email, "edit_request", form.code, form.name, form.name);
-          showToast(lang === "en" ? "Change request submitted for approval." : "수정 요청이 제출됐습니다 (승인 대기).");
+          showToast(lang === "en" ? "Change request submitted for approval." : "수정 요청이 제출되었습니다 (승인 대기).");
         }
       } else {
         const created = await icsCreateItem(ICS_LISTS.controls, fields);
@@ -2269,7 +2273,7 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
         };
         setControls((prev) => [newControl, ...prev]);
         addLog(currentUser.email, "add_control", form.code, form.name, form.name);
-        showToast(lang === "en" ? "Control item added." : "통제 항목이 추가됐습니다.");
+        showToast(lang === "en" ? "Control item added." : "통제 항목이 추가되었습니다.");
       }
       setForm(null);
       setEditingId(null);
@@ -2283,7 +2287,7 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
       if (c.spId) await icsDeleteItem(ICS_LISTS.controls, c.spId);
       setControls((prev) => prev.filter((x) => x.id !== c.id));
       addLog(currentUser.email, "delete_control", c.code, c.name, c.nameEn);
-      showToast(lang === "en" ? "Control item deleted." : "통제 항목이 삭제됐습니다.");
+      showToast(lang === "en" ? "Control item deleted." : "통제 항목이 삭제되었습니다.");
     } catch (e) {
       alert("SharePoint 삭제에 실패했습니다: " + e.message);
     }
@@ -2568,7 +2572,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
         )
       );
       addLog(c.accessor, "submit_self", c.code, c.name, c.nameEn);
-      showToast(lang === "en" ? "Self-assessment submitted." : "자가평가가 제출됐습니다.");
+      showToast(lang === "en" ? "Self-assessment submitted." : "자가평가가 제출되었습니다.");
     } catch (e) {
       alert("SharePoint 저장에 실패했습니다: " + e.message);
     } finally {
@@ -2844,7 +2848,7 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
         prev.map((x) => (x.id === c.id ? { ...x, fsaStatus: "submitted_self", fsaRisk: draft.risk, fsaComment: draft.comment, fsaCommentEn: draft.comment, fsaDate: today } : x))
       );
       addLog(c.accessor, "fsa_submit", c.code, c.name, c.nameEn);
-      showToast(lang === "en" ? "Final self-assessment submitted." : "최종자기평가가 제출됐습니다.");
+      showToast(lang === "en" ? "Final self-assessment submitted." : "최종자기평가가 제출되었습니다.");
     } catch (e) {
       alert("SharePoint 저장에 실패했습니다: " + e.message);
     }
@@ -2991,7 +2995,7 @@ function FSAReviewPage({ controls, setControls, currentUser, addLog, isArchived,
         )
       );
       addLog(c.reviewer, "fsa_review_complete", c.code, c.name, c.nameEn);
-      showToast(lang === "en" ? "FSA review confirmed." : "FSA 검토가 완료됐습니다.");
+      showToast(lang === "en" ? "FSA review confirmed." : "FSA 검토가 완료되었습니다.");
     } catch (e) {
       alert("SharePoint 저장에 실패했습니다: " + e.message);
     }
@@ -3013,7 +3017,7 @@ function FSAReviewPage({ controls, setControls, currentUser, addLog, isArchived,
         )
       );
       addLog(c.reviewer, "fsa_review_reject", c.code, c.name, c.nameEn);
-      showToast(lang === "en" ? "Returned to the accessor." : "담당자에게 반려됐습니다.");
+      showToast(lang === "en" ? "Returned to the accessor." : "담당자에게 반려되었습니다.");
       setReturnComment("");
     } catch (e) {
       alert("SharePoint 저장에 실패했습니다: " + e.message);
@@ -3166,7 +3170,7 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, sh
         )
       );
       addLog(currentUser.email, "edit_approved", c.code, p.name, p.name);
-      if (showToast) showToast(lang === "en" ? "Change approved." : "변경이 승인됐습니다.");
+      if (showToast) showToast(lang === "en" ? "Change approved." : "변경이 승인되었습니다.");
     } catch (e) {
       alert("SharePoint 저장에 실패했습니다: " + e.message);
     }
@@ -3174,7 +3178,7 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, sh
   function rejectEdit(c) {
     setControls((prev) => prev.map((x) => (x.id === c.id ? { ...x, pendingEdit: null } : x)));
     addLog(currentUser.email, "edit_rejected", c.code, c.name, c.nameEn);
-    if (showToast) showToast(lang === "en" ? "Change rejected." : "변경이 반려됐습니다.");
+    if (showToast) showToast(lang === "en" ? "Change rejected." : "변경이 반려되었습니다.");
   }
 
   function startEdit(c) {
@@ -3195,7 +3199,7 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, sh
       });
       setControls((prev) => prev.map((x) => (x.id === c.id ? { ...x, status: "completed", reviewRisk: draft.risk, reviewComment: draft.comment, reviewCommentEn: draft.comment, reviewDate: today } : x)));
       addLog(c.reviewer, "review_complete", c.code, c.name, c.nameEn);
-      showToast(lang === "en" ? "Review confirmed." : "검토가 완료됐습니다.");
+      showToast(lang === "en" ? "Review confirmed." : "검토가 완료되었습니다.");
     } catch (e) {
       alert("SharePoint 저장에 실패했습니다: " + e.message);
     }
@@ -3213,7 +3217,7 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, sh
       });
       setControls((prev) => prev.map((x) => (x.id === c.id ? { ...x, status: "returned", reviewRisk: "red", reviewComment: returnComment, reviewCommentEn: returnComment, reviewDate: today } : x)));
       addLog(c.reviewer, "review_reject", c.code, c.name, c.nameEn);
-      showToast(lang === "en" ? "Returned to the accessor." : "담당자에게 반려됐습니다.");
+      showToast(lang === "en" ? "Returned to the accessor." : "담당자에게 반려되었습니다.");
       setReturnComment("");
     } catch (e) {
       alert("SharePoint 저장에 실패했습니다: " + e.message);
@@ -3696,7 +3700,7 @@ function FinalReportPage({ controls, currentUser, activeYear, yearConfirmation, 
                     }
                     if (cancelBlocked) return;
                     cancelYearConfirm(role);
-                    showToast(lang === "en" ? "Confirmation cancelled." : "컨펌이 취소됐습니다.");
+                    showToast(lang === "en" ? "Confirmation cancelled." : "컨펌이 취소되었습니다.");
                   }}
                   disabled={allowed && cancelBlocked}
                   className="w-full py-2 rounded-lg text-xs font-medium border transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
@@ -3781,7 +3785,7 @@ function FinalReportPage({ controls, currentUser, activeYear, yearConfirmation, 
               onClick={() => {
                 confirmYear(confirmingRole);
                 setConfirmingRole(null);
-                showToast(lang === "en" ? "Final results confirmed." : "최종 결과가 컨펌됐습니다.");
+                showToast(lang === "en" ? "Final results confirmed." : "최종 결과가 컨펌되었습니다.");
               }}
               className="px-4 py-2 text-sm font-medium text-white rounded-lg"
               style={{ backgroundColor: BRAND.accent }}
@@ -4029,7 +4033,7 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
         `${email} · ${t(categoryLabelPath[categoryKey])} -> ${newValue ? "Y" : "N"}`,
         `${email} · ${t(categoryLabelPath[categoryKey])} -> ${newValue ? "Y" : "N"}`
       );
-      if (showToast) showToast(lang === "en" ? "Permission updated." : "권한이 반영됐습니다.");
+      if (showToast) showToast(lang === "en" ? "Permission updated." : "권한이 반영되었습니다.");
     } catch (e) {
       // 실패 시 되돌림
       setAccess((prev) => ({ ...prev, [email]: existing }));
@@ -4120,6 +4124,7 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
   const isAdmin = currentUser.role === "admin";
 
   const [selectedEmail, setSelectedEmail] = useState(null);
+  const [selectedDeptId, setSelectedDeptId] = useState(null);
   const selectedUser = users.find((u) => u.email === selectedEmail) || null;
   const selectedDepts = selectedUser
     ? selectedUser.role === "admin"
@@ -4127,6 +4132,18 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
       : permissions[selectedUser.email]?.depts || []
     : [];
   const [savingDept, setSavingDept] = useState(null);
+
+  function usersForDept(deptId) {
+    return users.filter((u) => u.role === "admin" || (permissions[u.email]?.depts || []).includes(deptId));
+  }
+  function pickUser(email) {
+    setSelectedEmail(email);
+    setSelectedDeptId(null);
+  }
+  function pickDept(deptId) {
+    setSelectedDeptId(deptId);
+    setSelectedEmail(null);
+  }
 
   async function toggleDept(deptId) {
     if (!isAdmin || !selectedUser || selectedUser.role === "admin") return;
@@ -4153,7 +4170,7 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
         `${email} · ${deptLabel} -> ${next.includes(deptId) ? "Y" : "N"}`,
         `${email} · ${deptLabel} -> ${next.includes(deptId) ? "Y" : "N"}`
       );
-      if (showToast) showToast(lang === "en" ? "Permission updated." : "권한이 반영됐습니다.");
+      if (showToast) showToast(lang === "en" ? "Permission updated." : "권한이 반영되었습니다.");
     } catch (e) {
       // 실패 시 되돌림
       setPermissions((prev) => ({ ...prev, [selectedUser.email]: { ...(prev[selectedUser.email] || { role: selectedUser.role }), depts: current } }));
@@ -4174,12 +4191,28 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
       <div className="bg-white rounded-xl border border-slate-100 p-5 mb-5">
         <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2 mb-3"><Building2 size={15} /> {t("settings.deptListTitle")}</h3>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
-          {departments.map((d) => (
-            <div key={d.id} className="flex items-center justify-between gap-1.5 px-2.5 py-2 rounded-lg bg-slate-50 text-xs">
-              <span className="text-slate-700 truncate">{d[lang]}</span>
-              <span className="text-slate-400 font-medium flex-shrink-0">{d.id.toUpperCase()}</span>
-            </div>
-          ))}
+          {departments.map((d) => {
+            const count = usersForDept(d.id).length;
+            return (
+              <button
+                key={d.id}
+                onClick={() => pickDept(d.id)}
+                className="flex items-center justify-between gap-1.5 px-2.5 py-2 rounded-lg text-xs text-left transition-colors"
+                style={{ backgroundColor: selectedDeptId === d.id ? BRAND.accentSoft : "#F8FAFC" }}
+              >
+                <span className="text-slate-700 truncate">{d[lang]}</span>
+                <span className="flex items-center gap-1.5 flex-shrink-0">
+                  <span
+                    className="font-medium px-1.5 py-0.5 rounded-full"
+                    style={{ backgroundColor: count > 0 ? BRAND.accentSoft : "#F1F5F9", color: count > 0 ? BRAND.accent : "#94A3B8" }}
+                  >
+                    {count}{lang === "en" ? "" : "명"}
+                  </span>
+                  <span className="text-slate-400 font-medium">{d.id.toUpperCase()}</span>
+                </span>
+              </button>
+            );
+          })}
           {departments.length === 0 && <EmptyState text={t("list.emptyText")} />}
         </div>
       </div>
@@ -4198,7 +4231,7 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
             {searchedUsers.map((u) => (
               <button
                 key={u.id}
-                onClick={() => setSelectedEmail(u.email)}
+                onClick={() => pickUser(u.email)}
                 className="w-full py-2 flex items-center justify-between text-sm gap-2 text-left rounded-lg px-2 -mx-2"
                 style={{ backgroundColor: selectedEmail === u.email ? BRAND.accentSoft : "transparent" }}
               >
@@ -4220,9 +4253,34 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
 
         <div className="bg-white rounded-xl border border-slate-100 p-5">
           <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2 mb-3">
-            <Building2 size={15} /> {t("permissions.selectedDeptTitle")}
+            <Building2 size={15} /> {selectedDeptId ? t("permissions.deptUsersTitle") : t("permissions.selectedDeptTitle")}
           </h3>
-          {!selectedUser ? (
+          {selectedDeptId ? (
+            <div>
+              <p className="text-sm font-medium text-slate-700 mb-3">{departments.find((d) => d.id === selectedDeptId)?.[lang]}</p>
+              <div className="divide-y divide-slate-50 max-h-80 overflow-y-auto pr-2">
+                {usersForDept(selectedDeptId).map((u) => (
+                  <button
+                    key={u.id}
+                    onClick={() => pickUser(u.email)}
+                    className="w-full py-2.5 px-2 -mx-2 flex items-center justify-between text-sm gap-2 text-left rounded-lg hover:bg-slate-50"
+                  >
+                    <span className="text-slate-600 truncate">{u.email}</span>
+                    <span
+                      className="text-xs font-medium px-2 py-0.5 rounded-full flex-shrink-0"
+                      style={{
+                        backgroundColor: u.role === "admin" ? "#EDE9FE" : u.role === "reviewer" ? BRAND.accentSoft : "#F1F5F9",
+                        color: u.role === "admin" ? "#6D28D9" : u.role === "reviewer" ? BRAND.accent : "#475569",
+                      }}
+                    >
+                      {t(`roles.${u.role}`)}
+                    </span>
+                  </button>
+                ))}
+                {usersForDept(selectedDeptId).length === 0 && <EmptyState text={t("permissions.noDeptUsers")} />}
+              </div>
+            </div>
+          ) : !selectedUser ? (
             <EmptyState text={t("permissions.selectUserHint")} />
           ) : (
             <div>
@@ -4339,11 +4397,19 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
 
   // 저장/제출 등 작업이 성공했을 때 잠깐 보여주는 토스트 알림 (조용히 끝나서 반영됐는지 헷갈리는 문제 방지)
   const [toast, setToast] = useState(null);
+  const [toastShow, setToastShow] = useState(false);
   const toastTimerRef = useRef(null);
+  const toastHideTimerRef = useRef(null);
   function showToast(message) {
-    setToast(message);
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    toastTimerRef.current = setTimeout(() => setToast(null), 2800);
+    if (toastHideTimerRef.current) clearTimeout(toastHideTimerRef.current);
+    setToast(message);
+    setToastShow(false);
+    requestAnimationFrame(() => requestAnimationFrame(() => setToastShow(true)));
+    toastTimerRef.current = setTimeout(() => {
+      setToastShow(false);
+      toastHideTimerRef.current = setTimeout(() => setToast(null), 220);
+    }, 2800);
   }
 
   const controlsForYear = useMemo(() => controls.filter((c) => c.year === selectedYear), [controls, selectedYear]);
@@ -4407,8 +4473,19 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
     <AppDataContext.Provider value={{ departments, setDepartments, users, setUsers }}>
       <div className="flex w-full" style={{ height: "100vh", backgroundColor: "#F5F6F8", fontFamily: "'Pretendard','Apple SD Gothic Neo','Malgun Gothic',-apple-system,sans-serif" }}>
         {toast && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/20 pointer-events-none">
-            <div className="bg-white rounded-2xl shadow-2xl px-8 py-7 flex flex-col items-center gap-3 pointer-events-auto" style={{ minWidth: 260, maxWidth: 360 }}>
+          <div
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/20 pointer-events-none transition-opacity duration-200"
+            style={{ opacity: toastShow ? 1 : 0 }}
+          >
+            <div
+              className="bg-white rounded-2xl shadow-2xl px-8 py-7 flex flex-col items-center gap-3 pointer-events-auto transition-all duration-200 ease-out"
+              style={{
+                minWidth: 260,
+                maxWidth: 360,
+                opacity: toastShow ? 1 : 0,
+                transform: toastShow ? "scale(1) translateY(0)" : "scale(0.94) translateY(6px)",
+              }}
+            >
               <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ backgroundColor: BRAND.accentSoft }}>
                 <CheckCircle2 size={26} style={{ color: BRAND.accent }} />
               </div>
