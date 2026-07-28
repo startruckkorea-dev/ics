@@ -608,6 +608,7 @@ const STR = {
       emptyText: "검색 결과가 없습니다.",
       requestGuideTitle: "카테고리 접근 권한 신청 방법",
       viewOnlyNotice: "이 화면은 조회 전용입니다. 권한 변경은 Admin 계정으로 로그인해서 진행해 주세요.",
+      apply: "반영",
       notice: "이 화면은 조회 전용입니다. 권한을 추가/변경하려면 BU Admin에게 IT Ticket으로 요청해 ics_category_access.xlsx를 수정해 주세요.",
     },
     permissions: {
@@ -884,6 +885,7 @@ const STR = {
       emptyText: "No results found.",
       requestGuideTitle: "How to request category access",
       viewOnlyNotice: "This screen is view-only. Please sign in with an Admin account to change permissions.",
+      apply: "Apply",
       notice: "This screen is view-only. To add or change access, request it from your BU Admin via IT Ticket to update ics_category_access.xlsx.",
     },
     permissions: {
@@ -3991,9 +3993,10 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
   const { lang, t } = useLang();
   const { users } = useAppData();
   const isAdmin = currentUser.role === "admin";
-  const [access, setAccess] = useState(() => ({ ...ICS_CATEGORY_ACCESS }));
+  const [saved, setSaved] = useState(() => ({ ...ICS_CATEGORY_ACCESS }));
+  const [draft, setDraft] = useState(() => ({ ...ICS_CATEGORY_ACCESS }));
   const [search, setSearch] = useState("");
-  const [savingKey, setSavingKey] = useState(null); // "email:categoryKey" 저장 중 표시
+  const [applying, setApplying] = useState(false);
 
   const categoryKeys = ["controlMgmt", "self", "review", "fsa", "fsaReview", "adminOnly", "executive"];
   const categoryLabelPath = {
@@ -4012,52 +4015,85 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
     .slice()
     .sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email));
 
-  async function toggle(user, categoryKey) {
+  function toggleCell(email, categoryKey) {
     if (!isAdmin) {
       alert(lang === "en" ? "Only admins can change this." : "관리자만 변경할 수 있습니다.");
       return;
     }
-    const email = user.email.toLowerCase();
-    const existing = access[email] || {};
-    const newValue = !existing[categoryKey];
-    const updatedEntry = { ...existing, [categoryKey]: newValue };
-    setAccess((prev) => ({ ...prev, [email]: updatedEntry }));
-    setSavingKey(`${email}:${categoryKey}`);
+    setDraft((prev) => ({ ...prev, [email]: { ...(prev[email] || {}), [categoryKey]: !prev[email]?.[categoryKey] } }));
+  }
 
-    const yn = (v) => (v ? "Y" : "");
-    const fields = {
-      ICS_Overview: yn(updatedEntry.icsOverview),
-      ControlMgmt: yn(updatedEntry.controlMgmt),
-      Self: yn(updatedEntry.self),
-      Review: yn(updatedEntry.review),
-      FSA: yn(updatedEntry.fsa),
-      FSAReview: yn(updatedEntry.fsaReview),
-      AdminOnly: yn(updatedEntry.adminOnly),
-      Executive: yn(updatedEntry.executive),
-    };
-    try {
-      if (existing.spId) {
-        await icsUpdateItem(ICS_LISTS.categoryAccess, existing.spId, fields);
-      } else {
-        const created = await icsCreateItem(ICS_LISTS.categoryAccess, { Title: email, ...fields });
-        updatedEntry.spId = created.id;
-        setAccess((prev) => ({ ...prev, [email]: updatedEntry }));
+  function toggleColumn(categoryKey) {
+    if (!isAdmin) {
+      alert(lang === "en" ? "Only admins can change this." : "관리자만 변경할 수 있습니다.");
+      return;
+    }
+    const visibleEmails = rows.map((u) => u.email.toLowerCase());
+    const allChecked = visibleEmails.length > 0 && visibleEmails.every((email) => draft[email]?.[categoryKey]);
+    setDraft((prev) => {
+      const next = { ...prev };
+      visibleEmails.forEach((email) => {
+        next[email] = { ...(next[email] || {}), [categoryKey]: !allChecked };
+      });
+      return next;
+    });
+  }
+
+  const isDirty = categoryKeys.some((k) =>
+    users.some((u) => {
+      const email = u.email.toLowerCase();
+      return !!draft[email]?.[k] !== !!saved[email]?.[k];
+    })
+  );
+
+  async function applyChanges() {
+    if (!isAdmin || !isDirty) return;
+    setApplying(true);
+    const changedEmails = users
+      .map((u) => u.email.toLowerCase())
+      .filter((email) => categoryKeys.some((k) => !!draft[email]?.[k] !== !!saved[email]?.[k]));
+
+    let successCount = 0;
+    for (const email of changedEmails) {
+      const entry = draft[email] || {};
+      const yn = (v) => (v ? "Y" : "");
+      const fields = {
+        ICS_Overview: yn(entry.icsOverview),
+        ControlMgmt: yn(entry.controlMgmt),
+        Self: yn(entry.self),
+        Review: yn(entry.review),
+        FSA: yn(entry.fsa),
+        FSAReview: yn(entry.fsaReview),
+        AdminOnly: yn(entry.adminOnly),
+        Executive: yn(entry.executive),
+      };
+      try {
+        const existing = ICS_CATEGORY_ACCESS[email];
+        if (existing?.spId) {
+          await icsUpdateItem(ICS_LISTS.categoryAccess, existing.spId, fields);
+        } else {
+          const created = await icsCreateItem(ICS_LISTS.categoryAccess, { Title: email, ...fields });
+          entry.spId = created.id;
+        }
+        ICS_CATEGORY_ACCESS[email] = { ...(ICS_CATEGORY_ACCESS[email] || {}), ...entry };
+        successCount++;
+      } catch (e) {
+        console.warn(`[ICS] ${email} 카테고리 접근 권한 저장 실패:`, e.message);
       }
-      ICS_CATEGORY_ACCESS[email] = updatedEntry; // 전역 캐시도 갱신해서 이번 세션 내 다른 화면에도 즉시 반영
+    }
+    setSaved({ ...draft });
+    setApplying(false);
+    if (successCount > 0) {
       addLog(
         currentUser.email,
         "edit_category_access",
         "-",
-        `${email} · ${t(categoryLabelPath[categoryKey])} -> ${newValue ? "Y" : "N"}`,
-        `${email} · ${t(categoryLabelPath[categoryKey])} -> ${newValue ? "Y" : "N"}`
+        `카테고리 접근 권한 일괄 변경 (${successCount}명)`,
+        `Bulk category access update (${successCount} users)`
       );
-      if (showToast) showToast(lang === "en" ? "Permission updated." : "권한이 반영되었습니다.");
-    } catch (e) {
-      // 실패 시 되돌림
-      setAccess((prev) => ({ ...prev, [email]: existing }));
-      alert("저장에 실패했습니다: " + e.message);
-    } finally {
-      setSavingKey(null);
+      if (showToast) showToast(lang === "en" ? `Permissions updated for ${successCount} user(s).` : `${successCount}명의 권한이 반영되었습니다.`);
+    } else if (changedEmails.length > 0) {
+      alert(lang === "en" ? "Failed to save changes." : "저장에 실패했습니다.");
     }
   }
 
@@ -4077,48 +4113,74 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
         </div>
       )}
 
-      <input
-        type="text"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        placeholder={t("common.search")}
-        className={`${inputCls} max-w-xs mb-4`}
-      />
+      <div className="flex items-center gap-3 mb-4">
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder={t("common.search")}
+          className={`${inputCls} max-w-xs`}
+        />
+        {isAdmin && (
+          <button
+            onClick={applyChanges}
+            disabled={!isDirty || applying}
+            className="text-sm font-medium px-4 py-2 rounded-lg text-white disabled:opacity-40 flex-shrink-0"
+            style={{ backgroundColor: BRAND.accent }}
+          >
+            {t("categoryAccess.apply")}
+          </button>
+        )}
+      </div>
 
       <div className="bg-white rounded-xl border border-slate-100 overflow-auto" style={{ maxHeight: 520 }}>
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-slate-500 text-xs sticky top-0">
             <tr>
               <th className="text-left font-medium px-4 py-2.5 sticky left-0 bg-slate-50">{t("categoryAccess.colUser")}</th>
-              {categoryKeys.map((k) => (
-                <th key={k} className="text-center font-medium px-3 py-2.5 whitespace-nowrap">{t(categoryLabelPath[k])}</th>
-              ))}
+              {categoryKeys.map((k) => {
+                const visibleEmails = rows.map((u) => u.email.toLowerCase());
+                const allChecked = visibleEmails.length > 0 && visibleEmails.every((email) => draft[email]?.[k]);
+                return (
+                  <th key={k} className="text-center font-medium px-3 py-2.5 whitespace-nowrap">
+                    <div className="flex flex-col items-center gap-1">
+                      <input
+                        type="checkbox"
+                        checked={allChecked}
+                        disabled={!isAdmin}
+                        onChange={() => toggleColumn(k)}
+                        className="w-4 h-4 cursor-pointer disabled:cursor-not-allowed"
+                        style={{ accentColor: BRAND.accent }}
+                        title={t("permissions.selectAll")}
+                      />
+                      <span>{t(categoryLabelPath[k])}</span>
+                    </div>
+                  </th>
+                );
+              })}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-50">
             {rows.map((u) => {
               const email = u.email.toLowerCase();
-              const grant = access[email] || {};
+              const grant = draft[email] || {};
               return (
                 <tr key={u.id}>
                   <td className="px-4 py-1.5 sticky left-0 bg-white">
                     <p className="text-slate-600 whitespace-nowrap">{u.email}</p>
                   </td>
-                  {categoryKeys.map((k) => {
-                    const saving = savingKey === `${email}:${k}`;
-                    return (
-                      <td key={k} className="text-center px-3 py-1.5">
-                        <input
-                          type="checkbox"
-                          checked={!!grant[k]}
-                          disabled={!isAdmin || saving}
-                          onChange={() => toggle(u, k)}
-                          className="w-4 h-4 cursor-pointer disabled:cursor-not-allowed"
-                          style={{ accentColor: BRAND.accent }}
-                        />
-                      </td>
-                    );
-                  })}
+                  {categoryKeys.map((k) => (
+                    <td key={k} className="text-center px-3 py-1.5">
+                      <input
+                        type="checkbox"
+                        checked={!!grant[k]}
+                        disabled={!isAdmin}
+                        onChange={() => toggleCell(email, k)}
+                        className="w-4 h-4 cursor-pointer disabled:cursor-not-allowed"
+                        style={{ accentColor: BRAND.accent }}
+                      />
+                    </td>
+                  ))}
                 </tr>
               );
             })}
@@ -4152,8 +4214,10 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
   const [savingDept, setSavingDept] = useState(null);
   const [savingRole, setSavingRole] = useState(false);
   const [roleDraft, setRoleDraft] = useState(null);
+  const [deptDraft, setDeptDraft] = useState([]);
   useEffect(() => {
     setRoleDraft(selectedUser ? selectedUser.role : null);
+    setDeptDraft(selectedUser ? (selectedUser.role === "admin" ? departments.map((d) => d.id) : permissions[selectedUser.email]?.depts || []) : []);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedEmail]);
   const ROLE_OPTIONS = ["accessor", "reviewer", "admin", "cfo", "rd", "guest"];
@@ -4183,6 +4247,38 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
       alert("저장에 실패했습니다: " + e.message);
     } finally {
       setSavingRole(false);
+    }
+  }
+
+  async function applyDepts() {
+    if (!isAdmin || !selectedUser || selectedUser.role === "admin") return;
+    const email = selectedUser.email.toLowerCase();
+    const prev = permissions[selectedUser.email]?.depts || [];
+    const next = deptDraft;
+    setPermissions((p) => ({ ...p, [selectedUser.email]: { ...(p[selectedUser.email] || { role: selectedUser.role }), depts: next } }));
+    setSavingDept("__apply__");
+    try {
+      const existing = ICS_CATEGORY_ACCESS[email];
+      const fields = { Depts: next.join(",") };
+      if (existing?.spId) {
+        await icsUpdateItem(ICS_LISTS.categoryAccess, existing.spId, fields);
+      } else {
+        const created = await icsCreateItem(ICS_LISTS.categoryAccess, { Title: email, ...fields });
+        ICS_CATEGORY_ACCESS[email] = { spId: created.id };
+      }
+      ICS_CATEGORY_ACCESS[email] = { ...(ICS_CATEGORY_ACCESS[email] || {}), depts: next };
+      const added = next.filter((d) => !prev.includes(d));
+      const removed = prev.filter((d) => !next.includes(d));
+      const label = (id) => departments.find((d) => d.id === id)?.[lang] || id;
+      const summary = [...added.map((d) => `+${label(d)}`), ...removed.map((d) => `-${label(d)}`)].join(", ") || "-";
+      addLog(currentUser.email, "edit_category_access", "-", `${email} · ${summary}`, `${email} · ${summary}`);
+      if (showToast) showToast(lang === "en" ? "Permission updated." : "권한이 반영되었습니다.");
+    } catch (e) {
+      setPermissions((p) => ({ ...p, [selectedUser.email]: { ...(p[selectedUser.email] || { role: selectedUser.role }), depts: prev } }));
+      setDeptDraft(prev);
+      alert("저장에 실패했습니다: " + e.message);
+    } finally {
+      setSavingDept(null);
     }
   }
 
@@ -4233,11 +4329,6 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
       setSavingDept(null);
     }
   }
-  function toggleDept(deptId) {
-    if (!selectedUser) return;
-    const has = (permissions[selectedUser.email]?.depts || []).includes(deptId);
-    setDeptForUser(selectedUser, deptId, !has);
-  }
 
   const [addUserQuery, setAddUserQuery] = useState("");
   const addUserCandidates =
@@ -4247,39 +4338,6 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
           .filter((u) => selectedDeptId && !(permissions[u.email]?.depts || []).includes(selectedDeptId))
           .slice(0, 6)
       : [];
-
-  async function setAllDeptsForUser(targetUser, allOn) {
-    if (!isAdmin || !targetUser || targetUser.role === "admin") return;
-    const email = targetUser.email.toLowerCase();
-    const current = permissions[targetUser.email]?.depts || [];
-    const next = allOn ? departments.map((d) => d.id) : [];
-    setPermissions((prev) => ({ ...prev, [targetUser.email]: { ...(prev[targetUser.email] || { role: targetUser.role }), depts: next } }));
-    setSavingDept("__all__");
-    try {
-      const existing = ICS_CATEGORY_ACCESS[email];
-      const fields = { Depts: next.join(",") };
-      if (existing?.spId) {
-        await icsUpdateItem(ICS_LISTS.categoryAccess, existing.spId, fields);
-      } else {
-        const created = await icsCreateItem(ICS_LISTS.categoryAccess, { Title: email, ...fields });
-        ICS_CATEGORY_ACCESS[email] = { spId: created.id };
-      }
-      ICS_CATEGORY_ACCESS[email] = { ...(ICS_CATEGORY_ACCESS[email] || {}), depts: next };
-      addLog(
-        currentUser.email,
-        "edit_category_access",
-        "-",
-        `${email} · ${allOn ? (lang === "en" ? "all departments granted" : "전체 부서 부여") : (lang === "en" ? "all departments cleared" : "전체 부서 해제")}`,
-        `${email} · ${allOn ? "all departments granted" : "all departments cleared"}`
-      );
-      if (showToast) showToast(lang === "en" ? "Permission updated." : "권한이 반영되었습니다.");
-    } catch (e) {
-      setPermissions((prev) => ({ ...prev, [targetUser.email]: { ...(prev[targetUser.email] || { role: targetUser.role }), depts: current } }));
-      alert("저장에 실패했습니다: " + e.message);
-    } finally {
-      setSavingDept(null);
-    }
-  }
 
   const [userSearch, setUserSearch] = useState("");
   const qUser = userSearch.trim().toLowerCase();
@@ -4430,22 +4488,20 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
             <div>
               <p className="text-sm font-medium text-slate-700 mb-0.5">{selectedUser.email}</p>
               {isAdmin ? (
-                <div className="mb-3">
-                  <div className="flex flex-wrap gap-1.5 mb-2">
+                <div className="mb-4">
+                  <div className="flex flex-wrap gap-3 mb-2">
                     {ROLE_OPTIONS.map((r) => (
-                      <button
-                        key={r}
-                        onClick={() => setRoleDraft(r)}
-                        disabled={savingRole}
-                        className="text-xs font-medium px-2.5 py-1 rounded-full border transition-colors disabled:opacity-50"
-                        style={
-                          roleDraft === r
-                            ? { backgroundColor: BRAND.accent, borderColor: BRAND.accent, color: "#fff" }
-                            : { backgroundColor: "#fff", borderColor: "#E5E9EF", color: "#64748B" }
-                        }
-                      >
+                      <label key={r} className="flex items-center gap-1.5 text-xs font-medium text-slate-600 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={roleDraft === r}
+                          disabled={savingRole}
+                          onChange={() => setRoleDraft(r)}
+                          className="w-4 h-4 cursor-pointer disabled:cursor-not-allowed"
+                          style={{ accentColor: BRAND.accent }}
+                        />
                         {t(`roles.${r}`)}
-                      </button>
+                      </label>
                     ))}
                   </div>
                   <button
@@ -4468,16 +4524,14 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
                 isAdmin && (
                   <div className="flex items-center gap-2 mb-2">
                     <button
-                      onClick={() => setAllDeptsForUser(selectedUser, true)}
-                      disabled={savingDept === "__all__"}
-                      className="text-xs font-medium px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 hover:border-teal-400 hover:text-teal-600 disabled:opacity-50"
+                      onClick={() => setDeptDraft(departments.map((d) => d.id))}
+                      className="text-xs font-medium px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 hover:border-teal-400 hover:text-teal-600"
                     >
                       {t("permissions.selectAll")}
                     </button>
                     <button
-                      onClick={() => setAllDeptsForUser(selectedUser, false)}
-                      disabled={savingDept === "__all__"}
-                      className="text-xs font-medium px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 hover:border-red-300 hover:text-red-500 disabled:opacity-50"
+                      onClick={() => setDeptDraft([])}
+                      className="text-xs font-medium px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 hover:border-red-300 hover:text-red-500"
                     >
                       {t("permissions.deselectAll")}
                     </button>
@@ -4497,9 +4551,9 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
                     ) : (
                       <input
                         type="checkbox"
-                        checked={selectedDepts.includes(d.id)}
-                        disabled={!isAdmin || savingDept === d.id || savingDept === "__all__"}
-                        onChange={() => toggleDept(d.id)}
+                        checked={deptDraft.includes(d.id)}
+                        disabled={!isAdmin || savingDept === "__apply__"}
+                        onChange={() => setDeptDraft((prev) => (prev.includes(d.id) ? prev.filter((x) => x !== d.id) : [...prev, d.id]))}
                         className="w-4 h-4 flex-shrink-0 cursor-pointer disabled:cursor-not-allowed"
                         style={{ accentColor: BRAND.accent }}
                       />
@@ -4507,6 +4561,16 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
                   </label>
                 ))}
               </div>
+              {selectedUser.role !== "admin" && isAdmin && (
+                <button
+                  onClick={applyDepts}
+                  disabled={savingDept === "__apply__" || JSON.stringify([...deptDraft].sort()) === JSON.stringify([...selectedDepts].sort())}
+                  className="mt-3 text-xs font-medium px-3 py-1.5 rounded-lg text-white disabled:opacity-40"
+                  style={{ backgroundColor: BRAND.accent }}
+                >
+                  {t("permissions.applyRole")}
+                </button>
+              )}
             </div>
           )}
         </div>
