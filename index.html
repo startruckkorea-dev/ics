@@ -4595,13 +4595,13 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
               ) : (
                 isAdmin &&
                 draft && (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm mb-2">
+                  <div className="overflow-auto max-h-80 pr-2">
+                    <table className="w-full text-sm">
                       <thead>
                         <tr className="text-xs text-slate-400">
-                          <th className="text-left font-medium pb-1.5"></th>
+                          <th className="text-left font-medium pb-1.5 sticky top-0 bg-white"></th>
                           {DEPT_CAPACITY_KEYS.map((k) => (
-                            <th key={k} className="text-center font-medium pb-1.5 px-2 whitespace-nowrap">
+                            <th key={k} className="text-center font-medium pb-1.5 px-2 whitespace-nowrap sticky top-0 bg-white">
                               <div className="flex flex-col items-center gap-1">
                                 <span>{t(CAPACITY_LABEL[k])}</span>
                                 <div className="flex gap-1">
@@ -4617,27 +4617,26 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
                           ))}
                         </tr>
                       </thead>
-                    </table>
-                    <div className="divide-y divide-slate-50 max-h-80 overflow-y-auto pr-2">
-                      {departments.map((d) => (
-                        <div key={d.id} className="py-2.5 pl-2 pr-6 -mx-2 flex items-center justify-between text-sm rounded-lg hover:bg-slate-50">
-                          <span className="text-slate-600">{d[lang]}</span>
-                          <div className="flex items-center gap-6">
+                      <tbody className="divide-y divide-slate-50">
+                        {departments.map((d) => (
+                          <tr key={d.id} className="hover:bg-slate-50">
+                            <td className="py-2.5 text-sm text-slate-600 whitespace-nowrap">{d[lang]}</td>
                             {DEPT_CAPACITY_KEYS.map((k) => (
-                              <input
-                                key={k}
-                                type="checkbox"
-                                checked={draft[k].includes(d.id)}
-                                disabled={saving}
-                                onChange={() => toggleDraftDept(k, d.id)}
-                                className="w-4 h-4 flex-shrink-0 cursor-pointer disabled:cursor-not-allowed"
-                                style={{ accentColor: BRAND.accent }}
-                              />
+                              <td key={k} className="text-center px-2">
+                                <input
+                                  type="checkbox"
+                                  checked={draft[k].includes(d.id)}
+                                  disabled={saving}
+                                  onChange={() => toggleDraftDept(k, d.id)}
+                                  className="w-4 h-4 cursor-pointer disabled:cursor-not-allowed"
+                                  style={{ accentColor: BRAND.accent }}
+                                />
+                              </td>
                             ))}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 )
               )}
