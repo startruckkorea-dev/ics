@@ -3441,9 +3441,15 @@ function exportControlsToExcel(controls, lang, departments = INITIAL_DEPARTMENTS
   XLSX.writeFile(wb, `internal_control_status_${new Date().toISOString().slice(0, 10)}.xlsx`);
 }
 
-function HistoryPage({ controls, log }) {
+function HistoryPage({ controls: allControls, log: allLog, currentUser }) {
   const { lang, t } = useLang();
   const { departments, users } = useAppData();
+  const isAdmin = currentUser.role === "admin";
+  const myEmail = (currentUser.email || "").toLowerCase();
+  // 부서별 통제 현황/통제 항목 관리와 동일하게, Admin이 아니면 본인이 Accessor/Reviewer로 배정된 항목만 보이도록 스코프를 좁힌다.
+  const controls = isAdmin ? allControls : allControls.filter((c) => c.accessor === myEmail || c.reviewer === myEmail);
+  const myCodes = new Set(controls.map((c) => c.code));
+  const log = isAdmin ? allLog : allLog.filter((l) => l.actor === myEmail || myCodes.has(l.code));
   const pieData = ["green", "orange", "red", "none"].map((r) => ({
     name: RISK_META[r][lang], value: controls.filter((c) => finalRisk(c) === r).length, color: RISK_META[r].color,
   })).filter((d) => d.value > 0);
@@ -4628,7 +4634,7 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
             )}
             {page === "history" && (
               hasCategoryAccess(currentUser, "history")
-                ? <HistoryPage controls={controlsForYear} log={logForYear} />
+                ? <HistoryPage controls={controlsForYear} log={logForYear} currentUser={currentUser} />
                 : <EmptyState text="Access denied" />
             )}
             {page === "settings" && (
