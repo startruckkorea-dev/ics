@@ -4346,23 +4346,33 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
   }
 
   // 부서 쪽(reverse-lookup) 패널에서의 빠른 추가/제거는 즉시 반영 (Accessor 자격으로 추가, 제거는 전체 자격에서 제외)
-  async function quickAddToDept(targetUser, deptId) {
+  async function quickAddToDept(targetUser, deptId, capacityKey) {
     if (!isAdmin || !targetUser || targetUser.role === "admin") return;
     const email = targetUser.email.toLowerCase();
     const prevPerm = permissions[targetUser.email] || {};
-    const nextAccessor = Array.from(new Set([...(prevPerm.deptsAccessor || []), deptId]));
-    setPermissions((prev) => ({ ...prev, [targetUser.email]: { ...prevPerm, deptsAccessor: nextAccessor, depts: Array.from(new Set([...(prevPerm.depts || []), deptId])) } }));
+    const nextList = Array.from(new Set([...(prevPerm[capacityKey] || []), deptId]));
+    setPermissions((prev) => ({
+      ...prev,
+      [targetUser.email]: { ...prevPerm, [capacityKey]: nextList, depts: Array.from(new Set([...(prevPerm.depts || []), deptId])) },
+    }));
     try {
       const existing = ICS_CATEGORY_ACCESS[email];
-      const fields = { DeptsAccessor: nextAccessor.join(",") };
+      const fieldName = { deptsAccessor: "DeptsAccessor", deptsReviewer: "DeptsReviewer", deptsAdmin: "DeptsAdmin" }[capacityKey];
+      const fields = { [fieldName]: nextList.join(",") };
       if (existing?.spId) await icsUpdateItem(ICS_LISTS.categoryAccess, existing.spId, fields);
       else {
         const created = await icsCreateItem(ICS_LISTS.categoryAccess, { Title: email, ...fields });
         ICS_CATEGORY_ACCESS[email] = { spId: created.id };
       }
-      ICS_CATEGORY_ACCESS[email] = { ...(ICS_CATEGORY_ACCESS[email] || {}), deptsAccessor: nextAccessor };
+      ICS_CATEGORY_ACCESS[email] = { ...(ICS_CATEGORY_ACCESS[email] || {}), [capacityKey]: nextList };
       const deptLabel = departments.find((d) => d.id === deptId)?.[lang] || deptId;
-      addLog(currentUser.email, "edit_category_access", "-", `${email} · ${deptLabel} Accessor 추가`, `${email} · ${deptLabel} Accessor added`);
+      addLog(
+        currentUser.email,
+        "edit_category_access",
+        "-",
+        `${email} · ${deptLabel} ${t(CAPACITY_LABEL[capacityKey])} 추가`,
+        `${email} · ${deptLabel} ${t(CAPACITY_LABEL[capacityKey])} added`
+      );
       if (showToast) showToast(lang === "en" ? "Permission updated." : "권한이 반영되었습니다.");
     } catch (e) {
       setPermissions((prev) => ({ ...prev, [targetUser.email]: prevPerm }));
@@ -4494,19 +4504,24 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
                   {addUserCandidates.length > 0 && (
                     <div className="absolute z-10 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
                       {addUserCandidates.map((u) => (
-                        <button
-                          key={u.id}
-                          onClick={() => {
-                            quickAddToDept(u, selectedDeptId);
-                            setAddUserQuery("");
-                          }}
-                          className="w-full px-3 py-2 flex items-center justify-between text-sm text-left hover:bg-slate-50"
-                        >
-                          <span className="text-slate-600 truncate">{u.email}</span>
-                          <span className="text-xs font-medium flex-shrink-0" style={{ color: BRAND.accent }}>
-                            + {t("common.add")} ({t("roles.accessor")})
-                          </span>
-                        </button>
+                        <div key={u.id} className="px-3 py-2 flex items-center justify-between gap-2 hover:bg-slate-50">
+                          <span className="text-sm text-slate-600 truncate">{u.email}</span>
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
+                            {DEPT_CAPACITY_KEYS.map((k) => (
+                              <button
+                                key={k}
+                                onClick={() => {
+                                  quickAddToDept(u, selectedDeptId, k);
+                                  setAddUserQuery("");
+                                }}
+                                className="text-xs font-medium px-2 py-1 rounded-md border hover:bg-slate-50"
+                                style={{ borderColor: BRAND.accent + "60", color: BRAND.accent }}
+                              >
+                                + {t(CAPACITY_LABEL[k])}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
                       ))}
                     </div>
                   )}
