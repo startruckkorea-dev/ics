@@ -3991,15 +3991,16 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
     setAccess((prev) => ({ ...prev, [email]: updatedEntry }));
     setSavingKey(`${email}:${categoryKey}`);
 
+    const yn = (v) => (v ? "Y" : "");
     const fields = {
-      ICS_Overview: !!updatedEntry.icsOverview,
-      ControlMgmt: !!updatedEntry.controlMgmt,
-      Self: !!updatedEntry.self,
-      Review: !!updatedEntry.review,
-      FSA: !!updatedEntry.fsa,
-      FSAReview: !!updatedEntry.fsaReview,
-      AdminOnly: !!updatedEntry.adminOnly,
-      Executive: !!updatedEntry.executive,
+      ICS_Overview: yn(updatedEntry.icsOverview),
+      ControlMgmt: yn(updatedEntry.controlMgmt),
+      Self: yn(updatedEntry.self),
+      Review: yn(updatedEntry.review),
+      FSA: yn(updatedEntry.fsa),
+      FSAReview: yn(updatedEntry.fsaReview),
+      AdminOnly: yn(updatedEntry.adminOnly),
+      Executive: yn(updatedEntry.executive),
     };
     try {
       if (existing.spId) {
@@ -4902,20 +4903,21 @@ const LEGACY_DEPT_REMAP = { fin: "fnc", hr: "hrt", pur: "pcm", itd: "itt" };
 async function loadIcsCategoryAccessList() {
   const items = await icsListAll(ICS_LISTS.categoryAccess);
   const parsed = {};
+  const isY = (v) => ["Y", "TRUE", "1"].includes(String(v || "").trim().toUpperCase());
   items.forEach((it) => {
     const f = it.fields;
     const email = (f.Title || "").trim().toLowerCase();
     if (!email) return;
     parsed[email] = {
       spId: it.id,
-      icsOverview: !!f.ICS_Overview,
-      controlMgmt: !!f.ControlMgmt,
-      self: !!f.Self,
-      review: !!f.Review,
-      fsa: !!f.FSA,
-      fsaReview: !!f.FSAReview,
-      adminOnly: !!f.AdminOnly,
-      executive: !!f.Executive,
+      icsOverview: isY(f.ICS_Overview),
+      controlMgmt: isY(f.ControlMgmt),
+      self: isY(f.Self),
+      review: isY(f.Review),
+      fsa: isY(f.FSA),
+      fsaReview: isY(f.FSAReview),
+      adminOnly: isY(f.AdminOnly),
+      executive: isY(f.Executive),
     };
   });
   return parsed;
