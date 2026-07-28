@@ -278,19 +278,21 @@ function cDesc(c, lang) {
 function computeInitialPermissions(initialControls, users = INITIAL_USERS, departments = INITIAL_DEPARTMENTS) {
   const perm = {};
   users.forEach((u) => {
+    let depts;
     if (u.role === "accessor") {
-      perm[u.email] = { depts: u.dept ? [u.dept] : [], role: u.role };
+      depts = u.dept ? [u.dept] : [];
     } else if (u.role === "reviewer") {
-      const depts = Array.from(
-        new Set(initialControls.filter((c) => c.reviewer === u.email).map((c) => c.dept))
-      );
-      perm[u.email] = { depts, role: u.role };
+      depts = Array.from(new Set(initialControls.filter((c) => c.reviewer === u.email).map((c) => c.dept)));
     } else if (u.role === "admin") {
-      perm[u.email] = { depts: departments.map((d) => d.id), role: u.role };
+      depts = departments.map((d) => d.id);
     } else {
       // cfo/rd/guest 등: 기본으로 부여된 부서 없음 (필요하면 권한 관리 화면에서 직접 체크)
-      perm[u.email] = { depts: [], role: u.role };
+      depts = [];
     }
+    // 권한 관리 화면에서 관리자가 직접 부여한 부서(ICS_CategoryAccess의 Depts 컬럼)를 위 기본값 위에 추가로 얹는다.
+    const granted = ICS_CATEGORY_ACCESS[(u.email || "").toLowerCase()]?.depts || [];
+    if (granted.length) depts = Array.from(new Set([...depts, ...granted]));
+    perm[u.email] = { depts, role: u.role };
   });
   return perm;
 }
@@ -623,7 +625,7 @@ const STR = {
       requestGuideTitle: "접근 권한 신청 방법",
       requestGuideStep1: "BU Admin에게 권한 요청",
       requestGuideStep2: "BU Admin이 아래 시스템으로 티켓 생성",
-      notice: "이 화면은 조회 전용입니다. 부서·사용자 접근 권한을 변경하려면 위 안내대로 BU Admin에게 IT Ticket으로 요청해 주세요.",
+      notice: "변경 사항은 SharePoint(ICS_CategoryAccess)에 즉시 저장되고 활동 로그에도 기록됩니다. Admin만 체크박스를 변경할 수 있습니다.",
     },
   },
   en: {
@@ -894,7 +896,7 @@ const STR = {
       requestGuideTitle: "How to request access",
       requestGuideStep1: "Request access from your BU Admin",
       requestGuideStep2: "The BU Admin creates a ticket in",
-      notice: "This screen is view-only. To change department or user access, request it from your BU Admin via IT Ticket as described above.",
+      notice: "Changes save immediately to SharePoint (ICS_CategoryAccess) and are logged. Only Admins can change checkboxes.",
     },
   },
 };
@@ -4112,9 +4114,10 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
   );
 }
 
-function PermissionsPage({ permissions, setPermissions }) {
+function PermissionsPage({ permissions, setPermissions, currentUser, addLog, showToast }) {
   const { lang, t } = useLang();
   const { departments, users } = useAppData();
+  const isAdmin = currentUser.role === "admin";
 
   const [selectedEmail, setSelectedEmail] = useState(null);
   const selectedUser = users.find((u) => u.email === selectedEmail) || null;
@@ -4123,6 +4126,42 @@ function PermissionsPage({ permissions, setPermissions }) {
       ? departments.map((d) => d.id)
       : permissions[selectedUser.email]?.depts || []
     : [];
+  const [savingDept, setSavingDept] = useState(null);
+
+  async function toggleDept(deptId) {
+    if (!isAdmin || !selectedUser || selectedUser.role === "admin") return;
+    const email = selectedUser.email.toLowerCase();
+    const current = permissions[selectedUser.email]?.depts || [];
+    const next = current.includes(deptId) ? current.filter((d) => d !== deptId) : [...current, deptId];
+    setPermissions((prev) => ({ ...prev, [selectedUser.email]: { ...(prev[selectedUser.email] || { role: selectedUser.role }), depts: next } }));
+    setSavingDept(deptId);
+    try {
+      const existing = ICS_CATEGORY_ACCESS[email];
+      const fields = { Depts: next.join(",") };
+      if (existing?.spId) {
+        await icsUpdateItem(ICS_LISTS.categoryAccess, existing.spId, fields);
+      } else {
+        const created = await icsCreateItem(ICS_LISTS.categoryAccess, { Title: email, ...fields });
+        ICS_CATEGORY_ACCESS[email] = { spId: created.id };
+      }
+      ICS_CATEGORY_ACCESS[email] = { ...(ICS_CATEGORY_ACCESS[email] || {}), depts: next };
+      const deptLabel = departments.find((d) => d.id === deptId)?.[lang] || deptId;
+      addLog(
+        currentUser.email,
+        "edit_category_access",
+        "-",
+        `${email} · ${deptLabel} -> ${next.includes(deptId) ? "Y" : "N"}`,
+        `${email} · ${deptLabel} -> ${next.includes(deptId) ? "Y" : "N"}`
+      );
+      if (showToast) showToast(lang === "en" ? "Permission updated." : "권한이 반영됐습니다.");
+    } catch (e) {
+      // 실패 시 되돌림
+      setPermissions((prev) => ({ ...prev, [selectedUser.email]: { ...(prev[selectedUser.email] || { role: selectedUser.role }), depts: current } }));
+      alert("저장에 실패했습니다: " + e.message);
+    } finally {
+      setSavingDept(null);
+    }
+  }
 
   const [userSearch, setUserSearch] = useState("");
   const qUser = userSearch.trim().toLowerCase();
@@ -4198,10 +4237,17 @@ function PermissionsPage({ permissions, setPermissions }) {
                 {departments.map((d) => (
                   <div key={d.id} className="py-2 flex items-center justify-between text-sm">
                     <span className="text-slate-600">{d[lang]}</span>
-                    {selectedDepts.includes(d.id) ? (
+                    {selectedUser.role === "admin" ? (
                       <Check size={15} style={{ color: BRAND.accent }} />
                     ) : (
-                      <span className="text-slate-200">–</span>
+                      <input
+                        type="checkbox"
+                        checked={selectedDepts.includes(d.id)}
+                        disabled={!isAdmin || savingDept === d.id}
+                        onChange={() => toggleDept(d.id)}
+                        className="w-4 h-4 cursor-pointer disabled:cursor-not-allowed"
+                        style={{ accentColor: BRAND.accent }}
+                      />
                     )}
                   </div>
                 ))}
@@ -4524,7 +4570,7 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
               )
             )}
             {page === "categoryAccess" && (hasCategoryAccess(currentUser, "adminOnly") ? <CategoryAccessPage currentUser={currentUser} addLog={addLog} showToast={showToast} /> : <EmptyState text="Access denied" />)}
-            {page === "permissions" && (hasCategoryAccess(currentUser, "adminOnly") ? <PermissionsPage permissions={permissions} setPermissions={setPermissions} /> : <EmptyState text="Access denied" />)}
+            {page === "permissions" && (hasCategoryAccess(currentUser, "adminOnly") ? <PermissionsPage permissions={permissions} setPermissions={setPermissions} currentUser={currentUser} addLog={addLog} showToast={showToast} /> : <EmptyState text="Access denied" />)}
             {page === "finalReport" && (
               <FinalReportPage
                 controls={controlsForActiveYear}
@@ -4892,6 +4938,7 @@ async function loadIcsCategoryAccessList() {
       fsaReview: isY(f.FSAReview),
       adminOnly: isY(f.AdminOnly),
       executive: isY(f.Executive),
+      depts: (f.Depts || "").split(",").map((s) => s.trim()).filter(Boolean),
     };
   });
   return parsed;
