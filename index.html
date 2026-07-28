@@ -1539,10 +1539,11 @@ function LearnPage({ currentUser, learnContent, setLearnContent, learnVideos, se
   async function removeVideo(videoId) {
     if (!requireAdmin()) return;
     try {
-      await icsDeleteDriveItem(videoId);
+      const hidden = await loadIcsHiddenMedia().catch(() => []);
+      await saveIcsHiddenMedia(Array.from(new Set([...hidden, videoId])));
       setLearnVideos((prev) => prev.filter((v) => v.id !== videoId));
     } catch (e) {
-      alert("삭제에 실패했습니다: " + e.message);
+      alert("숨김 처리에 실패했습니다: " + e.message);
     }
   }
 
@@ -1555,10 +1556,11 @@ function LearnPage({ currentUser, learnContent, setLearnContent, learnVideos, se
   async function removeImage(imageId) {
     if (!requireAdmin()) return;
     try {
-      await icsDeleteDriveItem(imageId);
+      const hidden = await loadIcsHiddenMedia().catch(() => []);
+      await saveIcsHiddenMedia(Array.from(new Set([...hidden, imageId])));
       setLearnImages((prev) => prev.filter((v) => v.id !== imageId));
     } catch (e) {
-      alert("삭제에 실패했습니다: " + e.message);
+      alert("숨김 처리에 실패했습니다: " + e.message);
     }
   }
 
@@ -5212,6 +5214,33 @@ async function saveIcsMediaTitles(titles) {
   return res.json();
 }
 
+// 학습 영상/이미지를 "삭제"할 때 실제 SharePoint 파일은 지우지 않고, 이 숨김 목록(파일 ID)에만 추가해서 화면에서만 안 보이게 한다.
+async function loadIcsHiddenMedia() {
+  const token = await getGraphToken();
+  const driveId = await getIcsAttachedFilesDriveId();
+  const res = await fetch(`${GRAPH}/drives/${driveId}/root:/ICS_Media-Files/hidden_media.json:/content`, {
+    headers: { Authorization: "Bearer " + token },
+  });
+  if (!res.ok) return []; // 파일이 아직 없으면(첫 사용) 숨김 없음으로 처리
+  try {
+    const data = await res.json();
+    return Array.isArray(data) ? data : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+async function saveIcsHiddenMedia(idList) {
+  const token = await getGraphToken();
+  const driveId = await getIcsAttachedFilesDriveId();
+  const res = await fetch(`${GRAPH}/drives/${driveId}/root:/ICS_Media-Files/hidden_media.json:/content`, {
+    method: "PUT",
+    headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+    body: JSON.stringify(idList),
+  });
+  if (!res.ok) throw new Error(`hidden_media.json 저장 실패 (${res.status})`);
+}
+
 async function icsListMediaFiles() {
   const token = await getGraphToken();
   const driveId = await getIcsAttachedFilesDriveId();
@@ -5221,7 +5250,10 @@ async function icsListMediaFiles() {
   );
   if (!res.ok) throw new Error(`ICS_Media-Files 폴더 조회 실패 (${res.status})`);
   const data = await res.json();
-  const rawItems = (data.value || []).filter((it) => it.file && !it.name.endsWith(".json")); // 폴더/설정용 JSON 제외, 실제 미디어 파일만
+  const hidden = await loadIcsHiddenMedia().catch(() => []);
+  const rawItems = (data.value || [])
+    .filter((it) => it.file && !it.name.endsWith(".json")) // 폴더/설정용 JSON 제외, 실제 미디어 파일만
+    .filter((it) => !hidden.includes(it.id)); // 숨김 처리된 파일 제외 (실제 파일은 그대로 남아있음)
 
   // 목록 조회(children) 응답엔 @microsoft.graph.downloadUrl이 안정적으로 안 실려서(재생/표시 불가한 webUrl만 옴),
   // 파일 하나하나 개별 조회로 실제 재생 가능한 다운로드 링크를 다시 받아온다.
