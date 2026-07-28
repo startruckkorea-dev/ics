@@ -616,6 +616,7 @@ const STR = {
       colUser: "사용자", colRole: "역할", colAll: "전체",
       selectedDeptTitle: "선택한 사용자의 부서 접근 권한",
       deptUsersTitle: "이 부서에 접근 가능한 사용자",
+      addUserPlaceholder: "이메일로 검색해서 이 부서에 추가",
       noDeptUsers: "이 부서에 접근 권한을 가진 사용자가 없습니다.",
       selectUserHint: "왼쪽 목록에서 사용자를 선택하면 부서별 접근 권한이 여기 표시됩니다.",
       adminAllDeptsNote: "Admin은 역할상 항상 전체 부서에 접근합니다 (아래는 참고용 표시).",
@@ -889,6 +890,7 @@ const STR = {
       colUser: "User", colRole: "Role", colAll: "All",
       selectedDeptTitle: "Selected user's department access",
       deptUsersTitle: "Users with access to this department",
+      addUserPlaceholder: "Search by email to add to this department",
       noDeptUsers: "No users have access to this department.",
       selectUserHint: "Select a user from the list on the left to see their department access here.",
       adminAllDeptsNote: "Admins always have access to all departments by role (shown below for reference).",
@@ -3449,7 +3451,11 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser }) {
   // 부서별 통제 현황/통제 항목 관리와 동일하게, Admin이 아니면 본인이 Accessor/Reviewer로 배정된 항목만 보이도록 스코프를 좁힌다.
   const controls = isAdmin ? allControls : allControls.filter((c) => c.accessor === myEmail || c.reviewer === myEmail);
   const myCodes = new Set(controls.map((c) => c.code));
-  const log = isAdmin ? allLog : allLog.filter((l) => l.actor === myEmail || myCodes.has(l.code));
+  // 활동 로그는 ISA/FSA 평가 흐름(자가평가·검토·FSA)에서 발생한 기록만 보여준다 - 권한 변경, 부서 초기화 등 시스템/관리 로그는 제외.
+  const ASSESSMENT_ACTIONS = new Set(["submit_self", "review_complete", "review_reject", "fsa_submit", "fsa_review_complete", "fsa_review_reject"]);
+  const log = allLog
+    .filter((l) => ASSESSMENT_ACTIONS.has(l.actionKey))
+    .filter((l) => isAdmin || l.actor === myEmail || myCodes.has(l.code));
   const pieData = ["green", "orange", "red", "none"].map((r) => ({
     name: RISK_META[r][lang], value: controls.filter((c) => finalRisk(c) === r).length, color: RISK_META[r].color,
   })).filter((d) => d.value > 0);
@@ -4153,12 +4159,13 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
     setSelectedEmail(null);
   }
 
-  async function toggleDept(deptId) {
-    if (!isAdmin || !selectedUser || selectedUser.role === "admin") return;
-    const email = selectedUser.email.toLowerCase();
-    const current = permissions[selectedUser.email]?.depts || [];
-    const next = current.includes(deptId) ? current.filter((d) => d !== deptId) : [...current, deptId];
-    setPermissions((prev) => ({ ...prev, [selectedUser.email]: { ...(prev[selectedUser.email] || { role: selectedUser.role }), depts: next } }));
+  async function setDeptForUser(targetUser, deptId, add) {
+    if (!isAdmin || !targetUser || targetUser.role === "admin") return;
+    const email = targetUser.email.toLowerCase();
+    const current = permissions[targetUser.email]?.depts || [];
+    if (add && current.includes(deptId)) return; // 이미 있음
+    const next = add ? [...current, deptId] : current.filter((d) => d !== deptId);
+    setPermissions((prev) => ({ ...prev, [targetUser.email]: { ...(prev[targetUser.email] || { role: targetUser.role }), depts: next } }));
     setSavingDept(deptId);
     try {
       const existing = ICS_CATEGORY_ACCESS[email];
@@ -4175,18 +4182,32 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
         currentUser.email,
         "edit_category_access",
         "-",
-        `${email} · ${deptLabel} -> ${next.includes(deptId) ? "Y" : "N"}`,
-        `${email} · ${deptLabel} -> ${next.includes(deptId) ? "Y" : "N"}`
+        `${email} · ${deptLabel} -> ${add ? "Y" : "N"}`,
+        `${email} · ${deptLabel} -> ${add ? "Y" : "N"}`
       );
       if (showToast) showToast(lang === "en" ? "Permission updated." : "권한이 반영되었습니다.");
     } catch (e) {
       // 실패 시 되돌림
-      setPermissions((prev) => ({ ...prev, [selectedUser.email]: { ...(prev[selectedUser.email] || { role: selectedUser.role }), depts: current } }));
+      setPermissions((prev) => ({ ...prev, [targetUser.email]: { ...(prev[targetUser.email] || { role: targetUser.role }), depts: current } }));
       alert("저장에 실패했습니다: " + e.message);
     } finally {
       setSavingDept(null);
     }
   }
+  function toggleDept(deptId) {
+    if (!selectedUser) return;
+    const has = (permissions[selectedUser.email]?.depts || []).includes(deptId);
+    setDeptForUser(selectedUser, deptId, !has);
+  }
+
+  const [addUserQuery, setAddUserQuery] = useState("");
+  const addUserCandidates =
+    addUserQuery.trim().length > 0
+      ? users
+          .filter((u) => u.role !== "admin" && u.email.toLowerCase().includes(addUserQuery.trim().toLowerCase()))
+          .filter((u) => selectedDeptId && !(permissions[u.email]?.depts || []).includes(selectedDeptId))
+          .slice(0, 6)
+      : [];
 
   const [userSearch, setUserSearch] = useState("");
   const qUser = userSearch.trim().toLowerCase();
@@ -4266,6 +4287,38 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
           {selectedDeptId ? (
             <div>
               <p className="text-sm font-medium text-slate-700 mb-3">{departments.find((d) => d.id === selectedDeptId)?.[lang]}</p>
+
+              {isAdmin && (
+                <div className="relative mb-3">
+                  <input
+                    type="text"
+                    value={addUserQuery}
+                    onChange={(e) => setAddUserQuery(e.target.value)}
+                    placeholder={t("permissions.addUserPlaceholder")}
+                    className={inputCls}
+                  />
+                  {addUserCandidates.length > 0 && (
+                    <div className="absolute z-10 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
+                      {addUserCandidates.map((u) => (
+                        <button
+                          key={u.id}
+                          onClick={() => {
+                            setDeptForUser(u, selectedDeptId, true);
+                            setAddUserQuery("");
+                          }}
+                          className="w-full px-3 py-2 flex items-center justify-between text-sm text-left hover:bg-slate-50"
+                        >
+                          <span className="text-slate-600 truncate">{u.email}</span>
+                          <span className="text-xs font-medium flex-shrink-0" style={{ color: BRAND.accent }}>
+                            + {t("common.add")}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="divide-y divide-slate-50 max-h-80 overflow-y-auto pr-2">
                 {usersForDept(selectedDeptId).map((u) => (
                   <button
