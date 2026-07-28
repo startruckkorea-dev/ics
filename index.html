@@ -618,6 +618,7 @@ const STR = {
       deptUsersTitle: "이 부서에 접근 가능한 사용자",
       addUserPlaceholder: "이메일로 검색해서 이 부서에 추가",
       removeFromDept: "이 부서에서 제외",
+      applyRole: "반영",
       noDeptUsers: "이 부서에 접근 권한을 가진 사용자가 없습니다.",
       selectUserHint: "왼쪽 목록에서 사용자를 선택하면 부서별 접근 권한이 여기 표시됩니다.",
       adminAllDeptsNote: "Admin은 역할상 항상 전체 부서에 접근합니다 (아래는 참고용 표시).",
@@ -893,6 +894,7 @@ const STR = {
       deptUsersTitle: "Users with access to this department",
       addUserPlaceholder: "Search by email to add to this department",
       removeFromDept: "Remove from this department",
+      applyRole: "Apply",
       noDeptUsers: "No users have access to this department.",
       selectUserHint: "Select a user from the list on the left to see their department access here.",
       adminAllDeptsNote: "Admins always have access to all departments by role (shown below for reference).",
@@ -4149,6 +4151,11 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
     : [];
   const [savingDept, setSavingDept] = useState(null);
   const [savingRole, setSavingRole] = useState(false);
+  const [roleDraft, setRoleDraft] = useState(null);
+  useEffect(() => {
+    setRoleDraft(selectedUser ? selectedUser.role : null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedEmail]);
   const ROLE_OPTIONS = ["accessor", "reviewer", "admin", "cfo", "rd", "guest"];
 
   async function setRoleForUser(targetUser, newRole) {
@@ -4423,16 +4430,33 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
             <div>
               <p className="text-sm font-medium text-slate-700 mb-0.5">{selectedUser.email}</p>
               {isAdmin ? (
-                <select
-                  value={selectedUser.role}
-                  disabled={savingRole}
-                  onChange={(e) => setRoleForUser(selectedUser, e.target.value)}
-                  className="text-xs font-medium border border-slate-200 rounded-lg px-2 py-1 mb-3 disabled:opacity-50"
-                >
-                  {ROLE_OPTIONS.map((r) => (
-                    <option key={r} value={r}>{t(`roles.${r}`)}</option>
-                  ))}
-                </select>
+                <div className="mb-3">
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {ROLE_OPTIONS.map((r) => (
+                      <button
+                        key={r}
+                        onClick={() => setRoleDraft(r)}
+                        disabled={savingRole}
+                        className="text-xs font-medium px-2.5 py-1 rounded-full border transition-colors disabled:opacity-50"
+                        style={
+                          roleDraft === r
+                            ? { backgroundColor: BRAND.accent, borderColor: BRAND.accent, color: "#fff" }
+                            : { backgroundColor: "#fff", borderColor: "#E5E9EF", color: "#64748B" }
+                        }
+                      >
+                        {t(`roles.${r}`)}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    onClick={() => setRoleForUser(selectedUser, roleDraft)}
+                    disabled={savingRole || roleDraft === selectedUser.role}
+                    className="text-xs font-medium px-3 py-1.5 rounded-lg text-white disabled:opacity-40"
+                    style={{ backgroundColor: BRAND.accent }}
+                  >
+                    {t("permissions.applyRole")}
+                  </button>
+                </div>
               ) : (
                 <p className="text-xs text-slate-400 mb-3">{t(`roles.${selectedUser.role}`)}</p>
               )}
