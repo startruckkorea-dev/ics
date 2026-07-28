@@ -617,6 +617,7 @@ const STR = {
       selectedDeptTitle: "선택한 사용자의 부서 접근 권한",
       deptUsersTitle: "이 부서에 접근 가능한 사용자",
       addUserPlaceholder: "이메일로 검색해서 이 부서에 추가",
+      removeFromDept: "이 부서에서 제외",
       noDeptUsers: "이 부서에 접근 권한을 가진 사용자가 없습니다.",
       selectUserHint: "왼쪽 목록에서 사용자를 선택하면 부서별 접근 권한이 여기 표시됩니다.",
       adminAllDeptsNote: "Admin은 역할상 항상 전체 부서에 접근합니다 (아래는 참고용 표시).",
@@ -891,6 +892,7 @@ const STR = {
       selectedDeptTitle: "Selected user's department access",
       deptUsersTitle: "Users with access to this department",
       addUserPlaceholder: "Search by email to add to this department",
+      removeFromDept: "Remove from this department",
       noDeptUsers: "No users have access to this department.",
       selectUserHint: "Select a user from the list on the left to see their department access here.",
       adminAllDeptsNote: "Admins always have access to all departments by role (shown below for reference).",
@@ -4354,22 +4356,33 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
 
               <div className="divide-y divide-slate-50 max-h-80 overflow-y-auto pr-2">
                 {usersForDept(selectedDeptId).map((u) => (
-                  <button
-                    key={u.id}
-                    onClick={() => pickUser(u.email)}
-                    className="w-full py-2.5 px-2 -mx-2 flex items-center justify-between text-sm gap-2 text-left rounded-lg hover:bg-slate-50"
-                  >
-                    <span className="text-slate-600 truncate">{u.email}</span>
-                    <span
-                      className="text-xs font-medium px-2 py-0.5 rounded-full flex-shrink-0"
-                      style={{
-                        backgroundColor: u.role === "admin" ? "#EDE9FE" : u.role === "reviewer" ? BRAND.accentSoft : "#F1F5F9",
-                        color: u.role === "admin" ? "#6D28D9" : u.role === "reviewer" ? BRAND.accent : "#475569",
-                      }}
-                    >
-                      {t(`roles.${u.role}`)}
-                    </span>
-                  </button>
+                  <div key={u.id} className="w-full py-2.5 px-2 -mx-2 flex items-center justify-between text-sm gap-2 rounded-lg hover:bg-slate-50">
+                    <button onClick={() => pickUser(u.email)} className="flex-1 min-w-0 flex items-center gap-2 text-left">
+                      <span className="text-slate-600 truncate">{u.email}</span>
+                      <span
+                        className="text-xs font-medium px-2 py-0.5 rounded-full flex-shrink-0"
+                        style={{
+                          backgroundColor: u.role === "admin" ? "#EDE9FE" : u.role === "reviewer" ? BRAND.accentSoft : "#F1F5F9",
+                          color: u.role === "admin" ? "#6D28D9" : u.role === "reviewer" ? BRAND.accent : "#475569",
+                        }}
+                      >
+                        {t(`roles.${u.role}`)}
+                      </span>
+                    </button>
+                    {isAdmin && u.role !== "admin" && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeptForUser(u, selectedDeptId, false);
+                        }}
+                        disabled={savingDept === selectedDeptId}
+                        className="flex-shrink-0 text-slate-300 hover:text-red-500 disabled:opacity-50"
+                        title={t("permissions.removeFromDept")}
+                      >
+                        <X size={15} />
+                      </button>
+                    )}
+                  </div>
                 ))}
                 {usersForDept(selectedDeptId).length === 0 && <EmptyState text={t("permissions.noDeptUsers")} />}
               </div>
