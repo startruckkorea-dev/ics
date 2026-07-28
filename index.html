@@ -277,22 +277,24 @@ function cDesc(c, lang) {
 /* 사용자별 접근 가능 부서(권한) 계산 - 이메일 기준 */
 function computeInitialPermissions(initialControls, users = INITIAL_USERS, departments = INITIAL_DEPARTMENTS) {
   const perm = {};
+  const allDeptIds = departments.map((d) => d.id);
   users.forEach((u) => {
-    let depts;
-    if (u.role === "accessor") {
-      depts = u.dept ? [u.dept] : [];
-    } else if (u.role === "reviewer") {
-      depts = Array.from(new Set(initialControls.filter((c) => c.reviewer === u.email).map((c) => c.dept)));
-    } else if (u.role === "admin") {
-      depts = departments.map((d) => d.id);
-    } else {
-      // cfo/rd/guest 등: 기본으로 부여된 부서 없음 (필요하면 권한 관리 화면에서 직접 체크)
-      depts = [];
-    }
-    // 권한 관리 화면에서 관리자가 직접 부여한 부서(ICS_CategoryAccess의 Depts 컬럼)를 위 기본값 위에 추가로 얹는다.
-    const granted = ICS_CATEGORY_ACCESS[(u.email || "").toLowerCase()]?.depts || [];
-    if (granted.length) depts = Array.from(new Set([...depts, ...granted]));
-    perm[u.email] = { depts, role: u.role };
+    const email = (u.email || "").toLowerCase();
+    const grant = ICS_CATEGORY_ACCESS[email] || {};
+
+    let deptsAccessor = u.role === "accessor" && u.dept ? [u.dept] : [];
+    let deptsReviewer = u.role === "reviewer" ? Array.from(new Set(initialControls.filter((c) => c.reviewer === u.email).map((c) => c.dept))) : [];
+    let deptsAdmin = u.role === "admin" ? allDeptIds : [];
+
+    // 권한 관리 화면에서 부서별로(Accessor/Reviewer/Admin 각각) 직접 부여한 항목을 기본값 위에 추가로 얹는다.
+    if (grant.deptsAccessor?.length) deptsAccessor = Array.from(new Set([...deptsAccessor, ...grant.deptsAccessor]));
+    if (grant.deptsReviewer?.length) deptsReviewer = Array.from(new Set([...deptsReviewer, ...grant.deptsReviewer]));
+    if (grant.deptsAdmin?.length) deptsAdmin = Array.from(new Set([...deptsAdmin, ...grant.deptsAdmin]));
+    // 하위호환: 예전 방식(구분 없는 Depts 컬럼)으로 부여된 값은 세 역할 모두에 반영해 조회 범위(부서별 통제 현황 등)에서 계속 보이게 한다.
+    const legacyDepts = grant.depts || [];
+
+    const depts = Array.from(new Set([...deptsAccessor, ...deptsReviewer, ...deptsAdmin, ...legacyDepts])); // 조회용 합집합
+    perm[u.email] = { depts, deptsAccessor, deptsReviewer, deptsAdmin, role: u.role };
   });
   return perm;
 }
@@ -4206,84 +4208,104 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
   const [selectedEmail, setSelectedEmail] = useState(null);
   const [selectedDeptId, setSelectedDeptId] = useState(null);
   const selectedUser = users.find((u) => u.email === selectedEmail) || null;
-  const selectedDepts = selectedUser
-    ? selectedUser.role === "admin"
-      ? departments.map((d) => d.id)
-      : permissions[selectedUser.email]?.depts || []
-    : [];
-  const [savingDept, setSavingDept] = useState(null);
-  const [savingRole, setSavingRole] = useState(false);
-  const [roleDraft, setRoleDraft] = useState(null);
-  const [deptDraft, setDeptDraft] = useState([]);
+  const [saving, setSaving] = useState(false);
+  const ROLE_OPTIONS = ["accessor", "reviewer", "admin", "cfo", "rd", "guest"];
+  const DEPT_CAPACITY_KEYS = ["deptsAccessor", "deptsReviewer", "deptsAdmin"]; // 매트릭스 컬럼 (Accessor/Reviewer/Admin)
+  const CAPACITY_LABEL = { deptsAccessor: "roles.accessor", deptsReviewer: "roles.reviewer", deptsAdmin: "roles.admin" };
+
+  const [draft, setDraft] = useState(null); // { role, deptsAccessor: [], deptsReviewer: [], deptsAdmin: [] }
   useEffect(() => {
-    setRoleDraft(selectedUser ? selectedUser.role : null);
-    setDeptDraft(selectedUser ? (selectedUser.role === "admin" ? departments.map((d) => d.id) : permissions[selectedUser.email]?.depts || []) : []);
+    if (!selectedUser) { setDraft(null); return; }
+    const p = permissions[selectedUser.email] || {};
+    const allIds = departments.map((d) => d.id);
+    setDraft({
+      role: selectedUser.role,
+      deptsAccessor: selectedUser.role === "admin" ? allIds : p.deptsAccessor || [],
+      deptsReviewer: selectedUser.role === "admin" ? allIds : p.deptsReviewer || [],
+      deptsAdmin: selectedUser.role === "admin" ? allIds : p.deptsAdmin || [],
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedEmail]);
-  const ROLE_OPTIONS = ["accessor", "reviewer", "admin", "cfo", "rd", "guest"];
 
-  async function setRoleForUser(targetUser, newRole) {
-    if (!isAdmin || !targetUser || targetUser.role === newRole) return;
-    const email = targetUser.email.toLowerCase();
-    const prevRole = targetUser.role;
-    setUsers((prev) => prev.map((u) => (u.email === targetUser.email ? { ...u, role: newRole, dept: null } : u)));
-    setPermissions((prev) => ({ ...prev, [targetUser.email]: { ...(prev[targetUser.email] || {}), role: newRole } }));
-    setSavingRole(true);
-    try {
-      const existing = ICS_CATEGORY_ACCESS[email];
-      const fields = { RoleOverride: newRole };
-      if (existing?.spId) {
-        await icsUpdateItem(ICS_LISTS.categoryAccess, existing.spId, fields);
-      } else {
-        const created = await icsCreateItem(ICS_LISTS.categoryAccess, { Title: email, ...fields });
-        ICS_CATEGORY_ACCESS[email] = { spId: created.id };
-      }
-      ICS_CATEGORY_ACCESS[email] = { ...(ICS_CATEGORY_ACCESS[email] || {}), roleOverride: newRole };
-      addLog(currentUser.email, "edit_category_access", "-", `${email} · Role ${prevRole} -> ${newRole}`, `${email} · Role ${prevRole} -> ${newRole}`);
-      if (showToast) showToast(lang === "en" ? "Role updated." : "역할이 반영되었습니다.");
-    } catch (e) {
-      setUsers((prev) => prev.map((u) => (u.email === targetUser.email ? { ...u, role: prevRole } : u)));
-      setPermissions((prev) => ({ ...prev, [targetUser.email]: { ...(prev[targetUser.email] || {}), role: prevRole } }));
-      alert("저장에 실패했습니다: " + e.message);
-    } finally {
-      setSavingRole(false);
-    }
+  function toggleDraftDept(capacityKey, deptId) {
+    if (!draft || draft.role === "admin") return;
+    setDraft((prev) => {
+      const list = prev[capacityKey];
+      const next = list.includes(deptId) ? list.filter((x) => x !== deptId) : [...list, deptId];
+      return { ...prev, [capacityKey]: next };
+    });
+  }
+  function selectAllDraft(capacityKey, allOn) {
+    if (!draft || draft.role === "admin") return;
+    setDraft((prev) => ({ ...prev, [capacityKey]: allOn ? departments.map((d) => d.id) : [] }));
   }
 
-  async function applyDepts() {
-    if (!isAdmin || !selectedUser || selectedUser.role === "admin") return;
+  const sameSet = (a, b) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
+  const isDirty =
+    !!draft &&
+    !!selectedUser &&
+    (draft.role !== selectedUser.role ||
+      !sameSet(draft.deptsAccessor, permissions[selectedUser.email]?.deptsAccessor || []) ||
+      !sameSet(draft.deptsReviewer, permissions[selectedUser.email]?.deptsReviewer || []) ||
+      !sameSet(draft.deptsAdmin, permissions[selectedUser.email]?.deptsAdmin || []));
+
+  async function applyChanges() {
+    if (!isAdmin || !selectedUser || !draft || !isDirty) return;
     const email = selectedUser.email.toLowerCase();
-    const prev = permissions[selectedUser.email]?.depts || [];
-    const next = deptDraft;
-    setPermissions((p) => ({ ...p, [selectedUser.email]: { ...(p[selectedUser.email] || { role: selectedUser.role }), depts: next } }));
-    setSavingDept("__apply__");
+    const prevRole = selectedUser.role;
+    const prevPerm = permissions[selectedUser.email] || {};
+    setSaving(true);
+    setUsers((prev) => prev.map((u) => (u.email === selectedUser.email ? { ...u, role: draft.role, dept: null } : u)));
+    setPermissions((prev) => ({
+      ...prev,
+      [selectedUser.email]: {
+        ...prevPerm,
+        role: draft.role,
+        deptsAccessor: draft.deptsAccessor,
+        deptsReviewer: draft.deptsReviewer,
+        deptsAdmin: draft.deptsAdmin,
+        depts: Array.from(new Set([...draft.deptsAccessor, ...draft.deptsReviewer, ...draft.deptsAdmin])),
+      },
+    }));
     try {
       const existing = ICS_CATEGORY_ACCESS[email];
-      const fields = { Depts: next.join(",") };
+      const fields = {
+        RoleOverride: draft.role,
+        DeptsAccessor: draft.deptsAccessor.join(","),
+        DeptsReviewer: draft.deptsReviewer.join(","),
+        DeptsAdmin: draft.deptsAdmin.join(","),
+      };
       if (existing?.spId) {
         await icsUpdateItem(ICS_LISTS.categoryAccess, existing.spId, fields);
       } else {
         const created = await icsCreateItem(ICS_LISTS.categoryAccess, { Title: email, ...fields });
         ICS_CATEGORY_ACCESS[email] = { spId: created.id };
       }
-      ICS_CATEGORY_ACCESS[email] = { ...(ICS_CATEGORY_ACCESS[email] || {}), depts: next };
-      const added = next.filter((d) => !prev.includes(d));
-      const removed = prev.filter((d) => !next.includes(d));
-      const label = (id) => departments.find((d) => d.id === id)?.[lang] || id;
-      const summary = [...added.map((d) => `+${label(d)}`), ...removed.map((d) => `-${label(d)}`)].join(", ") || "-";
-      addLog(currentUser.email, "edit_category_access", "-", `${email} · ${summary}`, `${email} · ${summary}`);
+      ICS_CATEGORY_ACCESS[email] = {
+        ...(ICS_CATEGORY_ACCESS[email] || {}),
+        roleOverride: draft.role,
+        deptsAccessor: draft.deptsAccessor,
+        deptsReviewer: draft.deptsReviewer,
+        deptsAdmin: draft.deptsAdmin,
+      };
+      addLog(currentUser.email, "edit_category_access", "-", `${email} 권한 변경`, `${email} permissions updated`);
       if (showToast) showToast(lang === "en" ? "Permission updated." : "권한이 반영되었습니다.");
     } catch (e) {
-      setPermissions((p) => ({ ...p, [selectedUser.email]: { ...(p[selectedUser.email] || { role: selectedUser.role }), depts: prev } }));
-      setDeptDraft(prev);
+      setUsers((prev) => prev.map((u) => (u.email === selectedUser.email ? { ...u, role: prevRole } : u)));
+      setPermissions((prev) => ({ ...prev, [selectedUser.email]: prevPerm }));
       alert("저장에 실패했습니다: " + e.message);
     } finally {
-      setSavingDept(null);
+      setSaving(false);
     }
   }
 
+  function capacitiesForDept(user, deptId) {
+    if (user.role === "admin") return ["deptsAdmin"];
+    const p = permissions[user.email] || {};
+    return DEPT_CAPACITY_KEYS.filter((k) => (p[k] || []).includes(deptId));
+  }
   function usersForDept(deptId) {
-    return users.filter((u) => u.role === "admin" || (permissions[u.email]?.depts || []).includes(deptId));
+    return users.filter((u) => u.role === "admin" || capacitiesForDept(u, deptId).length > 0);
   }
   function pickUser(email) {
     setSelectedEmail(email);
@@ -4294,39 +4316,52 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
     setSelectedEmail(null);
   }
 
-  async function setDeptForUser(targetUser, deptId, add) {
+  // 부서 쪽(reverse-lookup) 패널에서의 빠른 추가/제거는 즉시 반영 (Accessor 자격으로 추가, 제거는 전체 자격에서 제외)
+  async function quickAddToDept(targetUser, deptId) {
     if (!isAdmin || !targetUser || targetUser.role === "admin") return;
     const email = targetUser.email.toLowerCase();
-    const current = permissions[targetUser.email]?.depts || [];
-    if (add && current.includes(deptId)) return; // 이미 있음
-    const next = add ? [...current, deptId] : current.filter((d) => d !== deptId);
-    setPermissions((prev) => ({ ...prev, [targetUser.email]: { ...(prev[targetUser.email] || { role: targetUser.role }), depts: next } }));
-    setSavingDept(deptId);
+    const prevPerm = permissions[targetUser.email] || {};
+    const nextAccessor = Array.from(new Set([...(prevPerm.deptsAccessor || []), deptId]));
+    setPermissions((prev) => ({ ...prev, [targetUser.email]: { ...prevPerm, deptsAccessor: nextAccessor, depts: Array.from(new Set([...(prevPerm.depts || []), deptId])) } }));
     try {
       const existing = ICS_CATEGORY_ACCESS[email];
-      const fields = { Depts: next.join(",") };
-      if (existing?.spId) {
-        await icsUpdateItem(ICS_LISTS.categoryAccess, existing.spId, fields);
-      } else {
+      const fields = { DeptsAccessor: nextAccessor.join(",") };
+      if (existing?.spId) await icsUpdateItem(ICS_LISTS.categoryAccess, existing.spId, fields);
+      else {
         const created = await icsCreateItem(ICS_LISTS.categoryAccess, { Title: email, ...fields });
         ICS_CATEGORY_ACCESS[email] = { spId: created.id };
       }
-      ICS_CATEGORY_ACCESS[email] = { ...(ICS_CATEGORY_ACCESS[email] || {}), depts: next };
+      ICS_CATEGORY_ACCESS[email] = { ...(ICS_CATEGORY_ACCESS[email] || {}), deptsAccessor: nextAccessor };
       const deptLabel = departments.find((d) => d.id === deptId)?.[lang] || deptId;
-      addLog(
-        currentUser.email,
-        "edit_category_access",
-        "-",
-        `${email} · ${deptLabel} -> ${add ? "Y" : "N"}`,
-        `${email} · ${deptLabel} -> ${add ? "Y" : "N"}`
-      );
+      addLog(currentUser.email, "edit_category_access", "-", `${email} · ${deptLabel} Accessor 추가`, `${email} · ${deptLabel} Accessor added`);
       if (showToast) showToast(lang === "en" ? "Permission updated." : "권한이 반영되었습니다.");
     } catch (e) {
-      // 실패 시 되돌림
-      setPermissions((prev) => ({ ...prev, [targetUser.email]: { ...(prev[targetUser.email] || { role: targetUser.role }), depts: current } }));
+      setPermissions((prev) => ({ ...prev, [targetUser.email]: prevPerm }));
       alert("저장에 실패했습니다: " + e.message);
-    } finally {
-      setSavingDept(null);
+    }
+  }
+  async function removeFromDept(targetUser, deptId) {
+    if (!isAdmin || !targetUser || targetUser.role === "admin") return;
+    const email = targetUser.email.toLowerCase();
+    const prevPerm = permissions[targetUser.email] || {};
+    const strip = (arr) => (arr || []).filter((d) => d !== deptId);
+    const next = { deptsAccessor: strip(prevPerm.deptsAccessor), deptsReviewer: strip(prevPerm.deptsReviewer), deptsAdmin: strip(prevPerm.deptsAdmin) };
+    setPermissions((prev) => ({ ...prev, [targetUser.email]: { ...prevPerm, ...next, depts: strip(prevPerm.depts) } }));
+    try {
+      const existing = ICS_CATEGORY_ACCESS[email];
+      const fields = { DeptsAccessor: next.deptsAccessor.join(","), DeptsReviewer: next.deptsReviewer.join(","), DeptsAdmin: next.deptsAdmin.join(",") };
+      if (existing?.spId) await icsUpdateItem(ICS_LISTS.categoryAccess, existing.spId, fields);
+      else {
+        const created = await icsCreateItem(ICS_LISTS.categoryAccess, { Title: email, ...fields });
+        ICS_CATEGORY_ACCESS[email] = { spId: created.id };
+      }
+      ICS_CATEGORY_ACCESS[email] = { ...(ICS_CATEGORY_ACCESS[email] || {}), ...next };
+      const deptLabel = departments.find((d) => d.id === deptId)?.[lang] || deptId;
+      addLog(currentUser.email, "edit_category_access", "-", `${email} · ${deptLabel} 제외`, `${email} · ${deptLabel} removed`);
+      if (showToast) showToast(lang === "en" ? "Permission updated." : "권한이 반영되었습니다.");
+    } catch (e) {
+      setPermissions((prev) => ({ ...prev, [targetUser.email]: prevPerm }));
+      alert("저장에 실패했습니다: " + e.message);
     }
   }
 
@@ -4335,7 +4370,7 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
     addUserQuery.trim().length > 0
       ? users
           .filter((u) => u.role !== "admin" && u.email.toLowerCase().includes(addUserQuery.trim().toLowerCase()))
-          .filter((u) => selectedDeptId && !(permissions[u.email]?.depts || []).includes(selectedDeptId))
+          .filter((u) => selectedDeptId && capacitiesForDept(u, selectedDeptId).length === 0)
           .slice(0, 6)
       : [];
 
@@ -4433,14 +4468,14 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
                         <button
                           key={u.id}
                           onClick={() => {
-                            setDeptForUser(u, selectedDeptId, true);
+                            quickAddToDept(u, selectedDeptId);
                             setAddUserQuery("");
                           }}
                           className="w-full px-3 py-2 flex items-center justify-between text-sm text-left hover:bg-slate-50"
                         >
                           <span className="text-slate-600 truncate">{u.email}</span>
                           <span className="text-xs font-medium flex-shrink-0" style={{ color: BRAND.accent }}>
-                            + {t("common.add")}
+                            + {t("common.add")} ({t("roles.accessor")})
                           </span>
                         </button>
                       ))}
@@ -4450,35 +4485,40 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
               )}
 
               <div className="divide-y divide-slate-50 max-h-80 overflow-y-auto pr-2">
-                {usersForDept(selectedDeptId).map((u) => (
-                  <div key={u.id} className="w-full py-2.5 px-2 -mx-2 flex items-center justify-between text-sm gap-2 rounded-lg hover:bg-slate-50">
-                    <button onClick={() => pickUser(u.email)} className="flex-1 min-w-0 flex items-center gap-2 text-left">
-                      <span className="text-slate-600 truncate">{u.email}</span>
-                      <span
-                        className="text-xs font-medium px-2 py-0.5 rounded-full flex-shrink-0"
-                        style={{
-                          backgroundColor: u.role === "admin" ? "#EDE9FE" : u.role === "reviewer" ? BRAND.accentSoft : "#F1F5F9",
-                          color: u.role === "admin" ? "#6D28D9" : u.role === "reviewer" ? BRAND.accent : "#475569",
-                        }}
-                      >
-                        {t(`roles.${u.role}`)}
-                      </span>
-                    </button>
-                    {isAdmin && u.role !== "admin" && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setDeptForUser(u, selectedDeptId, false);
-                        }}
-                        disabled={savingDept === selectedDeptId}
-                        className="flex-shrink-0 text-slate-300 hover:text-red-500 disabled:opacity-50"
-                        title={t("permissions.removeFromDept")}
-                      >
-                        <X size={15} />
+                {usersForDept(selectedDeptId).map((u) => {
+                  const caps = capacitiesForDept(u, selectedDeptId);
+                  return (
+                    <div key={u.id} className="w-full py-2.5 px-2 -mx-2 flex items-center justify-between text-sm gap-2 rounded-lg hover:bg-slate-50">
+                      <button onClick={() => pickUser(u.email)} className="flex-1 min-w-0 flex items-center gap-1.5 flex-wrap text-left">
+                        <span className="text-slate-600 truncate">{u.email}</span>
+                        {caps.map((c) => (
+                          <span
+                            key={c}
+                            className="text-xs font-medium px-2 py-0.5 rounded-full flex-shrink-0"
+                            style={{
+                              backgroundColor: c === "deptsAdmin" ? "#EDE9FE" : c === "deptsReviewer" ? BRAND.accentSoft : "#F1F5F9",
+                              color: c === "deptsAdmin" ? "#6D28D9" : c === "deptsReviewer" ? BRAND.accent : "#475569",
+                            }}
+                          >
+                            {t(CAPACITY_LABEL[c])}
+                          </span>
+                        ))}
                       </button>
-                    )}
-                  </div>
-                ))}
+                      {isAdmin && u.role !== "admin" && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeFromDept(u, selectedDeptId);
+                          }}
+                          className="flex-shrink-0 text-slate-300 hover:text-red-500"
+                          title={t("permissions.removeFromDept")}
+                        >
+                          <X size={15} />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
                 {usersForDept(selectedDeptId).length === 0 && <EmptyState text={t("permissions.noDeptUsers")} />}
               </div>
             </div>
@@ -4494,9 +4534,9 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
                       <label key={r} className="flex items-center gap-1.5 text-xs font-medium text-slate-600 cursor-pointer">
                         <input
                           type="checkbox"
-                          checked={roleDraft === r}
-                          disabled={savingRole}
-                          onChange={() => setRoleDraft(r)}
+                          checked={draft?.role === r}
+                          disabled={saving}
+                          onChange={() => setDraft((prev) => ({ ...prev, role: r }))}
                           className="w-4 h-4 cursor-pointer disabled:cursor-not-allowed"
                           style={{ accentColor: BRAND.accent }}
                         />
@@ -4504,67 +4544,67 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
                       </label>
                     ))}
                   </div>
-                  <button
-                    onClick={() => setRoleForUser(selectedUser, roleDraft)}
-                    disabled={savingRole || roleDraft === selectedUser.role}
-                    className="text-xs font-medium px-3 py-1.5 rounded-lg text-white disabled:opacity-40"
-                    style={{ backgroundColor: BRAND.accent }}
-                  >
-                    {t("permissions.applyRole")}
-                  </button>
                 </div>
               ) : (
                 <p className="text-xs text-slate-400 mb-3">{t(`roles.${selectedUser.role}`)}</p>
               )}
-              {selectedUser.role === "admin" ? (
+              {draft?.role === "admin" ? (
                 <p className="text-xs px-2.5 py-1.5 rounded-lg mb-2" style={{ backgroundColor: BRAND.accentSoft, color: BRAND.accent }}>
                   {t("permissions.adminAllDeptsNote")}
                 </p>
               ) : (
-                isAdmin && (
-                  <div className="flex items-center gap-2 mb-2">
-                    <button
-                      onClick={() => setDeptDraft(departments.map((d) => d.id))}
-                      className="text-xs font-medium px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 hover:border-teal-400 hover:text-teal-600"
-                    >
-                      {t("permissions.selectAll")}
-                    </button>
-                    <button
-                      onClick={() => setDeptDraft([])}
-                      className="text-xs font-medium px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 hover:border-red-300 hover:text-red-500"
-                    >
-                      {t("permissions.deselectAll")}
-                    </button>
+                isAdmin &&
+                draft && (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm mb-2">
+                      <thead>
+                        <tr className="text-xs text-slate-400">
+                          <th className="text-left font-medium pb-1.5"></th>
+                          {DEPT_CAPACITY_KEYS.map((k) => (
+                            <th key={k} className="text-center font-medium pb-1.5 px-2 whitespace-nowrap">
+                              <div className="flex flex-col items-center gap-1">
+                                <span>{t(CAPACITY_LABEL[k])}</span>
+                                <div className="flex gap-1">
+                                  <button onClick={() => selectAllDraft(k, true)} className="text-[10px] underline" style={{ color: BRAND.accent }}>
+                                    {t("permissions.selectAll")}
+                                  </button>
+                                  <button onClick={() => selectAllDraft(k, false)} className="text-[10px] underline text-red-400">
+                                    {t("permissions.deselectAll")}
+                                  </button>
+                                </div>
+                              </div>
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                    </table>
+                    <div className="divide-y divide-slate-50 max-h-80 overflow-y-auto pr-2">
+                      {departments.map((d) => (
+                        <div key={d.id} className="py-2.5 pl-2 pr-6 -mx-2 flex items-center justify-between text-sm rounded-lg hover:bg-slate-50">
+                          <span className="text-slate-600">{d[lang]}</span>
+                          <div className="flex items-center gap-6">
+                            {DEPT_CAPACITY_KEYS.map((k) => (
+                              <input
+                                key={k}
+                                type="checkbox"
+                                checked={draft[k].includes(d.id)}
+                                disabled={saving}
+                                onChange={() => toggleDraftDept(k, d.id)}
+                                className="w-4 h-4 flex-shrink-0 cursor-pointer disabled:cursor-not-allowed"
+                                style={{ accentColor: BRAND.accent }}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )
               )}
-              <div className="divide-y divide-slate-50 max-h-80 overflow-y-auto pr-2">
-                {departments.map((d) => (
-                  <label
-                    key={d.id}
-                    className="py-3 pl-2 pr-6 -mx-2 flex items-center justify-between text-sm rounded-lg hover:bg-slate-50 cursor-pointer"
-                    style={{ cursor: selectedUser.role === "admin" || !isAdmin ? "default" : "pointer" }}
-                  >
-                    <span className="text-slate-600">{d[lang]}</span>
-                    {selectedUser.role === "admin" ? (
-                      <Check size={15} className="flex-shrink-0" style={{ color: BRAND.accent }} />
-                    ) : (
-                      <input
-                        type="checkbox"
-                        checked={deptDraft.includes(d.id)}
-                        disabled={!isAdmin || savingDept === "__apply__"}
-                        onChange={() => setDeptDraft((prev) => (prev.includes(d.id) ? prev.filter((x) => x !== d.id) : [...prev, d.id]))}
-                        className="w-4 h-4 flex-shrink-0 cursor-pointer disabled:cursor-not-allowed"
-                        style={{ accentColor: BRAND.accent }}
-                      />
-                    )}
-                  </label>
-                ))}
-              </div>
-              {selectedUser.role !== "admin" && isAdmin && (
+              {isAdmin && (
                 <button
-                  onClick={applyDepts}
-                  disabled={savingDept === "__apply__" || JSON.stringify([...deptDraft].sort()) === JSON.stringify([...selectedDepts].sort())}
+                  onClick={applyChanges}
+                  disabled={saving || !isDirty}
                   className="mt-3 text-xs font-medium px-3 py-1.5 rounded-lg text-white disabled:opacity-40"
                   style={{ backgroundColor: BRAND.accent }}
                 >
@@ -4676,6 +4716,8 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
   const currentUser = users.find((u) => u.id === currentUserId) || users[0];
   const isAdmin = currentUser.role === "admin";
   const allowedDepts = getAllowedDepts(currentUser, permissions, departments);
+  const accessorDepts = permissions[currentUser.email]?.deptsAccessor || [];
+  const reviewerDepts = permissions[currentUser.email]?.deptsReviewer || [];
 
   function addLog(actor, actionKey, code, name, nameEn) {
     const today = new Date().toISOString().slice(0, 10);
@@ -4863,22 +4905,22 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
             )}
             {page === "self" && (
               hasCategoryAccess(currentUser, "self")
-                ? <SelfAssessment controls={controlsForYear} setControls={setControls} currentUser={currentUser} addLog={addLog} isArchived={isArchived} showToast={showToast} allowedDepts={allowedDepts} />
+                ? <SelfAssessment controls={controlsForYear} setControls={setControls} currentUser={currentUser} addLog={addLog} isArchived={isArchived} showToast={showToast} allowedDepts={accessorDepts} />
                 : <EmptyState text="Access denied" />
             )}
             {page === "review" && (
               hasCategoryAccess(currentUser, "review")
-                ? <ReviewPage controls={controlsForYear} setControls={setControls} currentUser={currentUser} addLog={addLog} isArchived={isArchived} isAdmin={isAdmin} showToast={showToast} allowedDepts={allowedDepts} />
+                ? <ReviewPage controls={controlsForYear} setControls={setControls} currentUser={currentUser} addLog={addLog} isArchived={isArchived} isAdmin={isAdmin} showToast={showToast} allowedDepts={reviewerDepts} />
                 : <EmptyState text="Access denied" />
             )}
             {page === "fsa" && (
               hasCategoryAccess(currentUser, "fsa")
-                ? <FSAPage controls={controlsForYear} setControls={setControls} currentUser={currentUser} addLog={addLog} isArchived={isArchived} showToast={showToast} allowedDepts={allowedDepts} />
+                ? <FSAPage controls={controlsForYear} setControls={setControls} currentUser={currentUser} addLog={addLog} isArchived={isArchived} showToast={showToast} allowedDepts={accessorDepts} />
                 : <EmptyState text="Access denied" />
             )}
             {page === "fsaReview" && (
               hasCategoryAccess(currentUser, "fsaReview")
-                ? <FSAReviewPage controls={controlsForYear} setControls={setControls} currentUser={currentUser} addLog={addLog} isArchived={isArchived} showToast={showToast} allowedDepts={allowedDepts} />
+                ? <FSAReviewPage controls={controlsForYear} setControls={setControls} currentUser={currentUser} addLog={addLog} isArchived={isArchived} showToast={showToast} allowedDepts={reviewerDepts} />
                 : <EmptyState text="Access denied" />
             )}
             {page === "history" && (
@@ -5277,6 +5319,9 @@ async function loadIcsCategoryAccessList() {
       adminOnly: isY(f.AdminOnly),
       executive: isY(f.Executive),
       depts: (f.Depts || "").split(",").map((s) => s.trim()).filter(Boolean),
+      deptsAccessor: (f.DeptsAccessor || "").split(",").map((s) => s.trim()).filter(Boolean),
+      deptsReviewer: (f.DeptsReviewer || "").split(",").map((s) => s.trim()).filter(Boolean),
+      deptsAdmin: (f.DeptsAdmin || "").split(",").map((s) => s.trim()).filter(Boolean),
       roleOverride: (f.RoleOverride || "").trim().toLowerCase() || null,
     };
   });
