@@ -24,11 +24,11 @@
   html, body { margin: 0; padding: 0; height: 100%; background: #F5F6F8; }
   #root { height: 100%; }
   #loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
-    font-family: -apple-system, 'Malgun Gothic', sans-serif; color: #64748B; font-size: 14px; }
-  #login-screen{display:flex;align-items:center;justify-content:center;min-height:100vh;background:linear-gradient(145deg,#0f2744 0%,#101B34 100%);font-family:-apple-system,'Malgun Gothic',sans-serif}
+    font-family: 'Segoe UI', sans-serif; color: #64748B; font-size: 14px; }
+  #login-screen{display:flex;align-items:center;justify-content:center;min-height:100vh;background:linear-gradient(145deg,#0f2744 0%,#101B34 100%);font-family:'Segoe UI',sans-serif}
   .login-card{background:#fff;border-radius:16px;padding:40px 36px;width:340px;box-shadow:0 20px 60px rgba(0,0,0,.3);text-align:center}
   .login-title{font-size:1.05rem;font-weight:700;color:#101B34;margin-bottom:4px}
-  .login-co{font-size:.8rem;color:#8A94A6;margin-bottom:20px}
+  .login-co{font-size:.8rem;color:#8A94A6;margin-bottom:6px}
   .login-guide{font-size:.8rem;color:#8A94A6;margin-bottom:20px}
   .btn-login{background:linear-gradient(135deg,#2F7B7A,#1A2B4C);color:#fff;border:none;border-radius:10px;padding:13px 0;font-size:.92rem;font-weight:600;cursor:pointer;width:100%;font-family:inherit}
   .btn-login:disabled{background:#cbd5e0;cursor:not-allowed}
@@ -4809,7 +4809,7 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
   return (
     <LangContext.Provider value={{ lang, t, setLang }}>
     <AppDataContext.Provider value={{ departments, setDepartments, users, setUsers }}>
-      <div className="flex w-full" style={{ height: "100vh", backgroundColor: "#F5F6F8", fontFamily: "'Pretendard','Apple SD Gothic Neo','Malgun Gothic',-apple-system,sans-serif" }}>
+      <div className="flex w-full" style={{ height: "100vh", backgroundColor: "#F5F6F8", fontFamily: "'Segoe UI',sans-serif" }}>
         {toast && (
           <div
             className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/20 pointer-events-none transition-opacity duration-200"
