@@ -313,10 +313,9 @@ function computeInitialPermissions(initialControls, users = INITIAL_USERS, depar
     if (grant.deptsAccessor?.length) deptsAccessor = Array.from(new Set([...deptsAccessor, ...grant.deptsAccessor]));
     if (grant.deptsReviewer?.length) deptsReviewer = Array.from(new Set([...deptsReviewer, ...grant.deptsReviewer]));
     if (grant.deptsAdmin?.length) deptsAdmin = Array.from(new Set([...deptsAdmin, ...grant.deptsAdmin]));
-    // 하위호환: 예전 방식(구분 없는 Depts 컬럼)으로 부여된 값은 세 역할 모두에 반영해 조회 범위(부서별 통제 현황 등)에서 계속 보이게 한다.
-    const legacyDepts = grant.depts || [];
+    // 예전 방식(구분 없는 Depts 컬럼)은 더 이상 읽지 않는다 - 지금은 화면에서 관리 안 되는 값이라 반영이 안 된 것처럼 보이는 혼선만 생김.
 
-    const depts = Array.from(new Set([...deptsAccessor, ...deptsReviewer, ...deptsAdmin, ...legacyDepts])); // 조회용 합집합
+    const depts = Array.from(new Set([...deptsAccessor, ...deptsReviewer, ...deptsAdmin])); // 조회용 합집합
     perm[u.email] = { depts, deptsAccessor, deptsReviewer, deptsAdmin, role: u.role };
   });
   return perm;
@@ -1114,7 +1113,6 @@ const MENU_GROUPS = [
   ] },
   { key: "controlMgmt", label: "controlMgmt", items: [
     { key: "list", icon: Building2 },
-    { key: "manage", icon: ClipboardEdit },
   ] },
   { key: "assessment", label: "assessment", items: [
     { key: "self", icon: ClipboardList, hiddenFor: ["cfo", "rd"], categoryKey: "self" },
@@ -1125,6 +1123,7 @@ const MENU_GROUPS = [
   ] },
   { key: "adminOnly", label: "adminOnly", items: [
     { key: "settings", icon: Settings },
+    { key: "manage", icon: ClipboardEdit, categoryKey: "adminOnly" },
     { key: "permissions", icon: KeyRound },
     { key: "categoryAccess", icon: KeyRound },
   ] },
@@ -5129,7 +5128,7 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
   const currentYearConfirmation = yearConfirmations[activeYear] || { cfo: null, rd: null };
   const bothConfirmed = !!(currentYearConfirmation.cfo && currentYearConfirmation.rd);
 
-  const canEditControls = currentUser.role === "accessor" || currentUser.role === "admin";
+  const canEditControls = currentUser.role === "admin";
 
   return (
     <LangContext.Provider value={{ lang, t, setLang }}>
@@ -5249,7 +5248,7 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
                 : <EmptyState text="Access denied" />
             )}
             {page === "manage" && (
-              hasCategoryAccess(currentUser, "controlMgmt") ? (
+              hasCategoryAccess(currentUser, "adminOnly") ? (
                 <ControlManage
                   controls={controlsForYear}
                   setControls={setControls}
