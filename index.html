@@ -2112,12 +2112,57 @@ function resolvePersonEmail(raw, users) {
   return u ? u.email : "";
 }
 
+// 이메일을 직접 몰라도 이름(한글/영문)이나 이메일 일부로 검색해서 등록된 계정을 바로 찾아 넣을 수 있는 입력창.
+// 직접 타이핑한 값도 그대로 허용(수동 입력 폴백), 매칭되는 사람이 있으면 드롭다운으로 골라서 채울 수 있다.
+function PersonAutocomplete({ value, onChange, users, lang, placeholder }) {
+  const [query, setQuery] = useState(value || "");
+  const [open, setOpen] = useState(false);
+  useEffect(() => { setQuery(value || ""); }, [value]);
+  const q = query.trim().toLowerCase();
+  const matches =
+    q.length > 0
+      ? users
+          .filter((u) => u.email.toLowerCase().includes(q) || (u.name || "").toLowerCase().includes(q) || (u.nameEn || "").toLowerCase().includes(q))
+          .slice(0, 6)
+      : [];
+  return (
+    <div className="relative">
+      <input
+        type="text"
+        className={inputCls}
+        value={query}
+        placeholder={placeholder}
+        onChange={(e) => { setQuery(e.target.value); onChange(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+      />
+      {open && matches.length > 0 && (
+        <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden max-h-48 overflow-y-auto">
+          {matches.map((u) => (
+            <button
+              key={u.id}
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => { onChange(u.email); setQuery(u.email); setOpen(false); }}
+              className="w-full px-3 py-2 flex flex-col items-start text-left hover:bg-slate-50"
+            >
+              <span className="text-sm text-slate-700">{pName(u.name, lang, users)}</span>
+              <span className="text-xs text-slate-400">{u.email}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ControlManage({ controls: allControls, setControls, canEdit, addLog, isAdmin, allowedDepts, currentUser, isArchived, year, resetPassword, showToast }) {
   const { lang, t } = useLang();
   const { departments, users } = useAppData();
   const [form, setForm] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [detail, setDetail] = useState(null);
   const [deptFilter, setDeptFilter] = useState("");
   const [uploadResult, setUploadResult] = useState(null);
   const fileInputRef = useRef(null);
@@ -2415,7 +2460,7 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
           </thead>
           <tbody className="divide-y divide-slate-50">
             {list.map((c) => (
-              <tr key={c.id} className={"hover:bg-slate-50" + (c.pendingEdit ? " bg-amber-50/60" : "")}>
+              <tr key={c.id} onClick={() => setDetail(c)} className={"cursor-pointer hover:bg-slate-50" + (c.pendingEdit ? " bg-amber-50/60" : "")}>
                 <td className="px-4 py-3 text-slate-500 text-xs font-mono whitespace-nowrap">{c.code}</td>
                 <td className="px-4 py-3 text-slate-700 font-medium">
                   {cName(c, lang)}
@@ -2431,7 +2476,7 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
                 <td className="px-4 py-3 text-slate-600">{personByEmail(c.reviewer, lang, users)}</td>
                 <td className="px-4 py-3 text-slate-600 text-xs">{freqLabel(c.frequency, lang)} · {importanceLabel(c.importance, lang)} · {c.sampleSize}{t("common.items")}</td>
                 {canEdit && (
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-end gap-2">
                       <button onClick={() => openEdit(c)} className="text-slate-400 hover:text-teal-600"><Pencil size={15} /></button>
                       <button onClick={() => setConfirmDelete(c)} className="text-slate-400 hover:text-red-500"><Trash2 size={15} /></button>
@@ -2443,6 +2488,12 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
             {list.length === 0 && <tr><td colSpan={8}><EmptyState text={t("manage.emptyText")} /></td></tr>}
           </tbody>
         </table>
+
+        {detail && (
+          <Modal title={`${detail.code} · ${cName(detail, lang)}`} onClose={() => setDetail(null)} wide>
+            <ControlDetailBody control={detail} />
+          </Modal>
+        )}
       </div>
 
       {form && (
@@ -2470,10 +2521,10 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
           </div>
           <div className="grid grid-cols-2 gap-3">
             <Field label={t("manage.fieldAccessor")}>
-              <input type="email" className={inputCls} value={form.accessor} onChange={(e) => setForm({ ...form, accessor: e.target.value })} placeholder={t("manage.emailPlaceholder")} />
+              <PersonAutocomplete value={form.accessor} onChange={(v) => setForm({ ...form, accessor: v })} users={users} lang={lang} placeholder={t("manage.emailPlaceholder")} />
             </Field>
             <Field label={t("manage.fieldReviewer")}>
-              <input type="email" className={inputCls} value={form.reviewer} onChange={(e) => setForm({ ...form, reviewer: e.target.value })} placeholder={t("manage.emailPlaceholder")} />
+              <PersonAutocomplete value={form.reviewer} onChange={(v) => setForm({ ...form, reviewer: v })} users={users} lang={lang} placeholder={t("manage.emailPlaceholder")} />
             </Field>
           </div>
           <div className="grid grid-cols-2 gap-3">
