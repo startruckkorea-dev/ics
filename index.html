@@ -3152,6 +3152,12 @@ function FSAReviewPage({ controls, setControls, currentUser, addLog, isArchived,
     const today = new Date().toISOString().slice(0, 10);
     setEditing(null);
     try {
+      const stillPending = await icsCheckStillPending(ICS_LISTS.requests, c.requestSpId, "FsaStatus", "submitted_self");
+      if (!stillPending) {
+        alert(lang === "en" ? "This item was already processed by someone else. Refreshing the list." : "이미 다른 사람이 처리한 항목입니다. 목록을 새로고침합니다.");
+        window.location.reload();
+        return;
+      }
       await icsUpdateItem(ICS_LISTS.requests, c.requestSpId, {
         FsaStatus: "completed",
         FsaReviewRisk: draft.risk,
@@ -3174,6 +3180,12 @@ function FSAReviewPage({ controls, setControls, currentUser, addLog, isArchived,
     const today = new Date().toISOString().slice(0, 10);
     setReturning(null);
     try {
+      const stillPending = await icsCheckStillPending(ICS_LISTS.requests, c.requestSpId, "FsaStatus", "submitted_self");
+      if (!stillPending) {
+        alert(lang === "en" ? "This item was already processed by someone else. Refreshing the list." : "이미 다른 사람이 처리한 항목입니다. 목록을 새로고침합니다.");
+        window.location.reload();
+        return;
+      }
       await icsUpdateItem(ICS_LISTS.requests, c.requestSpId, {
         FsaStatus: "returned",
         FsaReviewRisk: "red",
@@ -3360,6 +3372,12 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, sh
     const today = new Date().toISOString().slice(0, 10);
     setEditing(null);
     try {
+      const stillPending = await icsCheckStillPending(ICS_LISTS.requests, c.requestSpId, "Status", "submitted_self");
+      if (!stillPending) {
+        alert(lang === "en" ? "This item was already processed by someone else. Refreshing the list." : "이미 다른 사람이 처리한 항목입니다. 목록을 새로고침합니다.");
+        window.location.reload();
+        return;
+      }
       await icsUpdateItem(ICS_LISTS.requests, c.requestSpId, {
         Status: "completed",
         ReviewRisk: draft.risk,
@@ -3378,6 +3396,12 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, sh
     const today = new Date().toISOString().slice(0, 10);
     setReturning(null);
     try {
+      const stillPending = await icsCheckStillPending(ICS_LISTS.requests, c.requestSpId, "Status", "submitted_self");
+      if (!stillPending) {
+        alert(lang === "en" ? "This item was already processed by someone else. Refreshing the list." : "이미 다른 사람이 처리한 항목입니다. 목록을 새로고침합니다.");
+        window.location.reload();
+        return;
+      }
       await icsUpdateItem(ICS_LISTS.requests, c.requestSpId, {
         Status: "returned",
         ReviewRisk: "red",
@@ -5557,6 +5581,20 @@ async function icsUpdateItem(listName, itemId, fields) {
   return res.json();
 }
 
+// 이중 결재(처리) 방지: PATCH 전에 서버의 현재 상태 값을 다시 조회해서, 화면에 떠있는 상태와 실제로 같은지 확인한다.
+// 두 사람이 동시에 같은 항목의 검토 화면을 열어놓고 있다가 한쪽이 먼저 승인/반려한 뒤 다른 쪽이 또 처리하는 경우를 막기 위함
+// (다른 APS 시스템들과 동일한 패턴).
+async function icsCheckStillPending(listName, itemId, statusField, expectedValue) {
+  const token = await getGraphToken();
+  const listId = await getIcsListId(listName);
+  const res = await fetch(`${GRAPH}/sites/${_siteId}/lists/${listId}/items/${itemId}/fields?$select=${statusField}`, {
+    headers: { Authorization: "Bearer " + token },
+  });
+  if (!res.ok) return true; // 재조회 자체가 실패하면(네트워크 등) 막지 않고 원래 흐름대로 진행
+  const data = await res.json();
+  return data[statusField] === expectedValue;
+}
+
 async function icsDeleteItem(listName, itemId) {
   const token = await getGraphToken();
   const listId = await getIcsListId(listName);
@@ -5945,8 +5983,15 @@ async function icsBoot(account) {
     return;
   }
 
-  const myEmail = (account.username || "").toLowerCase();
-  let matched = INITIAL_USERS.find(u => u.email.toLowerCase() === myEmail);
+  // 다른 APS 시스템들과 동일하게, UPN(username)과 mail 클레임을 둘 다 대조한다.
+  // 두 값이 다른 계정(과거 도메인 이전, 별칭 메일 등)도 Users 시트에 등록된 이메일과 매칭되도록 하기 위함.
+  const candidateEmails = [
+    account.username,
+    account.idTokenClaims?.email,
+    account.idTokenClaims?.preferred_username,
+  ].filter(Boolean).map((e) => e.toLowerCase());
+  const myEmail = candidateEmails[0] || "";
+  let matched = INITIAL_USERS.find(u => candidateEmails.includes(u.email.toLowerCase()));
   if (!matched) {
     // Entra ID(MSAL) 로그인 자체가 성공했다는 건 이미 접근이 허용된 그룹의 계정이라는 뜻이므로,
     // Users 시트에 아직 등록 안 된 사람이어도 차단하지 않고 최소 권한(guest)으로 들여보낸다.
