@@ -475,6 +475,7 @@ const STR = {
       selfAssessment: "1차 자가평가", noSelf: "아직 1차 평가가 진행되지 않았습니다.",
       review: "2차 검토", noReview: "아직 2차 검토가 진행되지 않았습니다.",
       fsa: "FSA 최종 자가평가", noFsa: "아직 최종 자가평가가 진행되지 않았습니다.",
+      noFsaReview: "아직 FSA 2차검토가 진행되지 않았습니다.",
     },
     manage: {
       title: "통제 항목 관리",
@@ -756,6 +757,7 @@ const STR = {
       selfAssessment: "1st self-assessment", noSelf: "1st assessment has not been started yet.",
       review: "2nd review", noReview: "2nd review has not been started yet.",
       fsa: "FSA final self-assessment", noFsa: "The final self-assessment has not been started yet.",
+      noFsaReview: "FSA 2nd review has not been started yet.",
     },
     manage: {
       title: "Control Item Management",
@@ -2053,7 +2055,7 @@ function ControlDetailBody({ control: c }) {
       <div className="border-t border-slate-100 pt-4">
         <p className="text-xs font-semibold text-slate-500 mb-2">{t("detail.fsa")}</p>
         {c.fsaRisk ? (
-          <div className="bg-slate-50 rounded-lg p-3 mb-2">
+          <div className="bg-slate-50 rounded-lg p-3">
             <div className="flex items-center justify-between mb-1.5">
               <RiskBadge risk={c.fsaRisk} />
               <span className="text-xs text-slate-400">{c.fsaDate}</span>
@@ -2063,14 +2065,20 @@ function ControlDetailBody({ control: c }) {
         ) : (
           <p className="text-sm text-slate-400">{t("detail.noFsa")}</p>
         )}
-        {c.fsaReviewRisk && (
+      </div>
+
+      <div className="border-t border-slate-100 pt-4">
+        <p className="text-xs font-semibold text-slate-500 mb-2">{t("fsaReview.title")}</p>
+        {c.fsaReviewRisk ? (
           <div className="bg-slate-50 rounded-lg p-3">
             <div className="flex items-center justify-between mb-1.5">
-              <span className="text-xs font-medium text-slate-500">{t("fsaReview.title")}</span>
               <RiskBadge risk={c.fsaReviewRisk} />
+              <span className="text-xs text-slate-400">{c.fsaReviewDate}</span>
             </div>
             <p className="text-sm text-slate-600">{lang === "en" ? c.fsaReviewCommentEn || c.fsaReviewComment : c.fsaReviewComment}</p>
           </div>
+        ) : (
+          <p className="text-sm text-slate-400">{t("detail.noFsaReview")}</p>
         )}
       </div>
     </div>
