@@ -3863,6 +3863,7 @@ function FinalReportPage({ controls, currentUser, activeYear, yearConfirmation, 
   const { lang, t } = useLang();
   const { departments, users } = useAppData();
   const [confirmingRole, setConfirmingRole] = useState(null);
+  const [detail, setDetail] = useState(null);
 
   const stats = useMemo(() => {
     const counts = { green: 0, orange: 0, red: 0, none: 0 };
@@ -3973,7 +3974,7 @@ function FinalReportPage({ controls, currentUser, activeYear, yearConfirmation, 
         </div>
         <div className="divide-y divide-slate-50">
           {redItems.map((c) => (
-            <div key={c.id} className="px-5 py-3 flex items-start justify-between gap-3">
+            <div key={c.id} onClick={() => setDetail(c)} className="px-5 py-3 flex items-start justify-between gap-3 cursor-pointer hover:bg-slate-50">
               <div>
                 <p className="text-xs text-slate-400 font-mono mb-0.5">{c.code} · {deptName(c.dept, lang, departments)} · {catName(c.cat, lang)}</p>
                 <p className="text-sm font-medium text-slate-700">{cName(c, lang)}</p>
@@ -4122,6 +4123,12 @@ function FinalReportPage({ controls, currentUser, activeYear, yearConfirmation, 
               {t("finalReport.confirmBtn")}
             </button>
           </div>
+        </Modal>
+      )}
+
+      {detail && (
+        <Modal title={`${detail.code} · ${cName(detail, lang)}`} onClose={() => setDetail(null)} wide>
+          <ControlDetailBody control={detail} />
         </Modal>
       )}
     </div>
