@@ -3152,33 +3152,22 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
                   <StatusBadge status={c.fsaStatus} />
                 </div>
               </div>
-              {editing === c.id && !isArchived ? (
-                <FSAForm draft={draft} setDraft={setDraft} onCancel={() => setEditing(null)} onSubmit={() => submit(c)} control={c} />
-              ) : (
-                <div>
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm text-slate-500">{lang === "en" ? c.fsaCommentEn || c.fsaComment : c.fsaComment}</p>
-                    <div className="flex items-center gap-3 flex-shrink-0 ml-3">
-                      {c.fsaStatus !== "completed" && !isArchived && (
-                        <button onClick={() => startEdit(c)} className="text-xs text-slate-400 hover:text-teal-600 flex items-center gap-1">
-                          <Pencil size={12} /> {t("fsa.editBtn")}
-                        </button>
-                      )}
-                      {c.fsaStatus === "submitted_self" && !isArchived && (
-                        <button onClick={() => withdrawSubmission(c)} className="text-xs text-red-400 hover:text-red-600 flex items-center gap-1">
-                          <Undo2 size={12} /> {t("fsa.withdrawBtn")}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  {c.fsaStatus === "completed" && c.fsaReviewComment && (
-                    <div className="bg-slate-50 rounded-lg p-2.5 mt-2 text-xs text-slate-500">
-                      <span className="font-medium text-slate-600">{t("fsaReview.title")} ({personByEmail(c.reviewer, lang, users)})</span>{" "}
-                      {lang === "en" ? c.fsaReviewCommentEn || c.fsaReviewComment : c.fsaReviewComment}
-                    </div>
+              <div>
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-slate-500">{lang === "en" ? c.fsaCommentEn || c.fsaComment : c.fsaComment}</p>
+                  {c.fsaStatus === "submitted_self" && !isArchived && (
+                    <button onClick={() => withdrawSubmission(c)} className="text-xs text-red-400 hover:text-red-600 flex items-center gap-1 flex-shrink-0 ml-3">
+                      <Undo2 size={12} /> {t("fsa.withdrawBtn")}
+                    </button>
                   )}
                 </div>
-              )}
+                {c.fsaStatus === "completed" && c.fsaReviewComment && (
+                  <div className="bg-slate-50 rounded-lg p-2.5 mt-2 text-xs text-slate-500">
+                    <span className="font-medium text-slate-600">{t("fsaReview.title")} ({personByEmail(c.reviewer, lang, users)})</span>{" "}
+                    {lang === "en" ? c.fsaReviewCommentEn || c.fsaReviewComment : c.fsaReviewComment}
+                  </div>
+                )}
+              </div>
             </div>
           ))}
           {submitted.length === 0 && <EmptyState text={t("fsa.noSubmitted")} />}
