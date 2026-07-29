@@ -3612,6 +3612,7 @@ function exportControlsToExcel(controls, lang, departments = INITIAL_DEPARTMENTS
 function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedDepts }) {
   const { lang, t } = useLang();
   const { departments, users } = useAppData();
+  const [detail, setDetail] = useState(null);
   const isAdmin = currentUser.role === "admin";
   const myEmail = (currentUser.email || "").toLowerCase();
   // 부서별 통제 현황/통제 항목 관리와 동일하게, Admin이 아니면 본인이 Accessor/Reviewer로 배정된 항목만 보이도록 스코프를 좁힌다.
@@ -3646,19 +3647,19 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
 
         <div className="lg:col-span-3 bg-white rounded-xl border border-slate-100 p-5">
           <h3 className="text-sm font-semibold text-slate-700 mb-4 flex items-center gap-2"><FileText size={15} /> {t("history.logTitle")}</h3>
-          <div className="divide-y divide-slate-50 max-h-56 overflow-y-auto">
+          <div className="divide-y divide-slate-50 max-h-56 overflow-y-auto pr-2">
             {log.map((l) => {
               const ctrl = controls.find((c) => c.code === l.code);
               const label = ctrl ? cName(ctrl, lang) : (lang === "en" ? l.nameEn : l.name);
               return (
-                <div key={l.id} className="py-2.5 flex items-center justify-between text-sm">
+                <div key={l.id} className="py-2.5 flex items-center justify-between text-sm gap-3">
                   <div className="min-w-0">
                     <p className="text-slate-700 truncate">
                       <span className="font-medium">{personByEmail(l.actor, lang, users)}</span> · {ACTION_LABELS[l.actionKey][lang]}
                     </p>
                     <p className="text-xs text-slate-400 truncate">{l.code} · {label}</p>
                   </div>
-                  <span className="text-xs text-slate-400 flex-shrink-0 ml-3">{l.date}</span>
+                  <span className="text-xs text-slate-400 flex-shrink-0 whitespace-nowrap pr-1">{formatDateTime(l.dateTime, lang)}</span>
                 </div>
               );
             })}
@@ -3688,7 +3689,7 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
           </thead>
           <tbody className="divide-y divide-slate-50">
             {controls.map((c) => (
-              <tr key={c.id}>
+              <tr key={c.id} onClick={() => setDetail(c)} className="cursor-pointer hover:bg-slate-50">
                 <td className="px-4 py-2.5 text-slate-500 text-xs font-mono whitespace-nowrap">{c.code}</td>
                 <td className="px-4 py-2.5 text-slate-700 whitespace-nowrap">{cName(c, lang)}</td>
                 <td className="px-4 py-2.5 text-slate-600 whitespace-nowrap">{deptName(c.dept, lang, departments)}</td>
@@ -3702,6 +3703,12 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
         </table>
         </div>
       </div>
+
+      {detail && (
+        <Modal title={`${detail.code} · ${cName(detail, lang)}`} onClose={() => setDetail(null)} wide>
+          <ControlDetailBody control={detail} />
+        </Modal>
+      )}
     </div>
   );
 }
