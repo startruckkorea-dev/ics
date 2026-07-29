@@ -328,7 +328,9 @@ function getAllowedDepts(user, permissions, departments = INITIAL_DEPARTMENTS) {
 
 function finalRisk(control) {
   if (control.status === "completed") return control.reviewRisk;
-  if (control.selfRisk) return control.selfRisk;
+  // 제출 철회/반려로 status가 다시 not_started·returned로 돌아간 경우, 예전에 입력했던 selfRisk 값이
+  // 남아있어도 대시보드 등에는 "미평가"로 보여야 한다 (재제출 전까지는 유효한 평가로 취급하지 않음).
+  if (control.status === "submitted_self" && control.selfRisk) return control.selfRisk;
   return "none";
 }
 
