@@ -85,6 +85,8 @@ import {
   Pencil,
   Trash2,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   AlertTriangle,
   ShieldCheck,
   Users,
@@ -3613,6 +3615,9 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
   const { lang, t } = useLang();
   const { departments, users } = useAppData();
   const [detail, setDetail] = useState(null);
+  const [tableSearch, setTableSearch] = useState("");
+  const [tablePage, setTablePage] = useState(0);
+  const TABLE_PAGE_SIZE = 10;
   const isAdmin = currentUser.role === "admin";
   const myEmail = (currentUser.email || "").toLowerCase();
   // 부서별 통제 현황/통제 항목 관리와 동일하게, Admin이 아니면 본인이 Accessor/Reviewer로 배정된 항목만 보이도록 스코프를 좁힌다.
@@ -3626,6 +3631,14 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
   const pieData = ["green", "orange", "red", "none"].map((r) => ({
     name: RISK_META[r][lang], value: controls.filter((c) => finalRisk(c) === r).length, color: RISK_META[r].color,
   })).filter((d) => d.value > 0);
+
+  const qTable = tableSearch.trim().toLowerCase();
+  const filteredTableControls = controls.filter(
+    (c) => !qTable || c.code.toLowerCase().includes(qTable) || cName(c, lang).toLowerCase().includes(qTable) || deptName(c.dept, lang, departments).toLowerCase().includes(qTable)
+  );
+  const tableTotalPages = Math.max(1, Math.ceil(filteredTableControls.length / TABLE_PAGE_SIZE));
+  const clampedTablePage = Math.min(tablePage, tableTotalPages - 1);
+  const pagedTableControls = filteredTableControls.slice(clampedTablePage * TABLE_PAGE_SIZE, (clampedTablePage + 1) * TABLE_PAGE_SIZE);
 
   return (
     <div>
@@ -3668,11 +3681,20 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
       </div>
 
       <div className="bg-white rounded-xl border border-slate-100 overflow-hidden">
-        <div className="px-5 py-4 border-b border-slate-50 flex items-center justify-between">
+        <div className="px-5 py-4 border-b border-slate-50 flex items-center justify-between gap-3 flex-wrap">
           <h3 className="text-sm font-semibold text-slate-700">{t("history.tableTitle")}</h3>
-          <button onClick={() => exportControlsToExcel(controls, lang, departments, users)} className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:border-teal-400 hover:text-teal-600">
-            <Download size={13} /> {t("history.downloadBtn")}
-          </button>
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={tableSearch}
+              onChange={(e) => { setTableSearch(e.target.value); setTablePage(0); }}
+              placeholder={t("common.search")}
+              className={`${inputCls} w-52`}
+            />
+            <button onClick={() => exportControlsToExcel(controls, lang, departments, users)} className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:border-teal-400 hover:text-teal-600 flex-shrink-0">
+              <Download size={13} /> {t("history.downloadBtn")}
+            </button>
+          </div>
         </div>
         <div className="overflow-x-auto">
         <table className="w-full text-sm">
@@ -3688,7 +3710,7 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-50">
-            {controls.map((c) => (
+            {pagedTableControls.map((c) => (
               <tr key={c.id} onClick={() => setDetail(c)} className="cursor-pointer hover:bg-slate-50">
                 <td className="px-4 py-2.5 text-slate-500 text-xs font-mono whitespace-nowrap">{c.code}</td>
                 <td className="px-4 py-2.5 text-slate-700 whitespace-nowrap">{cName(c, lang)}</td>
@@ -3699,9 +3721,34 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
                 <td className="px-4 py-2.5 whitespace-nowrap"><StatusBadge status={c.status} /></td>
               </tr>
             ))}
+            {filteredTableControls.length === 0 && (
+              <tr><td colSpan={7}><EmptyState text={t("list.emptyText")} /></td></tr>
+            )}
           </tbody>
         </table>
         </div>
+        {filteredTableControls.length > 0 && (
+          <div className="flex items-center justify-between px-5 py-3 border-t border-slate-50 text-xs text-slate-500">
+            <span>{clampedTablePage * TABLE_PAGE_SIZE + 1}–{Math.min((clampedTablePage + 1) * TABLE_PAGE_SIZE, filteredTableControls.length)} / {filteredTableControls.length}{t("common.items")}</span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setTablePage((p) => Math.max(0, p - 1))}
+                disabled={clampedTablePage === 0}
+                className="px-2.5 py-1 rounded-lg border border-slate-200 disabled:opacity-40 hover:border-teal-400 hover:text-teal-600"
+              >
+                <ChevronLeft size={14} />
+              </button>
+              <span>{clampedTablePage + 1} / {tableTotalPages}</span>
+              <button
+                onClick={() => setTablePage((p) => Math.min(tableTotalPages - 1, p + 1))}
+                disabled={clampedTablePage >= tableTotalPages - 1}
+                className="px-2.5 py-1 rounded-lg border border-slate-200 disabled:opacity-40 hover:border-teal-400 hover:text-teal-600"
+              >
+                <ChevronRight size={14} />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {detail && (
