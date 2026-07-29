@@ -3000,6 +3000,7 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
   const { departments, users } = useAppData();
   const [editing, setEditing] = useState(null);
   const [draft, setDraft] = useState({ risk: null, comment: "" });
+  const [detail, setDetail] = useState(null);
 
   const isAdmin = currentUser.role === "admin";
   const myControls = isAdmin ? controls : controls.filter((c) => c.accessor === currentUser.email || (allowedDepts && allowedDepts.includes(c.dept)));
@@ -3099,7 +3100,7 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
           <div className="space-y-3">
             {todo.map((c) => (
               <div key={c.id} className="bg-white rounded-xl border border-slate-100 p-4">
-                <div className="flex items-start justify-between gap-3 mb-1">
+                <div className="flex items-start justify-between gap-3 mb-1 cursor-pointer" onClick={() => setDetail(c)}>
                   <div>
                     <p className="text-xs text-slate-400 font-mono mb-0.5">{c.code} · {deptName(c.dept, lang, departments)} · {catName(c.cat, lang)}</p>
                     <p className="font-medium text-slate-800">{cName(c, lang)}</p>
@@ -3142,7 +3143,7 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
         <div className="bg-white rounded-xl border border-slate-100 divide-y divide-slate-50">
           {submitted.map((c) => (
             <div key={c.id} className="p-4">
-              <div className="flex items-start justify-between gap-3 mb-1">
+              <div className="flex items-start justify-between gap-3 mb-1 cursor-pointer" onClick={() => setDetail(c)}>
                 <div>
                   <p className="text-xs text-slate-400 font-mono mb-0.5">{c.code}</p>
                   <p className="font-medium text-slate-800">{cName(c, lang)}</p>
@@ -3173,6 +3174,12 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
           {submitted.length === 0 && <EmptyState text={t("fsa.noSubmitted")} />}
         </div>
       </div>
+
+      {detail && (
+        <Modal title={`${detail.code} · ${cName(detail, lang)}`} onClose={() => setDetail(null)} wide>
+          <ControlDetailBody control={detail} />
+        </Modal>
+      )}
     </div>
   );
 }
@@ -3188,6 +3195,7 @@ function FSAReviewPage({ controls, setControls, currentUser, addLog, isArchived,
   const [draft, setDraft] = useState({ risk: null, comment: "" });
   const [returning, setReturning] = useState(null);
   const [returnComment, setReturnComment] = useState("");
+  const [detail, setDetail] = useState(null);
 
   const isAdmin = currentUser.role === "admin";
   const pending = controls.filter((c) => c.fsaStatus === "submitted_self" && (isAdmin || c.reviewer === currentUser.email || (allowedDepts && allowedDepts.includes(c.dept))));
@@ -3272,7 +3280,7 @@ function FSAReviewPage({ controls, setControls, currentUser, addLog, isArchived,
           <div className="space-y-3">
             {pending.map((c) => (
               <div key={c.id} className="bg-white rounded-xl border border-slate-100 p-4">
-                <div className="flex items-start justify-between gap-3 mb-2">
+                <div className="flex items-start justify-between gap-3 mb-2 cursor-pointer" onClick={() => setDetail(c)}>
                   <div>
                     <p className="text-xs text-slate-400 font-mono mb-0.5">{c.code} · {deptName(c.dept, lang, departments)} · {catName(c.cat, lang)}</p>
                     <p className="font-medium text-slate-800">{cName(c, lang)}</p>
@@ -3340,7 +3348,7 @@ function FSAReviewPage({ controls, setControls, currentUser, addLog, isArchived,
         <h3 className="text-sm font-semibold text-slate-700 mb-3">{t("fsaReview.done")} ({done.length})</h3>
         <div className="bg-white rounded-xl border border-slate-100 divide-y divide-slate-50">
           {done.map((c) => (
-            <div key={c.id} className="p-4 flex items-start justify-between gap-3">
+            <div key={c.id} className="p-4 flex items-start justify-between gap-3 cursor-pointer hover:bg-slate-50" onClick={() => setDetail(c)}>
               <div>
                 <p className="text-xs text-slate-400 font-mono mb-0.5">{c.code}</p>
                 <p className="font-medium text-slate-800 mb-1">{cName(c, lang)}</p>
@@ -3355,6 +3363,12 @@ function FSAReviewPage({ controls, setControls, currentUser, addLog, isArchived,
           {done.length === 0 && <EmptyState text={t("fsaReview.noDone")} />}
         </div>
       </div>
+
+      {detail && (
+        <Modal title={`${detail.code} · ${cName(detail, lang)}`} onClose={() => setDetail(null)} wide>
+          <ControlDetailBody control={detail} />
+        </Modal>
+      )}
     </div>
   );
 }
@@ -3370,6 +3384,7 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, sh
   const [draft, setDraft] = useState({ risk: null, comment: "" });
   const [returning, setReturning] = useState(null);
   const [returnComment, setReturnComment] = useState("");
+  const [detail, setDetail] = useState(null);
 
   const isAdmin = currentUser.role === "admin";
   const pending = controls.filter((c) => c.status === "submitted_self" && (isAdmin || c.reviewer === currentUser.email || (allowedDepts && allowedDepts.includes(c.dept))));
@@ -3550,7 +3565,7 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, sh
           <div className="space-y-3">
             {pending.map((c) => (
               <div key={c.id} className="bg-white rounded-xl border border-slate-100 p-4">
-                <div className="flex items-start justify-between gap-3 mb-2">
+                <div className="flex items-start justify-between gap-3 mb-2 cursor-pointer" onClick={() => setDetail(c)}>
                   <div>
                     <p className="text-xs text-slate-400 font-mono mb-0.5">{c.code} · {deptName(c.dept, lang, departments)} · {catName(c.cat, lang)}</p>
                     <p className="font-medium text-slate-800">{cName(c, lang)}</p>
@@ -3638,7 +3653,7 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, sh
         <h3 className="text-sm font-semibold text-slate-700 mb-3">{t("review.done")} ({done.length})</h3>
         <div className="bg-white rounded-xl border border-slate-100 divide-y divide-slate-50">
           {done.map((c) => (
-            <div key={c.id} className="p-4 flex items-start justify-between gap-3">
+            <div key={c.id} className="p-4 flex items-start justify-between gap-3 cursor-pointer hover:bg-slate-50" onClick={() => setDetail(c)}>
               <div>
                 <p className="text-xs text-slate-400 font-mono mb-0.5">{c.code}</p>
                 <p className="font-medium text-slate-800 mb-1">{cName(c, lang)}</p>
@@ -3653,6 +3668,12 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, sh
           {done.length === 0 && <EmptyState text={t("review.noDone")} />}
         </div>
       </div>
+
+      {detail && (
+        <Modal title={`${detail.code} · ${cName(detail, lang)}`} onClose={() => setDetail(null)} wide>
+          <ControlDetailBody control={detail} />
+        </Modal>
+      )}
     </div>
   );
 }
