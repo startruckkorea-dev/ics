@@ -2233,7 +2233,7 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
               id: uid(), spId, ...payload, year, status: "not_started",
               selfRisk: null, selfComment: "", selfCommentEn: "", selfDate: null,
               reviewRisk: null, reviewComment: "", reviewCommentEn: "", reviewDate: null,
-              history: [], actualSample: null, attachments: [],
+              history: [], actualSample: null, attachments: [], fsaAttachments: [],
               fsaStatus: "not_started", fsaRisk: null, fsaComment: "", fsaCommentEn: "", fsaDate: null, fsaReviewRisk: null, fsaReviewComment: "", fsaReviewCommentEn: "", fsaReviewDate: null, pendingEdit: null,
             },
             ...next,
@@ -2303,7 +2303,7 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
           id: uid(), spId: created.id, ...form, status: "not_started", year,
           selfRisk: null, selfComment: "", selfCommentEn: "", selfDate: null,
           reviewRisk: null, reviewComment: "", reviewCommentEn: "", reviewDate: null, history: [],
-          sampleSize: recommendedSample(form.importance, form.frequency), actualSample: null, attachments: [],
+          sampleSize: recommendedSample(form.importance, form.frequency), actualSample: null, attachments: [], fsaAttachments: [],
           fsaStatus: "not_started", fsaRisk: null, fsaComment: "", fsaCommentEn: "", fsaDate: null, fsaReviewRisk: null, fsaReviewComment: "", fsaReviewCommentEn: "", fsaReviewDate: null, pendingEdit: null,
         };
         setControls((prev) => [newControl, ...prev]);
@@ -2810,6 +2810,19 @@ function SelfAssessForm({ control, draft, setDraft, onCancel, onSubmit }) {
 
 function FSAForm({ draft, setDraft, onCancel, onSubmit }) {
   const { lang, t } = useLang();
+  const fileInputRef = useRef(null);
+
+  function handleFiles(e) {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    const newAttachments = files.map((f) => ({ name: f.name, size: formatBytes(f.size), file: f }));
+    setDraft({ ...draft, attachments: [...(draft.attachments || []), ...newAttachments] });
+    e.target.value = "";
+  }
+  function removeAttachment(idx) {
+    setDraft({ ...draft, attachments: draft.attachments.filter((_, i) => i !== idx) });
+  }
+
   return (
     <div className="bg-white border border-slate-200 rounded-xl p-5 mt-3 shadow-sm max-w-xl">
       <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2.5">{t("fsa.riskLevel")}</p>
@@ -2839,6 +2852,33 @@ function FSAForm({ draft, setDraft, onCancel, onSubmit }) {
         value={draft.comment}
         onChange={(e) => setDraft({ ...draft, comment: e.target.value })}
       />
+
+      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mt-4 mb-1.5">{t("self.attachBtn")}</p>
+      <button
+        type="button"
+        onClick={() => fileInputRef.current?.click()}
+        className="w-full flex items-center justify-center gap-1.5 border-2 border-dashed rounded-xl py-[13px] text-xs font-medium transition-colors"
+        style={{ borderColor: "#D8DEE6", color: "#64748B" }}
+        onMouseEnter={(e) => { e.currentTarget.style.borderColor = BRAND.accent; e.currentTarget.style.color = BRAND.accent; }}
+        onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#D8DEE6"; e.currentTarget.style.color = "#64748B"; }}
+      >
+        <UploadCloud size={15} /> {t("self.attachBtn")}
+      </button>
+      <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFiles} />
+
+      {(draft.attachments || []).length > 0 && (
+        <ul className="mt-3 space-y-1.5">
+          {draft.attachments.map((a, i) => (
+            <li key={i} className="flex items-center gap-2 text-xs text-slate-600 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
+              <Paperclip size={12} className="text-slate-400 flex-shrink-0" />
+              <span className="truncate">{a.name}</span>
+              {a.size && <span className="text-slate-400 flex-shrink-0">{a.size}</span>}
+              <button onClick={() => removeAttachment(i)} className="ml-auto text-slate-300 hover:text-red-500 flex-shrink-0"><X size={12} /></button>
+            </li>
+          ))}
+        </ul>
+      )}
+
       <div className="flex justify-end gap-2 mt-4 pt-4 border-t border-slate-100">
         <button onClick={onCancel} className="px-4 py-2 text-sm text-slate-500 rounded-lg hover:bg-slate-50">{t("common.cancel")}</button>
         <button onClick={onSubmit} disabled={!draft.risk} className="px-5 py-2 text-sm font-semibold text-white rounded-lg disabled:opacity-40" style={{ backgroundColor: BRAND.accent }}>
@@ -2865,22 +2905,35 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
 
   function startEdit(c) {
     setEditing(c.id);
-    setDraft({ risk: c.fsaRisk, comment: c.fsaComment || "" });
+    setDraft({ risk: c.fsaRisk, comment: c.fsaComment || "", attachments: c.fsaAttachments || [] });
   }
   async function submit(c) {
     if (!draft.risk) return;
     const today = new Date().toISOString().slice(0, 10);
     setEditing(null);
     try {
+      // ISA 자가평가 첨부와 겹치지 않도록 별도 하위 폴더(FSA)에 업로드해서 SharePoint에 구분되게 쌓이게 한다.
+      const finalAttachments = [];
+      for (const att of draft.attachments || []) {
+        if (att.webUrl) {
+          finalAttachments.push({ name: att.name, webUrl: att.webUrl });
+        } else if (att.file) {
+          const uploaded = await icsUploadAttachment(c.requestSpId, att.file, "FSA");
+          finalAttachments.push({ name: att.file.name, webUrl: uploaded.webUrl });
+        }
+      }
+      const fsaAttachedFilesField = finalAttachments.map((a) => `${a.name}|${a.webUrl}`).join(";");
+
       await icsUpdateItem(ICS_LISTS.requests, c.requestSpId, {
         FsaStatus: "submitted_self",
         FsaRisk: draft.risk,
         FsaCommentKo: draft.comment,
         FsaCommentEn: draft.comment,
         FsaDate: new Date().toISOString(),
+        FsaAttachedFiles: fsaAttachedFilesField,
       });
       setControls((prev) =>
-        prev.map((x) => (x.id === c.id ? { ...x, fsaStatus: "submitted_self", fsaRisk: draft.risk, fsaComment: draft.comment, fsaCommentEn: draft.comment, fsaDate: today } : x))
+        prev.map((x) => (x.id === c.id ? { ...x, fsaStatus: "submitted_self", fsaRisk: draft.risk, fsaComment: draft.comment, fsaCommentEn: draft.comment, fsaDate: today, fsaAttachments: finalAttachments } : x))
       );
       addLog(c.accessor, "fsa_submit", c.code, c.name, c.nameEn);
       showToast(lang === "en" ? "Final self-assessment submitted." : "최종자가평가가 제출되었습니다.");
@@ -5135,12 +5188,15 @@ async function getIcsAttachedFilesDriveId() {
 
 // ICS_Requests_AttachedFiles/{requestItemId}/{파일명} 경로에 업로드하고 webUrl을 돌려준다.
 // (BP_Requests/GW_Requests와 동일 패턴: filename|webUrl 쌍으로 목록 필드에 이어 붙여 저장)
-async function icsUploadAttachment(requestItemId, file) {
+async function icsUploadAttachment(requestItemId, file, subfolder = "") {
   const token = await getGraphToken();
   const driveId = await getIcsAttachedFilesDriveId();
   const buf = await file.arrayBuffer();
+  const path = subfolder
+    ? `ICS_Requests_AttachedFiles/${requestItemId}/${subfolder}/${encodeURIComponent(file.name)}`
+    : `ICS_Requests_AttachedFiles/${requestItemId}/${encodeURIComponent(file.name)}`;
   const res = await fetch(
-    `${GRAPH}/drives/${driveId}/root:/ICS_Requests_AttachedFiles/${requestItemId}/${encodeURIComponent(file.name)}:/content`,
+    `${GRAPH}/drives/${driveId}/root:/${path}:/content`,
     { method: "PUT", headers: { Authorization: "Bearer " + token, "Content-Type": file.type || "application/octet-stream" }, body: buf }
   );
   if (!res.ok) throw new Error(`파일 업로드 실패: ${file.name} (${res.status})`);
@@ -5464,7 +5520,7 @@ async function loadIcsControls() {
       status: "not_started",
       selfRisk: null, selfComment: "", selfCommentEn: "", selfDate: null,
       reviewRisk: null, reviewComment: "", reviewCommentEn: "", reviewDate: null,
-      actualSample: null, attachments: [], history: [],
+      actualSample: null, attachments: [], fsaAttachments: [], history: [],
       fsaStatus: "not_started", fsaRisk: null, fsaComment: "", fsaCommentEn: "", fsaDate: null,
       fsaReviewRisk: null, fsaReviewComment: "", fsaReviewCommentEn: "", fsaReviewDate: null,
       pendingEdit: null,
@@ -5498,6 +5554,12 @@ async function loadIcsControls() {
     match.fsaReviewDate = f.FsaReviewDate ? String(f.FsaReviewDate).slice(0, 10) : null;
     match.attachments = f.AttachedFiles
       ? stripSpRichText(f.AttachedFiles).split(";").filter(Boolean).map((pair) => {
+          const [name, webUrl] = pair.split("|");
+          return { name, webUrl };
+        })
+      : [];
+    match.fsaAttachments = f.FsaAttachedFiles
+      ? stripSpRichText(f.FsaAttachedFiles).split(";").filter(Boolean).map((pair) => {
           const [name, webUrl] = pair.split("|");
           return { name, webUrl };
         })
