@@ -198,7 +198,11 @@ const RISK_META = {
 
 const STATUS_META = {
   not_started: { tone: "#5B6472", bg: "#EEF0F3", ko: "평가 전", en: "Not started" },
-  submitted_self: { tone: "#8A5A0C", bg: "#FBEDDC", ko: "1차 완료 · 2차 대기", en: "Self-assessed · awaiting review" },
+  submitted_self: {
+    tone: "#8A5A0C", bg: "#FBEDDC", ko: "1차 완료 · 2차 대기", en: "Self-assessed · awaiting review",
+    isa: { ko: "ISA 1차 자가평가 제출 완료 · ISA 2차 검토 대기", en: "ISA 1st self-assessment submitted · awaiting ISA 2nd review" },
+    fsa: { ko: "FSA 최종 자가평가 제출 완료 · FSA 2차검토 대기", en: "FSA final self-assessment submitted · awaiting FSA 2nd review" },
+  },
   completed: { tone: "#166A43", bg: "#E4F3EC", ko: "평가 완료", en: "Completed" },
   returned: { tone: "#8F2822", bg: "#F8E4E3", ko: "반려 · 수정요청", en: "Returned for revision" },
 };
@@ -988,12 +992,13 @@ function RiskBadge({ risk }) {
   );
 }
 
-function StatusBadge({ status }) {
+function StatusBadge({ status, kind }) {
   const { lang } = useLang();
   const meta = STATUS_META[status];
+  const label = kind && meta[kind] ? meta[kind][lang] : meta[lang];
   return (
     <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap flex-shrink-0" style={{ backgroundColor: meta.bg, color: meta.tone }}>
-      {meta[lang]}
+      {label}
     </span>
   );
 }
@@ -1945,7 +1950,7 @@ function ControlList({ controls: allControls, filter, setFilter, isAdmin, allowe
                   <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{catName(c.cat, lang)}</td>
                   <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{personByEmail(c.accessor, lang, users)}</td>
                   <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{personByEmail(c.reviewer, lang, users)}</td>
-                  <td className="px-4 py-3 whitespace-nowrap"><StatusBadge status={c.status} /></td>
+                  <td className="px-4 py-3 whitespace-nowrap"><StatusBadge status={c.status} kind="isa" /></td>
                   <td className="px-4 py-3 whitespace-nowrap"><RiskBadge risk={risk} /></td>
                 </tr>
               );
@@ -1972,7 +1977,7 @@ function ControlDetailBody({ control: c }) {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap gap-2">
-        <StatusBadge status={c.status} />
+        <StatusBadge status={c.status} kind="isa" />
         <RiskBadge risk={finalRisk(c)} />
         <span className="text-xs text-slate-400 px-2 py-1">{deptName(c.dept, lang, departments)} · {catName(c.cat, lang)}</span>
       </div>
@@ -2718,7 +2723,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
                     <p className="text-xs text-slate-400 font-mono mb-0.5">{c.code} · {deptName(c.dept, lang, departments)} · {catName(c.cat, lang)}</p>
                     <p className="font-medium text-slate-800">{cName(c, lang)}</p>
                   </div>
-                  <StatusBadge status={c.status} />
+                  <StatusBadge status={c.status} kind="isa" />
                 </div>
                 <p className="text-sm text-slate-500 mb-3">{cDesc(c, lang)}</p>
 
@@ -2756,7 +2761,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
                   <RiskBadge risk={c.selfRisk} />
-                  <StatusBadge status={c.status} />
+                  <StatusBadge status={c.status} kind="isa" />
                 </div>
               </div>
               <div>
@@ -3096,7 +3101,7 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <RiskBadge risk={c.selfRisk} />
-                    {c.fsaStatus === "returned" && <StatusBadge status="returned" />}
+                    {c.fsaStatus === "returned" && <StatusBadge status="returned" kind="fsa" />}
                   </div>
                 </div>
                 <p className="text-sm text-slate-500 mb-3">{cDesc(c, lang)}</p>
@@ -3139,7 +3144,7 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
                   <RiskBadge risk={c.fsaRisk} />
-                  <StatusBadge status={c.fsaStatus} />
+                  <StatusBadge status={c.fsaStatus} kind="fsa" />
                 </div>
               </div>
               <div>
@@ -3274,7 +3279,7 @@ function FSAReviewPage({ controls, setControls, currentUser, addLog, isArchived,
                     <p className="text-xs text-slate-400 font-mono mb-0.5">{c.code} · {deptName(c.dept, lang, departments)} · {catName(c.cat, lang)}</p>
                     <p className="font-medium text-slate-800">{cName(c, lang)}</p>
                   </div>
-                  <StatusBadge status={c.fsaStatus} />
+                  <StatusBadge status={c.fsaStatus} kind="fsa" />
                 </div>
                 <div className="bg-slate-50 rounded-lg p-3 mb-3">
                   <div className="flex items-center justify-between mb-1">
@@ -3345,7 +3350,7 @@ function FSAReviewPage({ controls, setControls, currentUser, addLog, isArchived,
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
                 <RiskBadge risk={c.fsaReviewRisk} />
-                <StatusBadge status={c.fsaStatus} />
+                <StatusBadge status={c.fsaStatus} kind="fsa" />
               </div>
             </div>
           ))}
@@ -3559,7 +3564,7 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, sh
                     <p className="text-xs text-slate-400 font-mono mb-0.5">{c.code} · {deptName(c.dept, lang, departments)} · {catName(c.cat, lang)}</p>
                     <p className="font-medium text-slate-800">{cName(c, lang)}</p>
                   </div>
-                  <StatusBadge status={c.status} />
+                  <StatusBadge status={c.status} kind="isa" />
                 </div>
                 <div className="bg-slate-50 rounded-lg p-3 mb-3">
                   <div className="flex items-center justify-between mb-1">
@@ -3650,7 +3655,7 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, sh
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
                 <RiskBadge risk={c.reviewRisk} />
-                <StatusBadge status={c.status} />
+                <StatusBadge status={c.status} kind="isa" />
               </div>
             </div>
           ))}
@@ -3802,7 +3807,7 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
                 <td className="px-4 py-2.5 text-slate-500 text-xs whitespace-nowrap">{c.actualSample ?? "-"}/{recommendedSample(c.importance, c.frequency)}{t("common.items")}</td>
                 <td className="px-4 py-2.5 whitespace-nowrap"><RiskBadge risk={c.selfRisk || "none"} /></td>
                 <td className="px-4 py-2.5 whitespace-nowrap"><RiskBadge risk={c.reviewRisk || "none"} /></td>
-                <td className="px-4 py-2.5 whitespace-nowrap"><StatusBadge status={c.status} /></td>
+                <td className="px-4 py-2.5 whitespace-nowrap"><StatusBadge status={c.status} kind="isa" /></td>
               </tr>
             ))}
             {filteredTableControls.length === 0 && (
