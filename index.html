@@ -246,6 +246,8 @@ const ACTION_LABELS = {
   reset_password_changed: { ko: "초기화 비밀번호 변경", en: "Reset password changed" },
   edit_control: { ko: "통제 항목 수정", en: "Control item edited" },
   edit_learn_content: { ko: "학습 콘텐츠 수정", en: "Learning content edited" },
+  withdraw_self: { ko: "자가평가 제출 철회", en: "Self-assessment submission withdrawn" },
+  withdraw_fsa: { ko: "최종 자가평가 제출 철회", en: "Final self-assessment submission withdrawn" },
   edit_category_access: { ko: "카테고리 접근 권한 변경", en: "Category access changed" },
   add_control: { ko: "통제 항목 신규 등록", en: "Control item added" },
   delete_control: { ko: "통제 항목 삭제", en: "Control item deleted" },
@@ -507,7 +509,7 @@ const STR = {
       writeBtn: "자가평가 작성", rejectReasonTitle: "검토자 반려 사유",
       riskLevel: "리스크 수준 선택", commentPlaceholder: "평가 근거 및 특이사항을 입력하세요.",
       sampleCount: "샘플링 건수", recommendedNote: "권장", attachBtn: "샘플링 자료 첨부",
-      submitBtn: "제출", editBtn: "수정",
+      submitBtn: "제출", editBtn: "수정", withdrawBtn: "제출 철회",
       noNeedsAction: "현재 평가가 필요한 항목이 없습니다.", noSubmitted: "제출된 평가가 없습니다.",
       recommendedShort: "권장",
     },
@@ -535,7 +537,7 @@ const STR = {
       subtitleUser: "님이 담당하는 통제 항목의 최종 자가평가입니다.",
       desc: "ISA(1차 자가평가·2차 검토)가 모두 완료된 통제 항목에 대해, 회계연도 마감 전 담당자가 마지막으로 한 번 더 리스크 수준과 특이사항을 확인하는 단계입니다. 제출 후에는 FSA 2차검토에서 검토자의 승인을 받아야 최종 확정됩니다.",
       needsAction: "최종평가 필요", submitted: "최종평가 제출 · 완료",
-      writeBtn: "최종 자가평가 작성", editBtn: "수정",
+      writeBtn: "최종 자가평가 작성", editBtn: "수정", withdrawBtn: "제출 철회",
       riskLevel: "리스크 수준 확인", commentPlaceholder: "최종 확인 결과 및 특이사항을 입력하세요.",
       submitBtn: "최종 제출",
       waitingIsa: "ISA 2차 검토가 완료된 후 최종 자가평가를 진행할 수 있습니다.",
@@ -788,7 +790,7 @@ const STR = {
       writeBtn: "Write assessment", rejectReasonTitle: "Reviewer's return reason",
       riskLevel: "Select risk level", commentPlaceholder: "Enter your rationale and any notable findings.",
       sampleCount: "Sample size", recommendedNote: "recommended", attachBtn: "Attach sampling evidence",
-      submitBtn: "Submit", editBtn: "Edit",
+      submitBtn: "Submit", editBtn: "Edit", withdrawBtn: "Withdraw",
       noNeedsAction: "No items currently need assessment.", noSubmitted: "No assessments submitted yet.",
       recommendedShort: "recommended",
     },
@@ -816,7 +818,7 @@ const STR = {
       subtitleUser: ", here is the final self-assessment for the control items assigned to you.",
       desc: "For control items that have fully completed ISA (1st self-assessment + 2nd review), the accessor confirms the risk level and any notable findings one last time before fiscal year close. Once submitted, it becomes final only after a reviewer approves it in FSA 2nd Review.",
       needsAction: "Needs final assessment", submitted: "Final assessment submitted / completed",
-      writeBtn: "Write final assessment", editBtn: "Edit",
+      writeBtn: "Write final assessment", editBtn: "Edit", withdrawBtn: "Withdraw",
       riskLevel: "Confirm risk level", commentPlaceholder: "Enter your final confirmation and any notable findings.",
       submitBtn: "Submit final",
       waitingIsa: "The final self-assessment becomes available once ISA 2nd review is complete.",
@@ -2668,6 +2670,31 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
     }
   }
 
+  // 검토자가 아직 처리 전(submitted_self)이면 담당자 본인이 제출을 철회해서 '평가 필요' 목록으로 되돌릴 수 있다.
+  // (타 APS 시스템들의 Withdraw 공통 패턴 - 결재자가 아직 안 봤을 때만 가능, 서버 상태 재확인으로 경합 방지)
+  async function withdrawSubmission(c) {
+    if (c.status !== "submitted_self") return;
+    const ok = window.confirm(lang === "en" ? "Withdraw this submission? It will move back to 'needs assessment'." : "제출을 철회하시겠습니까? '평가 필요' 상태로 되돌아갑니다.");
+    if (!ok) return;
+    setSaving(c.id);
+    try {
+      const stillPending = await icsCheckStillPending(ICS_LISTS.requests, c.requestSpId, "Status", "submitted_self");
+      if (!stillPending) {
+        alert(lang === "en" ? "The reviewer already processed this item, so it can no longer be withdrawn." : "검토자가 이미 처리한 항목이라 철회할 수 없습니다.");
+        window.location.reload();
+        return;
+      }
+      await icsUpdateItem(ICS_LISTS.requests, c.requestSpId, { Status: "not_started" });
+      setControls((prev) => prev.map((x) => (x.id === c.id ? { ...x, status: "not_started" } : x)));
+      addLog(c.accessor, "withdraw_self", c.code, c.name, c.nameEn);
+      showToast(lang === "en" ? "Submission withdrawn." : "제출이 철회되었습니다.");
+    } catch (e) {
+      alert("SharePoint 저장에 실패했습니다: " + e.message);
+    } finally {
+      setSaving(null);
+    }
+  }
+
   return (
     <div>
       <SectionHeader
@@ -2738,11 +2765,18 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
                 <div>
                   <div className="flex items-center justify-between">
                     <p className="text-sm text-slate-500">{lang === "en" ? c.selfCommentEn || c.selfComment : c.selfComment}</p>
-                    {c.status !== "completed" && !isArchived && (
-                      <button onClick={() => startEdit(c)} className="text-xs text-slate-400 hover:text-teal-600 flex items-center gap-1 flex-shrink-0 ml-3">
-                        <Pencil size={12} /> {t("self.editBtn")}
-                      </button>
-                    )}
+                    <div className="flex items-center gap-3 flex-shrink-0 ml-3">
+                      {c.status !== "completed" && !isArchived && (
+                        <button onClick={() => startEdit(c)} className="text-xs text-slate-400 hover:text-teal-600 flex items-center gap-1">
+                          <Pencil size={12} /> {t("self.editBtn")}
+                        </button>
+                      )}
+                      {c.status === "submitted_self" && !isArchived && (
+                        <button onClick={() => withdrawSubmission(c)} className="text-xs text-red-400 hover:text-red-600 flex items-center gap-1">
+                          <Undo2 size={12} /> {t("self.withdrawBtn")}
+                        </button>
+                      )}
+                    </div>
                   </div>
                   <div className="flex items-center gap-3 mt-2 text-xs text-slate-400">
                     <span>{t("self.sampleCount")} {c.actualSample ?? "-"}{t("common.items")} ({t("self.recommendedShort")} {recommendedSample(c.importance, c.frequency)}{t("common.items")})</span>
@@ -3024,6 +3058,26 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
     }
   }
 
+  async function withdrawSubmission(c) {
+    if (c.fsaStatus !== "submitted_self") return;
+    const ok = window.confirm(lang === "en" ? "Withdraw this submission? It will move back to 'needs final assessment'." : "제출을 철회하시겠습니까? '최종평가 필요' 상태로 되돌아갑니다.");
+    if (!ok) return;
+    try {
+      const stillPending = await icsCheckStillPending(ICS_LISTS.requests, c.requestSpId, "FsaStatus", "submitted_self");
+      if (!stillPending) {
+        alert(lang === "en" ? "The reviewer already processed this item, so it can no longer be withdrawn." : "검토자가 이미 처리한 항목이라 철회할 수 없습니다.");
+        window.location.reload();
+        return;
+      }
+      await icsUpdateItem(ICS_LISTS.requests, c.requestSpId, { FsaStatus: "not_started" });
+      setControls((prev) => prev.map((x) => (x.id === c.id ? { ...x, fsaStatus: "not_started" } : x)));
+      addLog(c.accessor, "withdraw_fsa", c.code, c.name, c.nameEn);
+      showToast(lang === "en" ? "Submission withdrawn." : "제출이 철회되었습니다.");
+    } catch (e) {
+      alert("SharePoint 저장에 실패했습니다: " + e.message);
+    }
+  }
+
   return (
     <div>
       <SectionHeader
@@ -3104,11 +3158,18 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
                 <div>
                   <div className="flex items-center justify-between">
                     <p className="text-sm text-slate-500">{lang === "en" ? c.fsaCommentEn || c.fsaComment : c.fsaComment}</p>
-                    {c.fsaStatus !== "completed" && !isArchived && (
-                      <button onClick={() => startEdit(c)} className="text-xs text-slate-400 hover:text-teal-600 flex items-center gap-1 flex-shrink-0 ml-3">
-                        <Pencil size={12} /> {t("fsa.editBtn")}
-                      </button>
-                    )}
+                    <div className="flex items-center gap-3 flex-shrink-0 ml-3">
+                      {c.fsaStatus !== "completed" && !isArchived && (
+                        <button onClick={() => startEdit(c)} className="text-xs text-slate-400 hover:text-teal-600 flex items-center gap-1">
+                          <Pencil size={12} /> {t("fsa.editBtn")}
+                        </button>
+                      )}
+                      {c.fsaStatus === "submitted_self" && !isArchived && (
+                        <button onClick={() => withdrawSubmission(c)} className="text-xs text-red-400 hover:text-red-600 flex items-center gap-1">
+                          <Undo2 size={12} /> {t("fsa.withdrawBtn")}
+                        </button>
+                      )}
+                    </div>
                   </div>
                   {c.fsaStatus === "completed" && c.fsaReviewComment && (
                     <div className="bg-slate-50 rounded-lg p-2.5 mt-2 text-xs text-slate-500">
@@ -3648,7 +3709,7 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
   const controls = isAdmin ? allControls : allControls.filter((c) => c.accessor === myEmail || c.reviewer === myEmail || (allowedDepts && allowedDepts.includes(c.dept)));
   const myCodes = new Set(controls.map((c) => c.code));
   // 활동 로그는 ISA/FSA 평가 흐름(자가평가·검토·FSA)에서 발생한 기록만 보여준다 - 권한 변경, 부서 초기화 등 시스템/관리 로그는 제외.
-  const ASSESSMENT_ACTIONS = new Set(["submit_self", "review_complete", "review_reject", "fsa_submit", "fsa_review_complete", "fsa_review_reject"]);
+  const ASSESSMENT_ACTIONS = new Set(["submit_self", "review_complete", "review_reject", "fsa_submit", "fsa_review_complete", "fsa_review_reject", "withdraw_self", "withdraw_fsa"]);
   const log = allLog
     .filter((l) => ASSESSMENT_ACTIONS.has(l.actionKey))
     .filter((l) => isAdmin || l.actor === myEmail || myCodes.has(l.code));
