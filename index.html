@@ -5005,16 +5005,6 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
   const [log, setLog] = useState(initialLog && initialLog.length ? initialLog : INITIAL_LOG);
   const [fullLogLoaded, setFullLogLoaded] = useState(false);
 
-  // 로그인 시엔 CFO/RD 컨펌 판단에 필요한 이벤트만 가볍게 불러왔으므로(loadIcsConfirmEvents),
-  // "평가 이력 · 리포트" 화면에 처음 들어갈 때만 전체 활동 로그를 지연 로드한다 (로그가 누적될수록 로그인 속도에 영향 안 주려는 목적).
-  useEffect(() => {
-    if (page !== "history" || fullLogLoaded || !usingSharePointData) return;
-    setFullLogLoaded(true); // 중복 호출 방지를 위해 먼저 표시
-    loadIcsLog()
-      .then((full) => setLog(full))
-      .catch((e) => console.warn("[ICS] 전체 활동 로그 로드 실패:", e.message));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page]);
   const [currentUserId] = useState(initialUserId || INITIAL_USERS[0]?.id);
   const [listFilter, setListFilter] = useState({ dept: "", cat: "", risk: "", status: "" });
   const [permissions, setPermissions] = useState(() => computeInitialPermissions(usingSharePointData ? initialControls : INITIAL_CONTROLS));
@@ -5029,6 +5019,18 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
   const [years, setYears] = useState(["2026"]);
   const [selectedYear, setSelectedYear] = useState("2026");
   const activeYear = years[years.length - 1];
+
+  // 로그인 시엔 CFO/RD 컨펌 판단에 필요한 이벤트만 가볍게 불러왔으므로(loadIcsConfirmEvents),
+  // "평가 이력 · 리포트" 화면에 처음 들어갈 때(또는 조회 연도를 바꿀 때)만 그 연도의 활동 로그를 지연 로드한다
+  // (연도별로 서버에서 걸러서 받아오므로, 로그가 여러 해에 걸쳐 누적돼도 조회 속도가 계속 느려지지 않는다).
+  useEffect(() => {
+    if (page !== "history" || !usingSharePointData) return;
+    setFullLogLoaded(false);
+    loadIcsLog(selectedYear)
+      .then((full) => { setLog(full); setFullLogLoaded(true); })
+      .catch((e) => console.warn("[ICS] 활동 로그 로드 실패:", e.message));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, selectedYear]);
   const isArchived = selectedYear !== activeYear;
 
   // CFO/RD의 연도별 최종 결과 컨펌 상태. 별도 저장 없이, 이미 SharePoint(ICS_Log)에 저장된
@@ -5839,8 +5841,11 @@ function mapIcsLogItem(it) {
   };
 }
 
-async function loadIcsLog() {
-  const items = await icsListAll(ICS_LISTS.log, "&$orderby=lastModifiedDateTime desc");
+async function loadIcsLog(year) {
+  // 연도별로 서버에서 걸러서 가져온다 - 로그가 여러 해에 걸쳐 누적돼도 "평가 이력" 화면은 항상 그 해 분량만 처리하면 되므로
+  // 시간이 지나 로그가 수천 건으로 늘어나도 조회 속도가 계속 느려지지 않는다.
+  const filter = year ? `&$filter=fields/Created ge '${year}-01-01T00:00:00Z' and fields/Created lt '${Number(year) + 1}-01-01T00:00:00Z'` : "";
+  const items = await icsListAll(ICS_LISTS.log, `&$orderby=lastModifiedDateTime desc${filter}`);
   return items.map(mapIcsLogItem).sort((a, b) => (a.date < b.date ? 1 : -1));
 }
 
