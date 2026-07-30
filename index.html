@@ -2675,7 +2675,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
             : x
         )
       );
-      addLog(c.accessor, "submit_self", c.code, c.name, c.nameEn);
+      addLog(currentUser.email, "submit_self", c.code, c.name, c.nameEn);
       showToast(lang === "en" ? "Self-assessment submitted." : "자가평가가 제출되었습니다.");
     } catch (e) {
       alert("SharePoint 저장에 실패했습니다: " + e.message);
@@ -2700,7 +2700,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
       }
       await icsUpdateItem(ICS_LISTS.requests, c.requestSpId, { Status: "not_started" });
       setControls((prev) => prev.map((x) => (x.id === c.id ? { ...x, status: "not_started" } : x)));
-      addLog(c.accessor, "withdraw_self", c.code, c.name, c.nameEn);
+      addLog(currentUser.email, "withdraw_self", c.code, c.name, c.nameEn);
       showToast(lang === "en" ? "Submission withdrawn." : "제출이 철회되었습니다.");
     } catch (e) {
       alert("SharePoint 저장에 실패했습니다: " + e.message);
@@ -3055,7 +3055,7 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
             : x
         )
       );
-      addLog(c.accessor, "fsa_submit", c.code, c.name, c.nameEn);
+      addLog(currentUser.email, "fsa_submit", c.code, c.name, c.nameEn);
       showToast(lang === "en" ? "Final self-assessment submitted." : "최종 자가평가가 제출되었습니다.");
     } catch (e) {
       alert("SharePoint 저장에 실패했습니다: " + e.message);
@@ -3075,7 +3075,7 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
       }
       await icsUpdateItem(ICS_LISTS.requests, c.requestSpId, { FsaStatus: "not_started" });
       setControls((prev) => prev.map((x) => (x.id === c.id ? { ...x, fsaStatus: "not_started" } : x)));
-      addLog(c.accessor, "withdraw_fsa", c.code, c.name, c.nameEn);
+      addLog(currentUser.email, "withdraw_fsa", c.code, c.name, c.nameEn);
       showToast(lang === "en" ? "Submission withdrawn." : "제출이 철회되었습니다.");
     } catch (e) {
       alert("SharePoint 저장에 실패했습니다: " + e.message);
@@ -3231,7 +3231,7 @@ function FSAReviewPage({ controls, setControls, currentUser, addLog, isArchived,
           x.id === c.id ? { ...x, fsaStatus: "completed", fsaReviewRisk: draft.risk, fsaReviewComment: draft.comment, fsaReviewCommentEn: draft.comment, fsaReviewDate: today } : x
         )
       );
-      addLog(c.reviewer, "fsa_review_complete", c.code, c.name, c.nameEn);
+      addLog(currentUser.email, "fsa_review_complete", c.code, c.name, c.nameEn);
       showToast(lang === "en" ? "FSA review confirmed." : "FSA 검토가 완료되었습니다.");
     } catch (e) {
       alert("SharePoint 저장에 실패했습니다: " + e.message);
@@ -3259,7 +3259,7 @@ function FSAReviewPage({ controls, setControls, currentUser, addLog, isArchived,
           x.id === c.id ? { ...x, fsaStatus: "returned", fsaReviewRisk: "red", fsaReviewComment: returnComment, fsaReviewCommentEn: returnComment, fsaReviewDate: today } : x
         )
       );
-      addLog(c.reviewer, "fsa_review_reject", c.code, c.name, c.nameEn);
+      addLog(currentUser.email, "fsa_review_reject", c.code, c.name, c.nameEn);
       showToast(lang === "en" ? "Returned to the accessor." : "담당자에게 반려되었습니다.");
       setReturnComment("");
     } catch (e) {
@@ -3454,7 +3454,7 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, sh
         ReviewDate: new Date().toISOString(),
       });
       setControls((prev) => prev.map((x) => (x.id === c.id ? { ...x, status: "completed", reviewRisk: draft.risk, reviewComment: draft.comment, reviewCommentEn: draft.comment, reviewDate: today } : x)));
-      addLog(c.reviewer, "review_complete", c.code, c.name, c.nameEn);
+      addLog(currentUser.email, "review_complete", c.code, c.name, c.nameEn);
       showToast(lang === "en" ? "Review confirmed." : "검토가 완료되었습니다.");
     } catch (e) {
       alert("SharePoint 저장에 실패했습니다: " + e.message);
@@ -3478,7 +3478,7 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, sh
         ReviewDate: new Date().toISOString(),
       });
       setControls((prev) => prev.map((x) => (x.id === c.id ? { ...x, status: "returned", reviewRisk: "red", reviewComment: returnComment, reviewCommentEn: returnComment, reviewDate: today } : x)));
-      addLog(c.reviewer, "review_reject", c.code, c.name, c.nameEn);
+      addLog(currentUser.email, "review_reject", c.code, c.name, c.nameEn);
       showToast(lang === "en" ? "Returned to the accessor." : "담당자에게 반려되었습니다.");
       setReturnComment("");
     } catch (e) {
