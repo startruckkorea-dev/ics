@@ -5837,7 +5837,9 @@ function mapIcsLogItem(it) {
     code: f.ControlId || "-",
     name: detail,
     nameEn: detail,
-    year: "2026",
+    // 예전엔 "2026"으로 하드코딩되어 있어서, 다음 회계연도가 시작되면(예: 2027) logForYear 필터링(l.year===selectedYear)이
+    // 전부 빗나가 활동 로그가 텅 비어보이는 버그가 있었다. 실제 생성 시각 기준 연도로 계산하도록 수정(2026-07-29).
+    year: created ? String(created).slice(0, 4) : new Date().getFullYear().toString(),
   };
 }
 
