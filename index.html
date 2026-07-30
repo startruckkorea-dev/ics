@@ -2346,20 +2346,10 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
     try {
       if (editingId) {
         const target = allControls.find((c) => c.id === editingId);
-        if (isAdmin) {
-          if (target?.spId) await icsUpdateItem(ICS_LISTS.controls, target.spId, fields);
-          setControls((prev) => prev.map((c) => (c.id === editingId ? { ...c, ...form, sampleSize: recommendedSample(form.importance, form.frequency), pendingEdit: null } : c)));
-          addLog(currentUser.email, "edit_control", form.code, form.name, form.name);
-          showToast(lang === "en" ? "Control item updated." : "통제 항목이 수정되었습니다.");
-        } else {
-          // Accessor의 수정은 SharePoint에 즉시 반영되지 않고, 검토자(또는 관리자)의 승인 후 반영된다 (2차 검토 화면에서 처리).
-          const today = new Date().toISOString().slice(0, 10);
-          setControls((prev) =>
-            prev.map((c) => (c.id === editingId ? { ...c, pendingEdit: { ...form, requestedBy: currentUser.email, requestedAt: today } } : c))
-          );
-          addLog(currentUser.email, "edit_request", form.code, form.name, form.name);
-          showToast(lang === "en" ? "Change request submitted for approval." : "수정 요청이 제출되었습니다 (승인 대기).");
-        }
+        if (target?.spId) await icsUpdateItem(ICS_LISTS.controls, target.spId, fields);
+        setControls((prev) => prev.map((c) => (c.id === editingId ? { ...c, ...form, sampleSize: recommendedSample(form.importance, form.frequency), pendingEdit: null } : c)));
+        addLog(currentUser.email, "edit_control", form.code, form.name, form.name);
+        showToast(lang === "en" ? "Control item updated." : "통제 항목이 수정되었습니다.");
       } else {
         const created = await icsCreateItem(ICS_LISTS.controls, fields);
         const newControl = {
@@ -3392,44 +3382,6 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, sh
   const isAdmin = currentUser.role === "admin";
   const pending = controls.filter((c) => c.status === "submitted_self" && (isAdmin || c.reviewer === currentUser.email || (allowedDepts && allowedDepts.includes(c.dept))));
   const done = controls.filter((c) => (c.status === "completed" || c.status === "returned") && (isAdmin || c.reviewer === currentUser.email || (allowedDepts && allowedDepts.includes(c.dept))));
-  const pendingEdits = controls.filter((c) => c.pendingEdit && (isAdmin || c.reviewer === currentUser.email || (allowedDepts && allowedDepts.includes(c.dept))));
-
-  async function approveEdit(c) {
-    const p = c.pendingEdit;
-    try {
-      if (c.spId) {
-        await icsUpdateItem(ICS_LISTS.controls, c.spId, {
-          Title: p.code,
-          Dept: p.dept,
-          Category: p.cat,
-          NameKo: p.name,
-          NameEn: p.name,
-          DescKo: p.desc,
-          DescEn: p.desc,
-          AccessorEmail: p.accessor,
-          ReviewerEmail: p.reviewer,
-          Frequency: p.frequency,
-          Importance: p.importance,
-        });
-      }
-      setControls((prev) =>
-        prev.map((x) =>
-          x.id === c.id
-            ? { ...x, ...p, sampleSize: recommendedSample(p.importance, p.frequency), pendingEdit: null }
-            : x
-        )
-      );
-      addLog(currentUser.email, "edit_approved", c.code, p.name, p.name);
-      if (showToast) showToast(lang === "en" ? "Change approved." : "변경이 승인되었습니다.");
-    } catch (e) {
-      alert("SharePoint 저장에 실패했습니다: " + e.message);
-    }
-  }
-  function rejectEdit(c) {
-    setControls((prev) => prev.map((x) => (x.id === c.id ? { ...x, pendingEdit: null } : x)));
-    addLog(currentUser.email, "edit_rejected", c.code, c.name, c.nameEn);
-    if (showToast) showToast(lang === "en" ? "Change rejected." : "변경이 반려되었습니다.");
-  }
 
   function startEdit(c) {
     setEditing(c.id);
@@ -3494,71 +3446,6 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, sh
         subtitle={isAdmin ? t("review.subtitleAdmin") : `${pName(currentUser.name, lang, users)}${t("review.subtitleUser")}`}
       />
 
-      {pendingEdits.length > 0 && (
-        <div className="mb-6">
-          <h3 className="text-sm font-semibold text-slate-700 mb-1 flex items-center gap-2">
-            <Clock size={15} className="text-amber-500" /> {t("review.pendingEditTitle")} ({pendingEdits.length})
-          </h3>
-          <p className="text-xs text-slate-400 mb-3">{t("review.pendingEditDesc")}</p>
-          <div className="space-y-3">
-            {pendingEdits.map((c) => {
-              const p = c.pendingEdit;
-              const rows = [
-                { label: t("manage.fieldName"), before: c.name, after: p.name },
-                { label: t("manage.fieldDept"), before: deptName(c.dept, lang, departments), after: deptName(p.dept, lang, departments) },
-                { label: t("manage.fieldCat"), before: catName(c.cat, lang), after: catName(p.cat, lang) },
-                { label: t("manage.fieldDesc"), before: c.desc, after: p.desc },
-                { label: t("manage.fieldAccessor"), before: c.accessor, after: p.accessor },
-                { label: t("manage.fieldReviewer"), before: c.reviewer, after: p.reviewer },
-                { label: t("manage.fieldFreq"), before: freqLabel(c.frequency, lang), after: freqLabel(p.frequency, lang) },
-                { label: t("manage.fieldImportance"), before: importanceLabel(c.importance, lang), after: importanceLabel(p.importance, lang) },
-              ].filter((r) => r.before !== r.after);
-              return (
-                <div key={c.id} className="bg-white rounded-xl border border-amber-200 p-4">
-                  <div className="flex items-start justify-between gap-3 mb-2">
-                    <div>
-                      <p className="text-xs text-slate-400 font-mono mb-0.5">{c.code}</p>
-                      <p className="font-medium text-slate-800">{c.name}</p>
-                    </div>
-                    <span className="text-xs text-slate-400 flex-shrink-0 text-right">
-                      {t("review.requestedBy")}: {personByEmail(p.requestedBy, lang, users)}
-                      <br />
-                      {t("review.requestedAt")}: {p.requestedAt}
-                    </span>
-                  </div>
-                  <div className="border border-slate-100 rounded-lg overflow-hidden text-sm mb-3">
-                    <div className="grid grid-cols-[110px_1fr_1fr] bg-slate-50 text-xs font-medium text-slate-500 px-3 py-1.5">
-                      <span></span>
-                      <span>{t("review.beforeLabel")}</span>
-                      <span>{t("review.afterLabel")}</span>
-                    </div>
-                    <div className="divide-y divide-slate-50">
-                      {rows.map((r, i) => (
-                        <div key={i} className="grid grid-cols-[110px_1fr_1fr] px-3 py-2 text-xs gap-2">
-                          <span className="text-slate-500 font-medium">{r.label}</span>
-                          <span className="text-slate-400 whitespace-pre-wrap break-words">{r.before || "-"}</span>
-                          <span className="text-teal-700 font-medium whitespace-pre-wrap break-words">{r.after || "-"}</span>
-                        </div>
-                      ))}
-                      {rows.length === 0 && <div className="px-3 py-2 text-xs text-slate-400">-</div>}
-                    </div>
-                  </div>
-                  {!isArchived && (
-                    <div className="flex justify-end gap-2">
-                      <button onClick={() => rejectEdit(c)} className="px-4 py-1.5 text-xs font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50">
-                        {t("review.rejectEditBtn")}
-                      </button>
-                      <button onClick={() => approveEdit(c)} className="px-4 py-1.5 text-xs font-medium text-white rounded-lg" style={{ backgroundColor: BRAND.accent }}>
-                        {t("review.approveEditBtn")}
-                      </button>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
 
       <div className="mb-6">
         <h3 className="text-sm font-semibold text-slate-700 mb-3">{t("review.pending")} ({pending.length})</h3>
