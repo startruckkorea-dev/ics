@@ -172,13 +172,34 @@ function hasCategoryAccess(user, categoryKey) {
   return true; // icsOverview
 }
 
+// ics_category_access.xlsx의 Departments 시트가 로드되면 부팅 시 아래 배열은 통째로 덮어써진다(옛 6개 부서 체계는 실제로 안 쓰임).
+// 혹시 그 시트가 없거나 로드에 실패했을 때만 쓰이는 최소한의 대체값이라, 실제 25개 팀 체계와 맞춰 둔다.
 let INITIAL_DEPARTMENTS = [
-  { id: "fin", ko: "재무팀", en: "Finance" },
-  { id: "hr", ko: "인사팀", en: "HR" },
-  { id: "pur", ko: "구매팀", en: "Purchasing" },
-  { id: "sal", ko: "영업팀", en: "Sales" },
-  { id: "itd", ko: "IT팀", en: "IT" },
-  { id: "prd", ko: "생산팀", en: "Production" },
+  { id: "stk", ko: "Star Truck Korea", en: "Star Truck Korea" },
+  { id: "ceo", ko: "CEO Office", en: "CEO Office" },
+  { id: "bbm", ko: "BBM & SPV", en: "BBM & SPV" },
+  { id: "bgsb", ko: "부산경상 영업지점", en: "Busan-Gyeongsang Sales Branch" },
+  { id: "gwjl", ko: "광주전라 영업지점", en: "Gwangju-Jeolla Sales Branch" },
+  { id: "gwsb", ko: "광주 영업지점", en: "Gwangju Sales Branch" },
+  { id: "sal", ko: "영업", en: "Sales" },
+  { id: "sop", ko: "영업기획", en: "Sales Planning" },
+  { id: "gwjc", ko: "강원제천 영업지점", en: "Gangwon-Jecheon Sales Branch" },
+  { id: "sgsb", ko: "서울경기 영업지점", en: "Seoul-Gyeonggi Sales Branch" },
+  { id: "csp", ko: "CSP", en: "CSP" },
+  { id: "prl", ko: "부품물류", en: "Parts & Logistics" },
+  { id: "svn", ko: "서비스네트워크", en: "Service Network" },
+  { id: "tst", ko: "기술지원교육", en: "Technical Support & Training" },
+  { id: "hcd", ko: "인증탁송", en: "Homologation & Delivery" },
+  { id: "mkt", ko: "마케팅커뮤니케이션", en: "Marketing Communications" },
+  { id: "pmm", ko: "PMM", en: "PMM" },
+  { id: "pdm", ko: "상품기획", en: "Product Planning" },
+  { id: "acc", ko: "회계", en: "Accounting" },
+  { id: "ctl", ko: "경영관리", en: "Management Control" },
+  { id: "pcm", ko: "구매", en: "Purchasing" },
+  { id: "fnc", ko: "재무관리", en: "Finance" },
+  { id: "itt", ko: "IT", en: "IT" },
+  { id: "hrt", ko: "인사", en: "HR" },
+  { id: "cpl", ko: "컴플라이언스", en: "Compliance" },
 ];
 
 const CATEGORIES = [
@@ -5746,10 +5767,6 @@ async function loadIcsConfirmEvents() {
   return items.map(mapIcsLogItem).sort((a, b) => (a.date < b.date ? 1 : -1));
 }
 
-// system_config_final.xlsx (다른 APS 시스템들과 완전히 동일한 공용 config 파일)에서
-// ICS_ACCESSOR_{부서id} / ICS_REVIEWER_N / ICS_ADMIN_N / ICS_CFO / ICS_RD 키를 읽어 INITIAL_USERS를 구성.
-// 3열(KEY/이름/이메일) 뿐인 단순 포맷, 헤더 없이 그대로 읽음 (loadSystemConfig()와 동일 파싱 규칙)
-// INITIAL_DEPARTMENTS는 부서 목록 자체(한글/영문명)라 config 대상이 아니고 코드 내 값 그대로 유지.
 // KEY_PATH(예: "learn.tips[0]")를 따라가며 STR.ko/STR.en 안에 값을 채워 넣는 헬퍼.
 // 경로 중간 객체/배열이 없으면 자동 생성한다.
 function setByKeyPath(obj, path, value) {
