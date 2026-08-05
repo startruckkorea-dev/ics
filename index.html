@@ -2029,7 +2029,7 @@ function ControlDetailBody({ control: c }) {
               <li key={i} className="flex items-center gap-2 text-sm text-slate-600 bg-slate-50 rounded-lg px-3 py-2">
                 <FileText size={14} className="text-slate-400 flex-shrink-0" />
                 {a.webUrl ? (
-                  <a href={a.webUrl} target="_blank" rel="noreferrer" className="truncate hover:underline" style={{ color: BRAND.accent }}>{a.name}</a>
+                  <button type="button" onClick={() => icsDownloadAttachment(c.spId, a.name)} className="truncate hover:underline text-left bg-transparent border-0 p-0 cursor-pointer" style={{ color: BRAND.accent }}>{a.name}</button>
                 ) : (
                   <span className="truncate">{a.name}</span>
                 )}
@@ -3498,7 +3498,7 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, sh
                         <li key={i} className="flex items-center gap-2 text-xs text-slate-600 bg-white border border-slate-100 rounded-lg px-3 py-1.5">
                           <Paperclip size={12} className="text-slate-400 flex-shrink-0" />
                           {a.webUrl ? (
-                            <a href={a.webUrl} target="_blank" rel="noreferrer" className="truncate hover:underline" style={{ color: BRAND.accent }}>{a.name}</a>
+                            <button type="button" onClick={() => icsDownloadAttachment(c.spId, a.name)} className="truncate hover:underline text-left bg-transparent border-0 p-0 cursor-pointer" style={{ color: BRAND.accent }}>{a.name}</button>
                           ) : (
                             <span className="truncate">{a.name}</span>
                           )}
@@ -5333,6 +5333,34 @@ async function getIcsAttachedFilesDriveId() {
   if (!drive) throw new Error("AttachedFiles 문서 라이브러리를 찾을 수 없습니다.");
   _icsAttachedFilesDriveId = drive.id;
   return _icsAttachedFilesDriveId;
+}
+
+// 첨부파일을 SharePoint 원본 URL 노출 없이 안전하게 다운로드한다.
+// webUrl을 <a href>에 직접 쓰지 않고, 인증된 세션으로 파일 내용을 직접 받아와 blob으로 다운로드시킴
+// (경로는 icsUploadAttachment와 동일한 규칙: ICS_Requests_AttachedFiles/{requestItemId}/{subfolder?}/{파일명})
+async function icsDownloadAttachment(requestItemId, fileName, subfolder = "") {
+  try {
+    const token = await getGraphToken();
+    const driveId = await getIcsAttachedFilesDriveId();
+    const path = subfolder
+      ? `ICS_Requests_AttachedFiles/${requestItemId}/${subfolder}/${encodeURIComponent(fileName)}`
+      : `ICS_Requests_AttachedFiles/${requestItemId}/${encodeURIComponent(fileName)}`;
+    const res = await fetch(`${GRAPH}/drives/${driveId}/root:/${path}:/content`, {
+      headers: { Authorization: "Bearer " + token },
+    });
+    if (!res.ok) throw new Error(`파일을 찾을 수 없습니다 (${res.status})`);
+    const blob = await res.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = blobUrl;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+  } catch (e) {
+    alert("파일을 불러오지 못했습니다: " + e.message);
+  }
 }
 
 // ICS_Requests_AttachedFiles/{requestItemId}/{파일명} 경로에 업로드하고 webUrl을 돌려준다.
