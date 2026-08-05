@@ -2637,7 +2637,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
 
   async function submit(c) {
     if (!draft.risk) return;
-    const today = new Date().toISOString().slice(0, 10);
+    const today = new Date(new Date().getTime()+9*3600*1000).toISOString().slice(0, 10);
     setSaving(c.id);
     setEditing(null);
     try {
@@ -3036,7 +3036,7 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
   }
   async function submit(c) {
     if (!draft.risk) return;
-    const today = new Date().toISOString().slice(0, 10);
+    const today = new Date(new Date().getTime()+9*3600*1000).toISOString().slice(0, 10);
     setEditing(null);
     try {
       // ISA 자가평가 첨부와 겹치지 않도록 별도 하위 폴더(FSA)에 업로드해서 SharePoint에 구분되게 쌓이게 한다.
@@ -3222,7 +3222,7 @@ function FSAReviewPage({ controls, setControls, currentUser, addLog, isArchived,
   }
   async function approve(c) {
     if (!draft.risk) return;
-    const today = new Date().toISOString().slice(0, 10);
+    const today = new Date(new Date().getTime()+9*3600*1000).toISOString().slice(0, 10);
     setEditing(null);
     try {
       const stillPending = await icsCheckStillPending(ICS_LISTS.requests, c.requestSpId, "FsaStatus", "submitted_self");
@@ -3250,7 +3250,7 @@ function FSAReviewPage({ controls, setControls, currentUser, addLog, isArchived,
     }
   }
   async function reject(c) {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = new Date(new Date().getTime()+9*3600*1000).toISOString().slice(0, 10);
     setReturning(null);
     try {
       const stillPending = await icsCheckStillPending(ICS_LISTS.requests, c.requestSpId, "FsaStatus", "submitted_self");
@@ -3411,7 +3411,7 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, sh
   }
   async function approve(c) {
     if (!draft.risk) return;
-    const today = new Date().toISOString().slice(0, 10);
+    const today = new Date(new Date().getTime()+9*3600*1000).toISOString().slice(0, 10);
     setEditing(null);
     try {
       const stillPending = await icsCheckStillPending(ICS_LISTS.requests, c.requestSpId, "Status", "submitted_self");
@@ -3435,7 +3435,7 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, sh
     }
   }
   async function reject(c) {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = new Date(new Date().getTime()+9*3600*1000).toISOString().slice(0, 10);
     setReturning(null);
     try {
       const stillPending = await icsCheckStillPending(ICS_LISTS.requests, c.requestSpId, "Status", "submitted_self");
@@ -3615,7 +3615,7 @@ function exportControlsToExcel(controls, lang, departments = INITIAL_DEPARTMENTS
   ws["!cols"] = Object.keys(rows[0] || {}).map(() => ({ wch: 16 }));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, lang === "en" ? "Internal Control Status" : "내부통제 현황");
-  XLSX.writeFile(wb, `internal_control_status_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  XLSX.writeFile(wb, `internal_control_status_${new Date(new Date().getTime()+9*3600*1000).toISOString().slice(0, 10)}.xlsx`);
 }
 
 function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedDepts }) {
@@ -4994,7 +4994,7 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
   const reviewerDepts = permissions[currentUser.email]?.deptsReviewer || [];
 
   function addLog(actor, actionKey, code, name, nameEn) {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = new Date(new Date().getTime()+9*3600*1000).toISOString().slice(0, 10);
     setLog((prev) => [{ id: uid("log"), date: today, actor, actionKey, code, name, nameEn, year: selectedYear }, ...prev]);
     if (usingSharePointData) {
       const detail = name ? (nameEn && nameEn !== name ? `${name} / ${nameEn}` : name) : "";
@@ -5767,7 +5767,7 @@ function mapIcsLogItem(it) {
   const detail = stripSpRichText(f.Detail) || "";
   return {
     id: it.id,
-    date: created ? String(created).slice(0, 10) : new Date().toISOString().slice(0, 10),
+    date: created ? String(created).slice(0, 10) : new Date(new Date().getTime()+9*3600*1000).toISOString().slice(0, 10),
     dateTime: created || new Date().toISOString(), // 결재 시각(시:분까지) 표시용 전체 타임스탬프
     actor: f.ActorEmail || "",
     actionKey: f.Title || "edit_control",
