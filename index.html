@@ -1080,6 +1080,7 @@ function Field({ label, children }) {
 
 // 관리자 초기화(전체 삭제) 액션 전, 비밀번호 확인을 요구하는 공용 모달.
 // 실수로 버튼을 눌러도 비밀번호를 입력해야만 실제로 삭제가 진행된다.
+// [보존] React 컴포넌트. 현재 JSX 에서 참조되지 않지만 비밀번호 확인 삭제 흐름을 위해 남겨 둔다.
 function ResetConfirmModal({ title, description, resetPassword, onConfirm, onClose }) {
   const { t } = useLang();
   const [input, setInput] = useState("");
@@ -4051,6 +4052,7 @@ function FinalReportPage({ controls, currentUser, activeYear, yearConfirmation, 
 /* 설정                                                                 */
 /* ------------------------------------------------------------------ */
 
+// [보존] React 컴포넌트. 현재 JSX 에서 참조되지 않지만 사용자 편집 행 UI 를 위해 남겨 둔다.
 function UserEditRow({ draft, setDraft, departments, t, onSave, onCancel }) {
   return (
     <div className="py-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -5561,15 +5563,6 @@ async function icsUploadMediaFile(file, onProgress) {
   return lastItem;
 }
 
-async function icsDeleteDriveItem(itemId) {
-  const token = await getGraphToken();
-  const driveId = await getIcsAttachedFilesDriveId();
-  const res = await fetch(`${GRAPH}/drives/${driveId}/items/${itemId}`, {
-    method: "DELETE",
-    headers: { Authorization: "Bearer " + token },
-  });
-  if (!res.ok) throw new Error(`파일 삭제 실패 (${res.status})`);
-}
 
 async function icsCreateItem(listName, fields) {
   const token = await getGraphToken();
