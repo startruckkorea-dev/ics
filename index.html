@@ -2829,11 +2829,11 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
   const [editing, setEditing] = useState(null);
   const [draft, setDraft] = useState({ risk: null, comment: "", sampleSize: 0, attachments: [] });
 
-  const isAdmin = currentUser.role === "admin";
   const myEmail = (currentUser.email || "").toLowerCase();
-  // 자가평가는 본인이 1차 담당자(Accessor)로 배정된 항목만 대상이다.
-  // 부서 접근권한(allowedDepts)은 조회 범위를 정하는 값이라 평가 대상 판단에는 쓰지 않는다.
-  const myControls = isAdmin ? controls : controls.filter((c) => (c.accessor || "").toLowerCase() === myEmail);
+  // 자가평가는 역할과 무관하게 본인이 1차 담당자(Accessor)로 배정된 항목만 대상이다.
+  // Admin 도 예외가 아니며, 부서 접근권한(allowedDepts)도 평가 대상 판단에는 쓰지 않는다.
+  // 전사 현황은 부서별 통제 현황·통제 항목 관리·대시보드에서 확인한다.
+  const myControls = controls.filter((c) => (c.accessor || "").toLowerCase() === myEmail);
 
   const f = useAssessmentFilter(myControls, lang, users, departments);
   const todo = f.apply(myControls.filter((c) => c.status === "not_started" || c.status === "returned"));
@@ -2937,7 +2937,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
       <SectionHeader
         icon={ClipboardList}
         title={t("self.title")}
-        subtitle={isAdmin ? t("self.subtitleAdmin") : `${pName(currentUser.name, lang, users)}${t("self.subtitleUser")}`}
+        subtitle={`${pName(currentUser.name, lang, users)}${t("self.subtitleUser")}`}
       />
 
       <AssessmentFilterBar f={f} t={t} minItems={myControls.length} />
@@ -3230,10 +3230,10 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
   const [draft, setDraft] = useState({ risk: null, comment: "" });
   const [detail, setDetail] = useState(null);
 
-  const isAdmin = currentUser.role === "admin";
   const myEmail = (currentUser.email || "").toLowerCase();
-  // FSA 최종 자가평가도 본인이 1차 담당자(Accessor)로 배정된 항목만 대상이다.
-  const myControls = isAdmin ? controls : controls.filter((c) => (c.accessor || "").toLowerCase() === myEmail);
+  // FSA 최종 자가평가도 역할과 무관하게 본인이 1차 담당자(Accessor)로 배정된 항목만 대상이다.
+  // Admin 도 예외가 아니며, 전사 현황은 부서별 통제 현황·대시보드에서 확인한다.
+  const myControls = controls.filter((c) => (c.accessor || "").toLowerCase() === myEmail);
 
   const f = useAssessmentFilter(myControls, lang, users, departments);
   const isaDone = myControls.filter((c) => c.status === "completed");
@@ -3315,7 +3315,7 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
       <SectionHeader
         icon={ShieldCheck}
         title={t("fsa.title")}
-        subtitle={isAdmin ? t("fsa.subtitleAdmin") : `${pName(currentUser.name, lang, users)}${t("fsa.subtitleUser")}`}
+        subtitle={`${pName(currentUser.name, lang, users)}${t("fsa.subtitleUser")}`}
       />
       <p className="text-sm text-slate-500 bg-white border border-slate-100 rounded-xl p-4 mb-6">{t("fsa.desc")}</p>
 
@@ -3430,11 +3430,12 @@ function FSAReviewPage({ controls, setControls, currentUser, addLog, isArchived,
   const [returnComment, setReturnComment] = useState("");
   const [detail, setDetail] = useState(null);
 
-  const isAdmin = currentUser.role === "admin";
   // 이메일은 마스터 표기(대문자 혼입)와 M365 토큰 값이 다를 수 있어 항상 소문자로 맞춰 비교한다.
   const myEmail = (currentUser.email || "").toLowerCase();
   const isMyReview = (c) => (c.reviewer || "").toLowerCase() === myEmail;
-  const inScope = controls.filter((c) => isAdmin || isMyReview(c) || (allowedDepts && allowedDepts.includes(c.dept)));
+  // 검토도 본인이 2차 검토자(Reviewer)로 배정된 항목만 대상이다.
+  // 부서 접근권한(allowedDepts)은 조회 범위를 정하는 값이라 검토 대상 판단에는 쓰지 않는다.
+  const inScope = controls.filter((c) => isMyReview(c));
   const f = useAssessmentFilter(inScope, lang, users, departments);
   const pending = f.apply(inScope.filter((c) => c.fsaStatus === "submitted_self"));
   const done = f.apply(inScope.filter((c) => c.fsaStatus === "completed" || c.fsaStatus === "returned"));
@@ -3507,7 +3508,7 @@ function FSAReviewPage({ controls, setControls, currentUser, addLog, isArchived,
       <SectionHeader
         icon={CheckCircle2}
         title={t("fsaReview.title")}
-        subtitle={isAdmin ? t("fsaReview.subtitleAdmin") : `${pName(currentUser.name, lang, users)}${t("fsaReview.subtitleUser")}`}
+        subtitle={`${pName(currentUser.name, lang, users)}${t("fsaReview.subtitleUser")}`}
       />
 
       <AssessmentFilterBar f={f} t={t} minItems={inScope.length} />
@@ -3626,11 +3627,12 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, sh
   const [returnComment, setReturnComment] = useState("");
   const [detail, setDetail] = useState(null);
 
-  const isAdmin = currentUser.role === "admin";
   // 이메일은 마스터 표기(대문자 혼입)와 M365 토큰 값이 다를 수 있어 항상 소문자로 맞춰 비교한다.
   const myEmail = (currentUser.email || "").toLowerCase();
   const isMyReview = (c) => (c.reviewer || "").toLowerCase() === myEmail;
-  const inScope = controls.filter((c) => isAdmin || isMyReview(c) || (allowedDepts && allowedDepts.includes(c.dept)));
+  // 검토도 본인이 2차 검토자(Reviewer)로 배정된 항목만 대상이다.
+  // 부서 접근권한(allowedDepts)은 조회 범위를 정하는 값이라 검토 대상 판단에는 쓰지 않는다.
+  const inScope = controls.filter((c) => isMyReview(c));
   const f = useAssessmentFilter(inScope, lang, users, departments);
   const pending = f.apply(inScope.filter((c) => c.status === "submitted_self"));
   const done = f.apply(inScope.filter((c) => c.status === "completed" || c.status === "returned"));
@@ -3695,7 +3697,7 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, sh
       <SectionHeader
         icon={ClipboardCheck}
         title={t("review.title")}
-        subtitle={isAdmin ? t("review.subtitleAdmin") : `${pName(currentUser.name, lang, users)}${t("review.subtitleUser")}`}
+        subtitle={`${pName(currentUser.name, lang, users)}${t("review.subtitleUser")}`}
       />
 
       <AssessmentFilterBar f={f} t={t} minItems={inScope.length} />
@@ -3858,19 +3860,19 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
   const [accessorFilter, setAccessorFilter] = useState("");
   const [tablePage, setTablePage] = useState(0);
   const TABLE_PAGE_SIZE = 10;
-  const isAdmin = currentUser.role === "admin";
   const myEmail = (currentUser.email || "").toLowerCase();
-  // 부서별 통제 현황/통제 항목 관리와 동일하게, Admin이 아니면 본인이 Accessor/Reviewer로 배정된 항목만 보이도록 스코프를 좁힌다.
-  // 본인이 Accessor 또는 Reviewer로 배정된 항목만 조회한다 (부서 접근권한만으로는 열리지 않음).
-  const controls = isAdmin
-    ? allControls
-    : allControls.filter((c) => (c.accessor || "").toLowerCase() === myEmail || (c.reviewer || "").toLowerCase() === myEmail);
+  // 역할과 무관하게 본인이 Accessor 또는 Reviewer 로 배정된 항목만 조회한다 (Admin 포함).
+  // 전사 현황은 부서별 통제 현황·통제 항목 관리·대시보드에서 확인한다.
+  // 본인이 Accessor 또는 Reviewer 로 배정된 항목만 조회한다 (Admin 포함).
+  const controls = allControls.filter(
+    (c) => (c.accessor || "").toLowerCase() === myEmail || (c.reviewer || "").toLowerCase() === myEmail
+  );
   const myCodes = new Set(controls.map((c) => c.code));
   // 활동 로그는 ISA/FSA 평가 흐름(자가평가·검토·FSA)에서 발생한 기록만 보여준다 - 권한 변경, 부서 초기화 등 시스템/관리 로그는 제외.
   const ASSESSMENT_ACTIONS = new Set(["submit_self", "review_complete", "review_reject", "fsa_submit", "fsa_review_complete", "fsa_review_reject", "withdraw_self", "withdraw_fsa"]);
   const log = allLog
     .filter((l) => ASSESSMENT_ACTIONS.has(l.actionKey))
-    .filter((l) => isAdmin || l.actor === myEmail || myCodes.has(l.code));
+    .filter((l) => (l.actor || "").toLowerCase() === myEmail || myCodes.has(l.code));
   const pieData = ["green", "orange", "red", "none"].map((r) => ({
     name: RISK_META[r][lang], value: controls.filter((c) => finalRisk(c) === r).length, color: RISK_META[r].color,
   })).filter((d) => d.value > 0);
