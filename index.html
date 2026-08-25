@@ -96,6 +96,7 @@ import {
   Download,
   Paperclip,
   KeyRound,
+  Loader2,
   UploadCloud,
   PlayCircle,
   Image as ImageIcon,
@@ -505,6 +506,8 @@ const STR = {
       readonlyNotice: "현재 역할(Reviewer)은 조회만 가능합니다. 수정하려면 Accessor 또는 관리자로 전환하세요.",
       colSample: "샘플링(권장)",
       emptyText: "등록된 통제 항목이 없습니다.",
+      uploading: "업로드 중...",
+      uploadingNotice: "엑셀 파일을 처리하고 있습니다. 창을 닫거나 새로고침하지 마세요.",
       pendingBadge: "승인 대기중",
       pendingNotice: "Accessor의 수정 요청은 검토자(또는 관리자)의 승인 후 실제 내용에 반영됩니다. 승인 전까지는 기존 내용이 그대로 표시됩니다.",
       uploadTemplateBtn: "엑셀 템플릿 다운로드",
@@ -585,6 +588,7 @@ const STR = {
       pieTitle: "최종 신호등 분포", logTitle: "활동 로그",
       tableTitle: "전체 통제 항목 종합 현황", downloadBtn: "엑셀 다운로드",
       colSample: "샘플링",
+      allAccessors: "전체 담당자",
     },
     finalReport: {
       title: "최종 결과 보고",
@@ -628,6 +632,10 @@ const STR = {
       deptCodeRequired: "부서 코드를 입력해 주세요. (영문/숫자만 가능)",
       deptCodeDuplicate: "이미 사용 중인 부서 코드입니다. 다른 코드를 입력해 주세요.",
       deptInUseHint: "이미 통제 항목 또는 사용자가 속해 있는 부서는 삭제할 수 없습니다.",
+      deptEditTitle: "부서 수정",
+      deptDeleteTitle: "부서 삭제",
+      deptDeleteBody: "이 부서를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.",
+      deptListUnavailable: "ICS_Departments 목록이 없어 편집할 수 없습니다",
       addUserBtn: "사용자 추가", userNameKoPlaceholder: "이름 (한글)", userNameEnPlaceholder: "이름 (영문)",
       userTemplateBtn: "사용자 템플릿", userUploadBtn: "사용자 엑셀 업로드",
       userEmailPlaceholder: "이메일 주소",
@@ -656,7 +664,12 @@ const STR = {
       emptyText: "검색 결과가 없습니다.",
       requestGuideTitle: "카테고리 접근 권한 신청 방법",
       viewOnlyNotice: "이 화면은 조회 전용입니다. 권한 변경은 Admin 계정으로 로그인해서 진행해 주세요.",
-      apply: "반영",
+      apply: "반영", applying: "반영 중...",
+      addUserTitle: "사용자 추가",
+      addUserPlaceholder: "이메일 주소 입력 (예: hong.gildong@hyosung.com)",
+      addUserHint: "여기서 추가한 사용자는 ICS_CategoryAccess 목록에 등록되어 다음 접속에도 유지됩니다. 추가 후 아래 표에서 필요한 카테고리를 체크하고 [반영]을 눌러 주세요.",
+      removeUserTitle: "사용자 삭제",
+      removeUserBody: "이 사용자의 카테고리 접근 권한을 모두 회수합니다. 사용자 마스터(Users 시트)에 등록된 계정은 목록에는 남고 권한만 초기화됩니다. 계속하시겠습니까?",
       notice: "이 화면은 조회 전용입니다. 권한을 추가/변경하려면 BU Admin에게 IT Ticket으로 요청해 ics_category_access.xlsx를 수정해 주세요.",
     },
     permissions: {
@@ -809,6 +822,8 @@ const STR = {
       codePlaceholder: "e.g. FIN-CA-03", namePlaceholder: "Control item name",
       descPlaceholder: "Detailed description of the control activity", namePersonPlaceholder: "Name",
       emailPlaceholder: "Email address (e.g. jane.doe@startruckkorea.com)",
+      uploading: "Uploading...",
+      uploadingNotice: "Processing the Excel file. Please do not close or refresh this page.",
     },
     self: {
       title: "ISA 1st Self-Assessment",
@@ -867,6 +882,7 @@ const STR = {
       pieTitle: "Final risk distribution", logTitle: "Activity log",
       tableTitle: "All control items — summary", downloadBtn: "Download Excel",
       colSample: "Sample",
+      allAccessors: "All accessors",
     },
     finalReport: {
       title: "Final Report",
@@ -910,6 +926,10 @@ const STR = {
       deptCodeRequired: "Please enter a department code (letters/numbers only).",
       deptCodeDuplicate: "This department code is already in use. Please choose a different one.",
       deptInUseHint: "You can't delete a department that's still used by a control item or a user.",
+      deptEditTitle: "Edit department",
+      deptDeleteTitle: "Delete department",
+      deptDeleteBody: "Are you sure you want to delete this department? This action cannot be undone.",
+      deptListUnavailable: "Editing unavailable — ICS_Departments list not found",
       addUserBtn: "Add user", userNameKoPlaceholder: "Name (Korean)", userNameEnPlaceholder: "Name (English)",
       userTemplateBtn: "User template", userUploadBtn: "Upload users (Excel)",
       userEmailPlaceholder: "Email address",
@@ -938,7 +958,12 @@ const STR = {
       emptyText: "No results found.",
       requestGuideTitle: "How to request category access",
       viewOnlyNotice: "This screen is view-only. Please sign in with an Admin account to change permissions.",
-      apply: "Apply",
+      apply: "Apply", applying: "Applying...",
+      addUserTitle: "Add user",
+      addUserPlaceholder: "Enter email address (e.g. jane.doe@hyosung.com)",
+      addUserHint: "Users added here are registered in the ICS_CategoryAccess list and persist across sessions. After adding, tick the categories below and press Apply.",
+      removeUserTitle: "Remove user",
+      removeUserBody: "This revokes all category access for this user. Accounts registered in the Users master sheet remain listed with their access cleared. Continue?",
       notice: "This screen is view-only. To add or change access, request it from your BU Admin via IT Ticket to update ics_category_access.xlsx.",
     },
     permissions: {
@@ -2235,6 +2260,8 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
   const [detail, setDetail] = useState(null);
   const [deptFilter, setDeptFilter] = useState("");
   const [uploadResult, setUploadResult] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [codeError, setCodeError] = useState("");
   const [managePage, setManagePage] = useState(0);
   const MANAGE_PAGE_SIZE = 20;
   const fileInputRef = useRef(null);
@@ -2276,6 +2303,12 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
   }
 
   async function handleUploadFile(e) {
+    setUploading(true);
+    setUploadResult(null);
+    try { await runUpload(e); } finally { setUploading(false); if (fileInputRef.current) fileInputRef.current.value = ""; }
+  }
+
+  async function runUpload(e) {
     const file = e.target.files?.[0];
     if (!file) return;
     e.target.value = "";
@@ -2380,14 +2413,28 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
   function openAdd() {
     setForm(emptyControlForm(isAdmin ? undefined : allowedDepts[0], departments));
     setEditingId(null);
+    setCodeError("");
   }
   function openEdit(c) {
     const src = c.pendingEdit || c;
     setForm({ code: src.code, dept: src.dept, cat: src.cat, name: src.name, desc: src.desc, accessor: src.accessor, reviewer: src.reviewer, frequency: src.frequency, importance: src.importance });
     setEditingId(c.id);
+    setCodeError("");
   }
   async function save() {
     if (!form.code.trim() || !form.name.trim()) return;
+    // 같은 연도 안에서 통제 코드는 유일해야 한다. 수정 중인 항목 자신은 검사에서 제외.
+    const codeKey = form.code.trim().toLowerCase();
+    const dup = allControls.find(
+      (c) => c.year === year && (c.code || "").trim().toLowerCase() === codeKey && c.id !== editingId
+    );
+    if (dup) {
+      setCodeError(lang === "en"
+        ? `Control code "${form.code.trim()}" already exists (${cName(dup, lang)}). Please use a different code.`
+        : `이미 등록된 통제 코드입니다 — ${form.code.trim()} (${cName(dup, lang)}). 다른 코드를 입력해 주세요.`);
+      return;
+    }
+    setCodeError("");
     const fields = {
       Title: form.code,
       Dept: form.dept,
@@ -2453,8 +2500,15 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
                 <button onClick={downloadTemplate} className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg border border-slate-200 text-slate-600 hover:border-teal-400 hover:text-teal-600">
                   <Download size={14} /> {t("manage.uploadTemplateBtn")}
                 </button>
-                <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg border border-slate-200 text-slate-600 hover:border-teal-400 hover:text-teal-600">
-                  <UploadCloud size={14} /> {t("manage.uploadBtn")}
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploading}
+                  className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg border border-slate-200 text-slate-600 hover:border-teal-400 hover:text-teal-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {uploading
+                    ? <Loader2 size={14} className="animate-spin" />
+                    : <UploadCloud size={14} />}
+                  {uploading ? t("manage.uploading") : t("manage.uploadBtn")}
                 </button>
                 <input ref={fileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleUploadFile} />
               </>
@@ -2483,6 +2537,13 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
       {canEdit && !isAdmin && (
         <div className="bg-slate-50 text-slate-500 text-xs px-4 py-3 rounded-lg mb-4 flex items-center gap-2">
           <Clock size={14} className="flex-shrink-0" /> {t("manage.pendingNotice")}
+        </div>
+      )}
+
+      {uploading && (
+        <div className="text-sm px-4 py-3 rounded-lg mb-4 flex items-center gap-2.5" style={{ backgroundColor: "#E4F1F0", color: BRAND.accent }}>
+          <Loader2 size={15} className="animate-spin flex-shrink-0" />
+          <span>{t("manage.uploadingNotice")}</span>
         </div>
       )}
 
@@ -2590,7 +2651,13 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
       {form && (
         <Modal title={editingId ? t("manage.modalEditTitle") : t("manage.modalAddTitle")} onClose={() => setForm(null)}>
           <Field label={t("manage.fieldCode")}>
-            <input className={inputCls} value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} placeholder={t("manage.codePlaceholder")} />
+            <input
+              className={codeError ? `${inputCls} border-red-400 focus:border-red-400 focus:ring-red-100` : inputCls}
+              value={form.code}
+              onChange={(e) => { setForm({ ...form, code: e.target.value }); if (codeError) setCodeError(""); }}
+              placeholder={t("manage.codePlaceholder")}
+            />
+            {codeError && <p className="text-xs text-red-600 mt-1.5 flex items-start gap-1"><AlertTriangle size={12} className="flex-shrink-0 mt-0.5" />{codeError}</p>}
           </Field>
           <Field label={t("manage.fieldName")}>
             <input className={inputCls} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder={t("manage.namePlaceholder")} />
@@ -2685,7 +2752,10 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
   const [draft, setDraft] = useState({ risk: null, comment: "", sampleSize: 0, attachments: [] });
 
   const isAdmin = currentUser.role === "admin";
-  const myControls = isAdmin ? controls : controls.filter((c) => c.accessor === currentUser.email || (allowedDepts && allowedDepts.includes(c.dept)));
+  const myEmail = (currentUser.email || "").toLowerCase();
+  // 자가평가는 본인이 1차 담당자(Accessor)로 배정된 항목만 대상이다.
+  // 부서 접근권한(allowedDepts)은 조회 범위를 정하는 값이라 평가 대상 판단에는 쓰지 않는다.
+  const myControls = isAdmin ? controls : controls.filter((c) => (c.accessor || "").toLowerCase() === myEmail);
 
   const todo = myControls.filter((c) => c.status === "not_started" || c.status === "returned");
   const inProgress = myControls.filter((c) => c.status === "submitted_self" || c.status === "completed");
@@ -3080,7 +3150,9 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
   const [detail, setDetail] = useState(null);
 
   const isAdmin = currentUser.role === "admin";
-  const myControls = isAdmin ? controls : controls.filter((c) => c.accessor === currentUser.email || (allowedDepts && allowedDepts.includes(c.dept)));
+  const myEmail = (currentUser.email || "").toLowerCase();
+  // FSA 최종 자가평가도 본인이 1차 담당자(Accessor)로 배정된 항목만 대상이다.
+  const myControls = isAdmin ? controls : controls.filter((c) => (c.accessor || "").toLowerCase() === myEmail);
 
   const isaDone = myControls.filter((c) => c.status === "completed");
   const todo = isaDone.filter((c) => c.fsaStatus === "not_started" || c.fsaStatus === "returned" || !c.fsaStatus);
@@ -3685,12 +3757,16 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
   const { departments, users } = useAppData();
   const [detail, setDetail] = useState(null);
   const [tableSearch, setTableSearch] = useState("");
+  const [accessorFilter, setAccessorFilter] = useState("");
   const [tablePage, setTablePage] = useState(0);
   const TABLE_PAGE_SIZE = 10;
   const isAdmin = currentUser.role === "admin";
   const myEmail = (currentUser.email || "").toLowerCase();
   // 부서별 통제 현황/통제 항목 관리와 동일하게, Admin이 아니면 본인이 Accessor/Reviewer로 배정된 항목만 보이도록 스코프를 좁힌다.
-  const controls = isAdmin ? allControls : allControls.filter((c) => c.accessor === myEmail || c.reviewer === myEmail || (allowedDepts && allowedDepts.includes(c.dept)));
+  // 본인이 Accessor 또는 Reviewer로 배정된 항목만 조회한다 (부서 접근권한만으로는 열리지 않음).
+  const controls = isAdmin
+    ? allControls
+    : allControls.filter((c) => (c.accessor || "").toLowerCase() === myEmail || (c.reviewer || "").toLowerCase() === myEmail);
   const myCodes = new Set(controls.map((c) => c.code));
   // 활동 로그는 ISA/FSA 평가 흐름(자가평가·검토·FSA)에서 발생한 기록만 보여준다 - 권한 변경, 부서 초기화 등 시스템/관리 로그는 제외.
   const ASSESSMENT_ACTIONS = new Set(["submit_self", "review_complete", "review_reject", "fsa_submit", "fsa_review_complete", "fsa_review_reject", "withdraw_self", "withdraw_fsa"]);
@@ -3702,9 +3778,20 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
   })).filter((d) => d.value > 0);
 
   const qTable = tableSearch.trim().toLowerCase();
-  const filteredTableControls = controls.filter(
-    (c) => !qTable || c.code.toLowerCase().includes(qTable) || cName(c, lang).toLowerCase().includes(qTable) || deptName(c.dept, lang, departments).toLowerCase().includes(qTable)
-  );
+  // 담당자 선택 목록 — 현재 조회 가능한 항목에 실제로 배정된 Accessor만 추린다.
+  const accessorOptions = [...new Set(controls.map((c) => (c.accessor || "").toLowerCase()).filter(Boolean))]
+    .map((email) => ({ email, label: personByEmail(email, lang, users) }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+  const filteredTableControls = controls.filter((c) => {
+    if (accessorFilter && (c.accessor || "").toLowerCase() !== accessorFilter) return false;
+    if (!qTable) return true;
+    return c.code.toLowerCase().includes(qTable)
+      || cName(c, lang).toLowerCase().includes(qTable)
+      || deptName(c.dept, lang, departments).toLowerCase().includes(qTable)
+      || personByEmail(c.accessor, lang, users).toLowerCase().includes(qTable);
+  });
+  // 검색어·담당자 필터가 바뀌면 첫 페이지로 되돌린다 (빈 화면 방지)
+  useEffect(() => { setTablePage(0); }, [tableSearch, accessorFilter]);
   const tableTotalPages = Math.max(1, Math.ceil(filteredTableControls.length / TABLE_PAGE_SIZE));
   const clampedTablePage = Math.min(tablePage, tableTotalPages - 1);
   const pagedTableControls = filteredTableControls.slice(clampedTablePage * TABLE_PAGE_SIZE, (clampedTablePage + 1) * TABLE_PAGE_SIZE);
@@ -3760,7 +3847,15 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
               placeholder={t("common.search")}
               className={`${inputCls} w-52`}
             />
-            <button onClick={() => exportControlsToExcel(controls, lang, departments, users)} className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:border-teal-400 hover:text-teal-600 flex-shrink-0">
+            <select
+              value={accessorFilter}
+              onChange={(e) => setAccessorFilter(e.target.value)}
+              className={`${inputCls} w-auto flex-shrink-0`}
+            >
+              <option value="">{t("history.allAccessors")}</option>
+              {accessorOptions.map((o) => <option key={o.email} value={o.email}>{o.label}</option>)}
+            </select>
+            <button onClick={() => exportControlsToExcel(filteredTableControls, lang, departments, users)} className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:border-teal-400 hover:text-teal-600 flex-shrink-0">
               <Download size={13} /> {t("history.downloadBtn")}
             </button>
           </div>
@@ -3772,6 +3867,7 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
               <th className="text-left font-medium px-4 py-3 whitespace-nowrap">{t("list.colCode")}</th>
               <th className="text-left font-medium px-4 py-3 whitespace-nowrap">{t("list.colName")}</th>
               <th className="text-left font-medium px-4 py-3 whitespace-nowrap">{t("list.colDept")}</th>
+              <th className="text-left font-medium px-4 py-3 whitespace-nowrap">{t("list.colAccessor")}</th>
               <th className="text-left font-medium px-4 py-3 whitespace-nowrap">{t("history.colSample")}</th>
               <th className="text-left font-medium px-4 py-3 whitespace-nowrap">{lang === "en" ? "1st result" : "1차평가"}</th>
               <th className="text-left font-medium px-4 py-3 whitespace-nowrap">{lang === "en" ? "2nd result" : "2차검토"}</th>
@@ -3784,6 +3880,7 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
                 <td className="px-4 py-2.5 text-slate-500 text-xs font-mono whitespace-nowrap">{c.code}</td>
                 <td className="px-4 py-2.5 text-slate-700"><div className="max-w-[360px] truncate" title={cName(c, lang)}>{cName(c, lang)}</div></td>
                 <td className="px-4 py-2.5 text-slate-600 whitespace-nowrap">{deptName(c.dept, lang, departments)}</td>
+                <td className="px-4 py-2.5 text-slate-600"><div className="max-w-[170px] truncate" title={personByEmail(c.accessor, lang, users)}>{personByEmail(c.accessor, lang, users)}</div></td>
                 <td className="px-4 py-2.5 text-slate-500 text-xs whitespace-nowrap">{c.actualSample ?? "-"}/{recommendedSample(c.importance, c.frequency)}{t("common.items")}</td>
                 <td className="px-4 py-2.5 whitespace-nowrap"><RiskBadge risk={c.selfRisk || "none"} /></td>
                 <td className="px-4 py-2.5 whitespace-nowrap"><RiskBadge risk={c.reviewRisk || "none"} /></td>
@@ -3791,7 +3888,7 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
               </tr>
             ))}
             {filteredTableControls.length === 0 && (
-              <tr><td colSpan={7}><EmptyState text={t("list.emptyText")} /></td></tr>
+              <tr><td colSpan={8}><EmptyState text={t("list.emptyText")} /></td></tr>
             )}
           </tbody>
         </table>
@@ -4288,6 +4385,12 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
   const [draft, setDraft] = useState(() => ({ ...ICS_CATEGORY_ACCESS }));
   const [search, setSearch] = useState("");
   const [applying, setApplying] = useState(false);
+  const { users: allUsers, setUsers } = useAppData();
+  const [newEmail, setNewEmail] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState("");
+  const [removing, setRemoving] = useState(null);
+  const [confirmRemove, setConfirmRemove] = useState(null);
 
   const categoryKeys = ["controlMgmt", "self", "review", "fsa", "fsaReview", "adminOnly", "executive"];
   const categoryLabelPath = {
@@ -4349,6 +4452,61 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
       return !!draft[email]?.[k] !== !!saved[email]?.[k];
     })
   );
+
+  // 카테고리 접근 권한 화면에 사용자를 새로 등록한다.
+  // ICS_CategoryAccess 목록에 행을 만들어 두면 다음 접속 때 사용자 목록에 자동으로 병합된다.
+  async function addUser() {
+    const email = newEmail.trim().toLowerCase();
+    if (!isAdmin || !email) return;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setAddError(lang === "en" ? "Please enter a valid email address." : "올바른 이메일 주소를 입력해 주세요.");
+      return;
+    }
+    if (allUsers.some((u) => (u.email || "").toLowerCase() === email)) {
+      setAddError(lang === "en" ? "This user is already in the list." : "이미 목록에 있는 사용자입니다.");
+      return;
+    }
+    setAddError("");
+    setAdding(true);
+    try {
+      const created = await icsCreateItem(ICS_LISTS.categoryAccess, { Title: email });
+      const entry = { spId: created.id };
+      ICS_CATEGORY_ACCESS[email] = entry;
+      setSaved((prev) => ({ ...prev, [email]: { ...entry } }));
+      setDraft((prev) => ({ ...prev, [email]: { ...entry } }));
+      setUsers((prev) => [...prev, { id: `ua_${Date.now()}`, email, name: email, nameEn: email, role: "guest", dept: null, fromAccessList: true }]);
+      addLog(currentUser.email, "edit_category_access", "-", `사용자 추가: ${email}`, `User added: ${email}`);
+      showToast(lang === "en" ? "User added." : "사용자가 추가되었습니다.");
+      setNewEmail("");
+    } catch (e) {
+      setAddError((lang === "en" ? "Failed to add: " : "추가에 실패했습니다: ") + e.message);
+    } finally {
+      setAdding(false);
+    }
+  }
+
+  // 사용자를 목록에서 제거한다. ICS_CategoryAccess 행을 삭제하므로 모든 카테고리 권한이 함께 회수된다.
+  // Users 시트(마스터)에 등록된 계정은 권한만 초기화되고 목록에는 남는다.
+  async function removeUser(u) {
+    const email = (u.email || "").toLowerCase();
+    if (!isAdmin || !email) return;
+    setRemoving(email);
+    try {
+      const spId = ICS_CATEGORY_ACCESS[email]?.spId;
+      if (spId) await icsDeleteItem(ICS_LISTS.categoryAccess, spId);
+      delete ICS_CATEGORY_ACCESS[email];
+      setSaved((prev) => { const n = { ...prev }; delete n[email]; return n; });
+      setDraft((prev) => { const n = { ...prev }; delete n[email]; return n; });
+      if (u.fromAccessList) setUsers((prev) => prev.filter((x) => (x.email || "").toLowerCase() !== email));
+      addLog(currentUser.email, "edit_category_access", "-", `권한 회수: ${email}`, `Access revoked: ${email}`);
+      showToast(lang === "en" ? "Access revoked." : "접근 권한이 회수되었습니다.");
+    } catch (e) {
+      alert((lang === "en" ? "Failed to remove: " : "삭제에 실패했습니다: ") + e.message);
+    } finally {
+      setRemoving(null);
+      setConfirmRemove(null);
+    }
+  }
 
   async function applyChanges() {
     if (!isAdmin || !isDirty) return;
@@ -4432,10 +4590,39 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
             className="text-sm font-medium px-4 py-2 rounded-lg text-white disabled:opacity-40 flex-shrink-0"
             style={{ backgroundColor: BRAND.accent }}
           >
-            {t("categoryAccess.apply")}
+            {applying ? t("categoryAccess.applying") : t("categoryAccess.apply")}
           </button>
         )}
       </div>
+
+      {isAdmin && (
+        <div className="bg-white rounded-xl border border-slate-100 p-4 mb-4">
+          <h3 className="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2">
+            <Plus size={15} /> {t("categoryAccess.addUserTitle")}
+          </h3>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="email"
+              value={newEmail}
+              onChange={(e) => { setNewEmail(e.target.value); if (addError) setAddError(""); }}
+              onKeyDown={(e) => { if (e.key === "Enter") addUser(); }}
+              placeholder={t("categoryAccess.addUserPlaceholder")}
+              className={`${inputCls} max-w-sm`}
+            />
+            <button
+              onClick={addUser}
+              disabled={adding || !newEmail.trim()}
+              className="text-sm font-medium px-4 py-2 rounded-lg text-white disabled:opacity-40 flex items-center gap-1.5 flex-shrink-0"
+              style={{ backgroundColor: BRAND.accent }}
+            >
+              {adding ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+              {t("common.add")}
+            </button>
+          </div>
+          {addError && <p className="text-xs text-red-600 mt-2 flex items-start gap-1"><AlertTriangle size={12} className="flex-shrink-0 mt-0.5" />{addError}</p>}
+          <p className="text-xs text-slate-400 mt-2">{t("categoryAccess.addUserHint")}</p>
+        </div>
+      )}
 
       <div className="bg-white rounded-xl border border-slate-100 overflow-auto" style={{ maxHeight: 520 }}>
         <table className="w-full text-sm">
@@ -4462,6 +4649,7 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
                   </th>
                 );
               })}
+              {isAdmin && <th className="text-center font-medium px-3 py-2.5 whitespace-nowrap sticky top-0 z-20 bg-slate-50">{t("common.delete")}</th>}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-50">
@@ -4485,12 +4673,24 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
                       />
                     </td>
                   ))}
+                  {isAdmin && (
+                    <td className="text-center px-3 py-1.5">
+                      <button
+                        onClick={() => setConfirmRemove(u)}
+                        disabled={removing === email}
+                        className="text-slate-400 hover:text-red-500 disabled:opacity-40"
+                        title={t("categoryAccess.removeUserTitle")}
+                      >
+                        {removing === email ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                      </button>
+                    </td>
+                  )}
                 </tr>
               );
             })}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={categoryKeys.length + 1}>
+                <td colSpan={categoryKeys.length + (isAdmin ? 2 : 1)}>
                   <EmptyState text={t("categoryAccess.emptyText")} />
                 </td>
               </tr>
@@ -4498,14 +4698,107 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
           </tbody>
         </table>
       </div>
+
+      {confirmRemove && (
+        <Modal title={t("categoryAccess.removeUserTitle")} onClose={() => setConfirmRemove(null)}>
+          <p className="text-sm text-slate-600 mb-5">
+            <span className="font-medium text-slate-800">{confirmRemove.email}</span> — {t("categoryAccess.removeUserBody")}
+          </p>
+          <div className="flex justify-end gap-2">
+            <button onClick={() => setConfirmRemove(null)} className="px-4 py-2 text-sm text-slate-500 rounded-lg hover:bg-slate-50">{t("common.cancel")}</button>
+            <button onClick={() => removeUser(confirmRemove)} className="px-4 py-2 text-sm text-white rounded-lg bg-red-500 hover:bg-red-600">{t("common.delete")}</button>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
 
 function PermissionsPage({ permissions, setPermissions, currentUser, addLog, showToast }) {
   const { lang, t } = useLang();
-  const { departments, users, setUsers } = useAppData();
+  const { departments, setDepartments, users, setUsers } = useAppData();
   const isAdmin = currentUser.role === "admin";
+
+  // ── 부서 추가·수정·삭제 ──
+  const [deptForm, setDeptForm] = useState(null);      // { id, ko, en, spId } · id는 신규일 때만 입력 가능
+  const [deptEditing, setDeptEditing] = useState(null); // 수정 중인 부서 코드
+  const [deptError, setDeptError] = useState("");
+  const [deptSaving, setDeptSaving] = useState(false);
+  const [confirmDeptDelete, setConfirmDeptDelete] = useState(null);
+
+  const canEditDept = isAdmin && ICS_DEPT_LIST_READY;
+  // 통제 항목이 이미 사용 중인 부서는 삭제를 막는다 (표시가 깨지는 것을 방지).
+  function controlsUseDept(deptId) {
+    return Array.isArray(window._icsAllControls) && window._icsAllControls.some((c) => c.dept === deptId);
+  }
+
+  function openDeptAdd() {
+    setDeptForm({ id: "", ko: "", en: "" });
+    setDeptEditing(null);
+    setDeptError("");
+  }
+  function openDeptEdit(d) {
+    setDeptForm({ id: d.id, ko: d.ko || "", en: d.en || "" });
+    setDeptEditing(d.id);
+    setDeptError("");
+  }
+
+  async function saveDept() {
+    if (!canEditDept || !deptForm) return;
+    const code = (deptForm.id || "").trim().toLowerCase();
+    const ko = (deptForm.ko || "").trim();
+    const en = (deptForm.en || "").trim() || ko;
+    if (!ko) { setDeptError(t("settings.deptNameRequired")); return; }
+    if (!deptEditing) {
+      if (!code || !/^[a-z0-9_-]+$/i.test(code)) { setDeptError(t("settings.deptCodeRequired")); return; }
+      if (departments.some((d) => d.id.toLowerCase() === code)) { setDeptError(t("settings.deptCodeDuplicate")); return; }
+    }
+    setDeptError("");
+    setDeptSaving(true);
+    try {
+      if (deptEditing) {
+        const target = departments.find((d) => d.id === deptEditing);
+        if (target?.spId) await icsUpdateItem(ICS_LISTS.departments, target.spId, { NameKo: ko, NameEn: en });
+        setDepartments((prev) => prev.map((d) => (d.id === deptEditing ? { ...d, ko, en } : d)));
+        const idx = INITIAL_DEPARTMENTS.findIndex((d) => d.id === deptEditing);
+        if (idx >= 0) INITIAL_DEPARTMENTS[idx] = { ...INITIAL_DEPARTMENTS[idx], ko, en };
+        addLog(currentUser.email, "edit_dept", "-", `부서 수정: ${ko} (${deptEditing})`, `Department updated: ${en} (${deptEditing})`);
+        showToast(lang === "en" ? "Department updated." : "부서가 수정되었습니다.");
+      } else {
+        const created = await icsCreateItem(ICS_LISTS.departments, { Title: code, NameKo: ko, NameEn: en });
+        const nd = { id: code, ko, en, spId: created.id };
+        setDepartments((prev) => [...prev, nd]);
+        INITIAL_DEPARTMENTS.push(nd);
+        addLog(currentUser.email, "add_dept", "-", `부서 추가: ${ko} (${code})`, `Department added: ${en} (${code})`);
+        showToast(lang === "en" ? "Department added." : "부서가 추가되었습니다.");
+      }
+      setDeptForm(null);
+      setDeptEditing(null);
+    } catch (e) {
+      setDeptError((lang === "en" ? "Save failed: " : "저장에 실패했습니다: ") + e.message);
+    } finally {
+      setDeptSaving(false);
+    }
+  }
+
+  async function deleteDept(d) {
+    if (!canEditDept) return;
+    setDeptSaving(true);
+    try {
+      if (d.spId) await icsDeleteItem(ICS_LISTS.departments, d.spId);
+      setDepartments((prev) => prev.filter((x) => x.id !== d.id));
+      const idx = INITIAL_DEPARTMENTS.findIndex((x) => x.id === d.id);
+      if (idx >= 0) INITIAL_DEPARTMENTS.splice(idx, 1);
+      if (selectedDeptId === d.id) setSelectedDeptId(null);
+      addLog(currentUser.email, "delete_dept", "-", `부서 삭제: ${d.ko} (${d.id})`, `Department deleted: ${d.en} (${d.id})`);
+      showToast(lang === "en" ? "Department deleted." : "부서가 삭제되었습니다.");
+    } catch (e) {
+      alert((lang === "en" ? "Delete failed: " : "삭제에 실패했습니다: ") + e.message);
+    } finally {
+      setDeptSaving(false);
+      setConfirmDeptDelete(null);
+    }
+  }
 
   const [selectedEmail, setSelectedEmail] = useState(null);
   const [selectedDeptId, setSelectedDeptId] = useState(null);
@@ -4703,18 +4996,31 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
       <SectionHeader icon={KeyRound} title={t("permissions.title")} subtitle={t("permissions.subtitle")} />
 
       <div className="bg-white rounded-xl border border-slate-100 p-5 mb-5">
-        <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2 mb-3"><Building2 size={15} /> {t("settings.deptListTitle")}</h3>
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2"><Building2 size={15} /> {t("settings.deptListTitle")}</h3>
+          {isAdmin && (
+            canEditDept ? (
+              <button onClick={openDeptAdd} className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg text-white flex-shrink-0" style={{ backgroundColor: BRAND.accent }}>
+                <Plus size={13} /> {t("settings.addDeptBtn")}
+              </button>
+            ) : (
+              <span className="text-xs text-slate-400 flex items-center gap-1 flex-shrink-0"><AlertTriangle size={12} /> {t("settings.deptListUnavailable")}</span>
+            )
+          )}
+        </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
           {departments.map((d) => {
             const count = usersForDept(d.id).length;
+            const inUse = count > 0 || controlsUseDept(d.id);
             return (
-              <button
+              <div
                 key={d.id}
-                onClick={() => pickDept(d.id)}
-                className="flex items-center justify-between gap-1.5 px-2.5 py-2 rounded-lg text-xs text-left transition-colors"
+                className="flex items-center justify-between gap-1.5 px-2.5 py-2 rounded-lg text-xs transition-colors"
                 style={{ backgroundColor: selectedDeptId === d.id ? BRAND.accentSoft : "#F8FAFC" }}
               >
-                <span className="text-slate-700 truncate">{d[lang]}</span>
+                <button onClick={() => pickDept(d.id)} className="flex-1 min-w-0 text-left">
+                  <span className="text-slate-700 truncate block">{d[lang]}</span>
+                </button>
                 <span className="flex items-center gap-1.5 flex-shrink-0">
                   <span
                     className="font-medium px-1.5 py-0.5 rounded-full"
@@ -4723,13 +5029,71 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
                     {count}{lang === "en" ? "" : "명"}
                   </span>
                   <span className="text-slate-400 font-medium">{d.id.toUpperCase()}</span>
+                  {canEditDept && (
+                    <>
+                      <button onClick={() => openDeptEdit(d)} className="text-slate-400 hover:text-teal-600" title={t("common.edit")}>
+                        <Pencil size={12} />
+                      </button>
+                      <button
+                        onClick={() => setConfirmDeptDelete(d)}
+                        disabled={inUse}
+                        className="text-slate-400 hover:text-red-500 disabled:opacity-30 disabled:cursor-not-allowed"
+                        title={inUse ? t("settings.deptInUseHint") : t("common.delete")}
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </>
+                  )}
                 </span>
-              </button>
+              </div>
             );
           })}
           {departments.length === 0 && <EmptyState text={t("list.emptyText")} />}
         </div>
+        {canEditDept && <p className="text-xs text-slate-400 mt-3">{t("settings.deptInUseHint")}</p>}
       </div>
+
+      {deptForm && (
+        <Modal title={deptEditing ? t("settings.deptEditTitle") : t("settings.addDeptBtn")} onClose={() => setDeptForm(null)}>
+          <div className="space-y-3">
+            <Field label={t("settings.deptCodePlaceholder")}>
+              <input
+                className={inputCls}
+                value={deptForm.id}
+                disabled={!!deptEditing}
+                onChange={(e) => { setDeptForm({ ...deptForm, id: e.target.value }); if (deptError) setDeptError(""); }}
+                placeholder={t("settings.deptCodePlaceholder")}
+              />
+              <p className="text-xs text-slate-400 mt-1.5">{t("settings.deptCodeHint")}</p>
+            </Field>
+            <Field label={t("settings.deptNameKoPlaceholder")}>
+              <input className={inputCls} value={deptForm.ko} onChange={(e) => { setDeptForm({ ...deptForm, ko: e.target.value }); if (deptError) setDeptError(""); }} placeholder={t("settings.deptNameKoPlaceholder")} />
+            </Field>
+            <Field label={t("settings.deptNameEnPlaceholder")}>
+              <input className={inputCls} value={deptForm.en} onChange={(e) => setDeptForm({ ...deptForm, en: e.target.value })} placeholder={t("settings.deptNameEnPlaceholder")} />
+            </Field>
+            {deptError && <p className="text-xs text-red-600 flex items-start gap-1"><AlertTriangle size={12} className="flex-shrink-0 mt-0.5" />{deptError}</p>}
+          </div>
+          <div className="flex justify-end gap-2 mt-5">
+            <button onClick={() => setDeptForm(null)} className="px-4 py-2 text-sm text-slate-500 rounded-lg hover:bg-slate-50">{t("common.cancel")}</button>
+            <button onClick={saveDept} disabled={deptSaving} className="px-4 py-2 text-sm text-white rounded-lg disabled:opacity-40 flex items-center gap-1.5" style={{ backgroundColor: BRAND.accent }}>
+              {deptSaving && <Loader2 size={14} className="animate-spin" />}{t("common.save")}
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {confirmDeptDelete && (
+        <Modal title={t("settings.deptDeleteTitle")} onClose={() => setConfirmDeptDelete(null)}>
+          <p className="text-sm text-slate-600 mb-5">
+            <span className="font-medium text-slate-800">{confirmDeptDelete[lang]} ({confirmDeptDelete.id.toUpperCase()})</span> — {t("settings.deptDeleteBody")}
+          </p>
+          <div className="flex justify-end gap-2">
+            <button onClick={() => setConfirmDeptDelete(null)} className="px-4 py-2 text-sm text-slate-500 rounded-lg hover:bg-slate-50">{t("common.cancel")}</button>
+            <button onClick={() => deleteDept(confirmDeptDelete)} disabled={deptSaving} className="px-4 py-2 text-sm text-white rounded-lg bg-red-500 hover:bg-red-600 disabled:opacity-40">{t("common.delete")}</button>
+          </div>
+        </Modal>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <div className="bg-white rounded-xl border border-slate-100 p-5">
@@ -5349,7 +5713,10 @@ async function apiGet(path, token) {
  * ICS_* SharePoint 목록 연동 (Controls / Requests / Log)
  * 목록 GUID를 하드코딩하지 않고 displayName으로 조회해서 캐싱한다 (오타/재생성에 안전).
  * ------------------------------------------------------------------ */
-const ICS_LISTS = { controls: "ICS_Controls", requests: "ICS_Requests", approvals: "ICS_Approvals", log: "ICS_Log", categoryAccess: "ICS_CategoryAccess" };
+const ICS_LISTS = { controls: "ICS_Controls", requests: "ICS_Requests", approvals: "ICS_Approvals", log: "ICS_Log", categoryAccess: "ICS_CategoryAccess", departments: "ICS_Departments" };
+// ICS_Departments 목록이 존재하는지 여부. 없으면 부서는 ics_category_access.xlsx의 Departments 시트(읽기 전용)에서만 오고,
+// 권한 관리 화면의 부서 추가·수정·삭제는 비활성화된다.
+let ICS_DEPT_LIST_READY = false;
 const _icsListIds = {};
 
 async function getGraphToken() {
@@ -5731,6 +6098,26 @@ async function loadIcsCategoryAccessList() {
   return parsed;
 }
 
+// 부서 목록을 ICS_Departments SharePoint 목록에서 읽어온다.
+// 목록 컬럼: Title(부서 코드) | NameKo | NameEn
+// 목록이 아직 없으면 null을 돌려주고, 호출부는 기존 Excel 시트 값을 그대로 쓴다.
+async function loadIcsDepartmentList() {
+  const items = await icsListAll(ICS_LISTS.departments);
+  const out = [];
+  items.forEach((it) => {
+    const f = it.fields || {};
+    const code = String(f.Title || "").trim();
+    if (!code) return;
+    out.push({
+      id: code,
+      ko: String(f.NameKo || "").trim() || code,
+      en: String(f.NameEn || "").trim() || String(f.NameKo || "").trim() || code,
+      spId: it.id,
+    });
+  });
+  return out;
+}
+
 async function loadIcsControls() {
   const [controlItems, requestItems] = await Promise.all([
     icsListAll(ICS_LISTS.controls),
@@ -6011,12 +6398,13 @@ async function icsBoot(account) {
     _siteId = siteRes.id;
 
     // 서로 의존하지 않는 5개 로드를 병렬로 실행해서 로그인 대기 시간을 줄인다 (예전엔 하나씩 순서대로 기다렸음).
-    const [configResult, uiStringsResult, controlsResult, logResult, categoryAccessResult] = await Promise.allSettled([
+    const [configResult, uiStringsResult, controlsResult, logResult, categoryAccessResult, deptListResult] = await Promise.allSettled([
       loadIcsMasterConfig(token),
       loadIcsUiStrings(token),
       loadIcsControls(),
       loadIcsConfirmEvents(),
       loadIcsCategoryAccessList(),
+      loadIcsDepartmentList(),
     ]);
 
     if (configResult.status === "rejected") throw configResult.reason;
@@ -6033,6 +6421,34 @@ async function icsBoot(account) {
     // ICS_CategoryAccess 목록이 아직 없어도(첫 설치 등) 실패로 앱을 막지 않고 기본 권한(역할 기반)으로 진행.
     if (categoryAccessResult.status === "fulfilled") ICS_CATEGORY_ACCESS = categoryAccessResult.value;
     else console.warn("[ICS] ICS_CategoryAccess 목록 로드 실패, 기본 권한으로 진행:", categoryAccessResult.reason.message);
+
+    // ICS_Departments 목록이 있으면 부서 마스터로 사용한다 (없으면 Excel Departments 시트 값을 그대로 유지).
+    if (deptListResult.status === "fulfilled" && Array.isArray(deptListResult.value)) {
+      ICS_DEPT_LIST_READY = true;
+      if (deptListResult.value.length) {
+        INITIAL_DEPARTMENTS.length = 0;
+        deptListResult.value.forEach((d) => INITIAL_DEPARTMENTS.push(d));
+      }
+      console.log(`[ICS] ICS_Departments 목록 사용 (${deptListResult.value.length}개)`);
+    } else {
+      console.warn("[ICS] ICS_Departments 목록 없음 — Excel Departments 시트 값으로 진행 (부서 편집 비활성)");
+    }
+
+    // 카테고리 접근 권한 화면에서 직접 추가한 사용자는 Users 시트에 없으므로,
+    // ICS_CategoryAccess 목록에만 있는 이메일을 사용자 목록에 병합해 다음 접속에도 유지되게 한다.
+    {
+      const known = new Set(INITIAL_USERS.map((u) => (u.email || "").toLowerCase()));
+      let extra = 0;
+      Object.keys(ICS_CATEGORY_ACCESS).forEach((email) => {
+        if (!email || known.has(email)) return;
+        extra++;
+        INITIAL_USERS.push({
+          id: `ua${extra}`, email, name: email, nameEn: email,
+          role: "guest", dept: null, fromAccessList: true,
+        });
+      });
+      if (extra) console.log(`[ICS] CategoryAccess 목록에서 사용자 ${extra}명 병합`);
+    }
 
     // Users 시트의 Role 대신, 권한 관리 화면에서 직접 지정한 RoleOverride가 있으면 그걸로 덮어쓴다
     // (Users 시트의 Role/Dept 컬럼을 더 이상 쓰지 않고 앱에서 전부 관리하고 싶은 경우를 위함).
