@@ -2343,7 +2343,13 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
           DescKo: desc, DescEn: descEn, AccessorEmail: accessor, ReviewerEmail: reviewer,
           Year: year, Frequency: frequency.id, Importance: importance.id,
         };
-        const existing = allControls.find((c) => c.year === year && c.code === code);
+        // 기존 항목 판정은 모달 저장(save)의 중복 검사와 같은 기준을 쓴다.
+        // 원문 그대로 비교하면 엑셀에 itt-ca-010 처럼 대소문자만 다르게 넣었을 때
+        // 기존 ITT-CA-010 을 찾지 못하고 새 항목으로 생성되어 같은 통제가 두 건 등록된다.
+        const codeKey = code.trim().toLowerCase();
+        const existing = allControls.find(
+          (c) => c.year === year && (c.code || "").trim().toLowerCase() === codeKey
+        );
         if (existing) updates.push({ localId: existing.id, spId: existing.spId, payload, fields });
         else creates.push({ payload, fields });
       });
