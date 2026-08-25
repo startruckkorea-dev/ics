@@ -2099,7 +2099,7 @@ function ControlDetailBody({ control: c }) {
           <div className="bg-slate-50 rounded-lg p-3">
             <div className="flex items-center justify-between mb-1.5">
               <RiskBadge risk={c.selfRisk} />
-              <span className="text-xs text-slate-400">{c.selfDate}</span>
+              <span className="text-xs text-slate-400">{formatDateTime(c.selfDate, lang)}</span>
             </div>
             <p className="text-sm text-slate-600 whitespace-pre-wrap">{lang === "en" ? c.selfCommentEn || c.selfComment : c.selfComment}</p>
           </div>
@@ -2114,7 +2114,7 @@ function ControlDetailBody({ control: c }) {
           <div className="bg-slate-50 rounded-lg p-3">
             <div className="flex items-center justify-between mb-1.5">
               <RiskBadge risk={c.reviewRisk} />
-              <span className="text-xs text-slate-400">{c.reviewDate}</span>
+              <span className="text-xs text-slate-400">{formatDateTime(c.reviewDate, lang)}</span>
             </div>
             <p className="text-sm text-slate-600 whitespace-pre-wrap">{lang === "en" ? c.reviewCommentEn || c.reviewComment : c.reviewComment}</p>
           </div>
@@ -2129,7 +2129,7 @@ function ControlDetailBody({ control: c }) {
           <div className="bg-slate-50 rounded-lg p-3">
             <div className="flex items-center justify-between mb-1.5">
               <RiskBadge risk={c.fsaRisk} />
-              <span className="text-xs text-slate-400">{c.fsaDate}</span>
+              <span className="text-xs text-slate-400">{formatDateTime(c.fsaDate, lang)}</span>
             </div>
             <p className="text-sm text-slate-600 whitespace-pre-wrap">{lang === "en" ? c.fsaCommentEn || c.fsaComment : c.fsaComment}</p>
           </div>
@@ -2144,7 +2144,7 @@ function ControlDetailBody({ control: c }) {
           <div className="bg-slate-50 rounded-lg p-3">
             <div className="flex items-center justify-between mb-1.5">
               <RiskBadge risk={c.fsaReviewRisk} />
-              <span className="text-xs text-slate-400">{c.fsaReviewDate}</span>
+              <span className="text-xs text-slate-400">{formatDateTime(c.fsaReviewDate, lang)}</span>
             </div>
             <p className="text-sm text-slate-600 whitespace-pre-wrap">{lang === "en" ? c.fsaReviewCommentEn || c.fsaReviewComment : c.fsaReviewComment}</p>
           </div>
@@ -2719,8 +2719,15 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
 
 function formatDateTime(iso, lang) {
   if (!iso) return "-";
+  const str = String(iso);
+  // 옛 데이터는 시각 없이 날짜(YYYY-MM-DD)만 저장되어 있다.
+  // 이 값을 KST 보정하면 실제로는 없는 09:00 이 붙어 오해를 부르므로 날짜만 표시한다.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str.trim())) {
+    const [y0, m0, d0] = str.trim().split("-");
+    return lang === "en" ? `${y0}-${m0}-${d0}` : `${y0}년 ${m0}월 ${d0}일`;
+  }
   const raw = new Date(iso);
-  if (isNaN(raw.getTime())) return String(iso).slice(0, 10); // 옛 데이터(날짜만 저장된 경우) 폴백
+  if (isNaN(raw.getTime())) return str.slice(0, 10); // 형식을 알 수 없는 값 폴백
   const d = new Date(raw.getTime() + 9 * 3600 * 1000); // UTC 저장값을 KST로 보정
   const y = d.getUTCFullYear();
   const mo = String(d.getUTCMonth() + 1).padStart(2, "0");
@@ -2822,7 +2829,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
 
   async function submit(c) {
     if (!draft.risk) return;
-    const today = new Date(new Date().getTime()+9*3600*1000).toISOString().slice(0, 10);
+    const today = new Date().toISOString();  // SharePoint 저장값과 동일한 ISO — 표시 시점에 formatDateTime 이 KST 로 변환
     setSaving(c.id);
     setEditing(null);
     try {
@@ -3226,7 +3233,7 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
   }
   async function submit(c) {
     if (!draft.risk) return;
-    const today = new Date(new Date().getTime()+9*3600*1000).toISOString().slice(0, 10);
+    const today = new Date().toISOString();  // SharePoint 저장값과 동일한 ISO — 표시 시점에 formatDateTime 이 KST 로 변환
     setEditing(null);
     try {
       // ISA 자가평가 첨부와 겹치지 않도록 별도 하위 폴더(FSA)에 업로드해서 SharePoint에 구분되게 쌓이게 한다.
@@ -3420,7 +3427,7 @@ function FSAReviewPage({ controls, setControls, currentUser, addLog, isArchived,
   }
   async function approve(c) {
     if (!draft.risk) return;
-    const today = new Date(new Date().getTime()+9*3600*1000).toISOString().slice(0, 10);
+    const today = new Date().toISOString();  // SharePoint 저장값과 동일한 ISO — 표시 시점에 formatDateTime 이 KST 로 변환
     setEditing(null);
     try {
       const stillPending = await icsCheckStillPending(ICS_LISTS.requests, c.requestSpId, "FsaStatus", "submitted_self");
@@ -3448,7 +3455,7 @@ function FSAReviewPage({ controls, setControls, currentUser, addLog, isArchived,
     }
   }
   async function reject(c) {
-    const today = new Date(new Date().getTime()+9*3600*1000).toISOString().slice(0, 10);
+    const today = new Date().toISOString();  // SharePoint 저장값과 동일한 ISO — 표시 시점에 formatDateTime 이 KST 로 변환
     setReturning(null);
     try {
       const stillPending = await icsCheckStillPending(ICS_LISTS.requests, c.requestSpId, "FsaStatus", "submitted_self");
@@ -3617,7 +3624,7 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, sh
   }
   async function approve(c) {
     if (!draft.risk) return;
-    const today = new Date(new Date().getTime()+9*3600*1000).toISOString().slice(0, 10);
+    const today = new Date().toISOString();  // SharePoint 저장값과 동일한 ISO — 표시 시점에 formatDateTime 이 KST 로 변환
     setEditing(null);
     try {
       const stillPending = await icsCheckStillPending(ICS_LISTS.requests, c.requestSpId, "Status", "submitted_self");
@@ -3641,7 +3648,7 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, sh
     }
   }
   async function reject(c) {
-    const today = new Date(new Date().getTime()+9*3600*1000).toISOString().slice(0, 10);
+    const today = new Date().toISOString();  // SharePoint 저장값과 동일한 ISO — 표시 시점에 formatDateTime 이 KST 로 변환
     setReturning(null);
     try {
       const stillPending = await icsCheckStillPending(ICS_LISTS.requests, c.requestSpId, "Status", "submitted_self");
@@ -6252,21 +6259,21 @@ async function loadIcsControls() {
     match.selfRisk = f.SelfRisk || null;
     match.selfComment = stripSpRichText(f.SelfCommentKo) || "";
     match.selfCommentEn = stripSpRichText(f.SelfCommentEn) || "";
-    match.selfDate = f.SelfDate ? String(f.SelfDate).slice(0, 10) : null;
+    match.selfDate = f.SelfDate ? String(f.SelfDate) : null;  // 원본 ISO 유지 - 표시 시점에 formatDateTime 으로 포맷
     match.actualSample = f.SampleCount !== undefined && f.SampleCount !== "" && f.SampleCount !== null ? Number(f.SampleCount) : null;
     match.reviewRisk = f.ReviewRisk || null;
     match.reviewComment = stripSpRichText(f.ReviewCommentKo) || "";
     match.reviewCommentEn = stripSpRichText(f.ReviewCommentEn) || "";
-    match.reviewDate = f.ReviewDate ? String(f.ReviewDate).slice(0, 10) : null;
+    match.reviewDate = f.ReviewDate ? String(f.ReviewDate) : null;  // 원본 ISO 유지 - 표시 시점에 formatDateTime 으로 포맷
     match.fsaStatus = f.FsaStatus || "not_started";
     match.fsaRisk = f.FsaRisk || null;
     match.fsaComment = stripSpRichText(f.FsaCommentKo) || "";
     match.fsaCommentEn = stripSpRichText(f.FsaCommentEn) || "";
-    match.fsaDate = f.FsaDate ? String(f.FsaDate).slice(0, 10) : null;
+    match.fsaDate = f.FsaDate ? String(f.FsaDate) : null;  // 원본 ISO 유지 - 표시 시점에 formatDateTime 으로 포맷
     match.fsaReviewRisk = f.FsaReviewRisk || null;
     match.fsaReviewComment = stripSpRichText(f.FsaReviewCommentKo) || "";
     match.fsaReviewCommentEn = stripSpRichText(f.FsaReviewCommentEn) || "";
-    match.fsaReviewDate = f.FsaReviewDate ? String(f.FsaReviewDate).slice(0, 10) : null;
+    match.fsaReviewDate = f.FsaReviewDate ? String(f.FsaReviewDate) : null;  // 원본 ISO 유지 - 표시 시점에 formatDateTime 으로 포맷
     match.attachments = f.AttachedFiles
       ? stripSpRichText(f.AttachedFiles).split(";").filter(Boolean).map((pair) => {
           const [name, webUrl] = pair.split("|");
