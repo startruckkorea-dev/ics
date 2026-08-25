@@ -588,6 +588,9 @@ const STR = {
       colSample: "샘플링",
       allAccessors: "전체 담당자",
     },
+    assess: {
+      searchPlaceholder: "통제명 · 코드 · 담당자 검색",
+    },
     finalReport: {
       title: "최종 결과 보고",
       subtitle: "회계연도 최종 결과 요약 및 CFO/RD 컨펌",
@@ -879,6 +882,9 @@ const STR = {
       tableTitle: "All control items — summary", downloadBtn: "Download Excel",
       colSample: "Sample",
       allAccessors: "All accessors",
+    },
+    assess: {
+      searchPlaceholder: "Search by control name, code, or accessor",
     },
     finalReport: {
       title: "Final Report",
@@ -2737,6 +2743,67 @@ function formatBytes(bytes) {
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
 }
 
+// 평가 화면 4종(ISA 1차·FSA 최종·ISA 2차·FSA 2차)이 공유하는 검색·필터 로직.
+// Admin은 전사 항목을 보게 되어 있어(설계 정책) 목록이 길어지므로, 스코프는 그대로 두고
+// 찾기만 쉽도록 검색어·부서·담당자 필터를 제공한다.
+function useAssessmentFilter(source, lang, users, departments) {
+  const [q, setQ] = useState("");
+  const [dept, setDept] = useState("");
+  const [person, setPerson] = useState("");
+
+  const deptOptions = [...new Set(source.map((c) => c.dept).filter(Boolean))]
+    .map((id) => ({ id, label: deptName(id, lang, departments) }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+  const personOptions = [...new Set(source.map((c) => (c.accessor || "").toLowerCase()).filter(Boolean))]
+    .map((email) => ({ email, label: personByEmail(email, lang, users) }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+
+  const query = q.trim().toLowerCase();
+  const apply = (list) => list.filter((c) => {
+    if (dept && c.dept !== dept) return false;
+    if (person && (c.accessor || "").toLowerCase() !== person) return false;
+    if (!query) return true;
+    return (c.code || "").toLowerCase().includes(query)
+      || cName(c, lang).toLowerCase().includes(query)
+      || personByEmail(c.accessor, lang, users).toLowerCase().includes(query);
+  });
+
+  const active = !!(query || dept || person);
+  const reset = () => { setQ(""); setDept(""); setPerson(""); };
+  return { q, setQ, dept, setDept, person, setPerson, deptOptions, personOptions, apply, active, reset };
+}
+
+// 평가 화면 공용 필터 바. 항목이 적을 때(12건 이하)는 표시하지 않는다.
+function AssessmentFilterBar({ f, t, minItems }) {
+  if (minItems <= 12 && !f.active) return null;
+  return (
+    <div className="bg-white rounded-xl border border-slate-100 p-4 mb-4 flex flex-wrap items-center gap-3">
+      <div className="relative flex-1 min-w-[180px]">
+        <Search size={15} className="absolute left-3 top-2.5 text-slate-400" />
+        <input
+          value={f.q}
+          onChange={(e) => f.setQ(e.target.value)}
+          placeholder={t("assess.searchPlaceholder")}
+          className={`${inputCls} pl-8`}
+        />
+      </div>
+      <select value={f.dept} onChange={(e) => f.setDept(e.target.value)} className={`${inputCls} w-auto`}>
+        <option value="">{t("common.allDept")}</option>
+        {f.deptOptions.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
+      </select>
+      <select value={f.person} onChange={(e) => f.setPerson(e.target.value)} className={`${inputCls} w-auto`}>
+        <option value="">{t("history.allAccessors")}</option>
+        {f.personOptions.map((o) => <option key={o.email} value={o.email}>{o.label}</option>)}
+      </select>
+      {f.active && (
+        <button onClick={f.reset} className="text-xs text-slate-500 hover:text-slate-700 flex items-center gap-1">
+          <X size={13} /> {t("common.resetFilter")}
+        </button>
+      )}
+    </div>
+  );
+}
+
 function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived, showToast, allowedDepts }) {
   const { lang, t } = useLang();
   const { departments, users } = useAppData();
@@ -2749,8 +2816,9 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
   // 부서 접근권한(allowedDepts)은 조회 범위를 정하는 값이라 평가 대상 판단에는 쓰지 않는다.
   const myControls = isAdmin ? controls : controls.filter((c) => (c.accessor || "").toLowerCase() === myEmail);
 
-  const todo = myControls.filter((c) => c.status === "not_started" || c.status === "returned");
-  const inProgress = myControls.filter((c) => c.status === "submitted_self" || c.status === "completed");
+  const f = useAssessmentFilter(myControls, lang, users, departments);
+  const todo = f.apply(myControls.filter((c) => c.status === "not_started" || c.status === "returned"));
+  const inProgress = f.apply(myControls.filter((c) => c.status === "submitted_self" || c.status === "completed"));
 
   function startEdit(c) {
     setEditing(c.id);
@@ -2852,6 +2920,8 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
         title={t("self.title")}
         subtitle={isAdmin ? t("self.subtitleAdmin") : `${pName(currentUser.name, lang, users)}${t("self.subtitleUser")}`}
       />
+
+      <AssessmentFilterBar f={f} t={t} minItems={myControls.length} />
 
       <div className="mb-6">
         <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
@@ -3146,9 +3216,10 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
   // FSA 최종 자가평가도 본인이 1차 담당자(Accessor)로 배정된 항목만 대상이다.
   const myControls = isAdmin ? controls : controls.filter((c) => (c.accessor || "").toLowerCase() === myEmail);
 
+  const f = useAssessmentFilter(myControls, lang, users, departments);
   const isaDone = myControls.filter((c) => c.status === "completed");
-  const todo = isaDone.filter((c) => c.fsaStatus === "not_started" || c.fsaStatus === "returned" || !c.fsaStatus);
-  const submitted = isaDone.filter((c) => c.fsaStatus === "submitted_self" || c.fsaStatus === "completed");
+  const todo = f.apply(isaDone.filter((c) => c.fsaStatus === "not_started" || c.fsaStatus === "returned" || !c.fsaStatus));
+  const submitted = f.apply(isaDone.filter((c) => c.fsaStatus === "submitted_self" || c.fsaStatus === "completed"));
   const waitingIsa = myControls.filter((c) => c.status !== "completed").length;
 
   function startEdit(c) {
@@ -3228,6 +3299,8 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
         subtitle={isAdmin ? t("fsa.subtitleAdmin") : `${pName(currentUser.name, lang, users)}${t("fsa.subtitleUser")}`}
       />
       <p className="text-sm text-slate-500 bg-white border border-slate-100 rounded-xl p-4 mb-6">{t("fsa.desc")}</p>
+
+      <AssessmentFilterBar f={f} t={t} minItems={isaDone.length} />
 
       <div className="mb-6">
         <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
@@ -3342,8 +3415,10 @@ function FSAReviewPage({ controls, setControls, currentUser, addLog, isArchived,
   // 이메일은 마스터 표기(대문자 혼입)와 M365 토큰 값이 다를 수 있어 항상 소문자로 맞춰 비교한다.
   const myEmail = (currentUser.email || "").toLowerCase();
   const isMyReview = (c) => (c.reviewer || "").toLowerCase() === myEmail;
-  const pending = controls.filter((c) => c.fsaStatus === "submitted_self" && (isAdmin || isMyReview(c) || (allowedDepts && allowedDepts.includes(c.dept))));
-  const done = controls.filter((c) => (c.fsaStatus === "completed" || c.fsaStatus === "returned") && (isAdmin || isMyReview(c) || (allowedDepts && allowedDepts.includes(c.dept))));
+  const inScope = controls.filter((c) => isAdmin || isMyReview(c) || (allowedDepts && allowedDepts.includes(c.dept)));
+  const f = useAssessmentFilter(inScope, lang, users, departments);
+  const pending = f.apply(inScope.filter((c) => c.fsaStatus === "submitted_self"));
+  const done = f.apply(inScope.filter((c) => c.fsaStatus === "completed" || c.fsaStatus === "returned"));
 
   function startEdit(c) {
     setEditing(c.id);
@@ -3415,6 +3490,8 @@ function FSAReviewPage({ controls, setControls, currentUser, addLog, isArchived,
         title={t("fsaReview.title")}
         subtitle={isAdmin ? t("fsaReview.subtitleAdmin") : `${pName(currentUser.name, lang, users)}${t("fsaReview.subtitleUser")}`}
       />
+
+      <AssessmentFilterBar f={f} t={t} minItems={inScope.length} />
 
       <div className="mb-6">
         <h3 className="text-sm font-semibold text-slate-700 mb-3">{t("fsaReview.pending")} ({pending.length})</h3>
@@ -3534,8 +3611,10 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, sh
   // 이메일은 마스터 표기(대문자 혼입)와 M365 토큰 값이 다를 수 있어 항상 소문자로 맞춰 비교한다.
   const myEmail = (currentUser.email || "").toLowerCase();
   const isMyReview = (c) => (c.reviewer || "").toLowerCase() === myEmail;
-  const pending = controls.filter((c) => c.status === "submitted_self" && (isAdmin || isMyReview(c) || (allowedDepts && allowedDepts.includes(c.dept))));
-  const done = controls.filter((c) => (c.status === "completed" || c.status === "returned") && (isAdmin || isMyReview(c) || (allowedDepts && allowedDepts.includes(c.dept))));
+  const inScope = controls.filter((c) => isAdmin || isMyReview(c) || (allowedDepts && allowedDepts.includes(c.dept)));
+  const f = useAssessmentFilter(inScope, lang, users, departments);
+  const pending = f.apply(inScope.filter((c) => c.status === "submitted_self"));
+  const done = f.apply(inScope.filter((c) => c.status === "completed" || c.status === "returned"));
 
   function startEdit(c) {
     setEditing(c.id);
@@ -3599,6 +3678,8 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, sh
         title={t("review.title")}
         subtitle={isAdmin ? t("review.subtitleAdmin") : `${pName(currentUser.name, lang, users)}${t("review.subtitleUser")}`}
       />
+
+      <AssessmentFilterBar f={f} t={t} minItems={inScope.length} />
 
 
       <div className="mb-6">
