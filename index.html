@@ -1917,21 +1917,21 @@ function LearnPage({ currentUser, learnContent, setLearnContent, learnVideos, se
         </h3>
         <p className="text-xs text-slate-400 mb-4">{t("learn.sampleTableDesc")}</p>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm border-collapse">
+          <table className="text-sm border-collapse rounded-lg overflow-hidden" style={{ width: "auto", maxWidth: 640 }}>
             <thead>
               <tr>
-                <th className="text-left text-xs font-medium text-slate-500 px-3 py-2 bg-slate-50 rounded-l-lg">{t("learn.sampleTableImportanceHeader")}</th>
+                <th className="text-left text-xs font-medium text-slate-500 px-4 py-2.5 bg-slate-50 whitespace-nowrap border-b border-slate-100">{t("learn.sampleTableImportanceHeader")}</th>
                 {FREQUENCY_OPTIONS.map((f) => (
-                  <th key={f.id} className="text-center text-xs font-medium text-slate-500 px-3 py-2 bg-slate-50">{f[lang]}</th>
+                  <th key={f.id} className="text-center text-xs font-medium text-slate-500 px-4 py-2.5 bg-slate-50 whitespace-nowrap border-b border-slate-100">{f[lang]}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {IMPORTANCE_OPTIONS.map((im, i) => (
                 <tr key={im.id} className={i % 2 === 1 ? "bg-slate-50/50" : ""}>
-                  <td className="px-3 py-2.5 text-slate-700 font-medium">{im[lang]}</td>
+                  <td className="px-4 py-2 text-slate-700 font-medium whitespace-nowrap">{im[lang]}</td>
                   {FREQUENCY_OPTIONS.map((f) => (
-                    <td key={f.id} className="text-center px-3 py-2.5 text-slate-600">
+                    <td key={f.id} className="text-center px-4 py-2 text-slate-600 whitespace-nowrap tabular-nums">
                       {recommendedSample(im.id, f.id)}{t("common.items")}
                     </td>
                   ))}
@@ -6675,6 +6675,9 @@ async function icsBoot(account) {
     // 카테고리 접근 권한 화면에서 직접 추가한 사용자는 Users 시트에 없으므로,
     // ICS_CategoryAccess 목록에만 있는 이메일을 사용자 목록에 병합해 다음 접속에도 유지되게 한다.
     {
+      // [주의] 여기서 병합된 계정은 사용자 마스터에 없으므로 로그인 게이트를 통과시키지 않는다.
+      // 카테고리 접근 권한 화면의 표에만 나타나도록 canLogin: false 로 표시해 둔다.
+      // (표시 전용으로 병합하지 않으면 관리자가 부여해 둔 권한이 화면에서 사라진다)
       const known = new Set(INITIAL_USERS.map((u) => (u.email || "").toLowerCase()));
       let extra = 0;
       Object.keys(ICS_CATEGORY_ACCESS).forEach((email) => {
@@ -6682,10 +6685,10 @@ async function icsBoot(account) {
         extra++;
         INITIAL_USERS.push({
           id: `ua${extra}`, email, name: email, nameEn: email,
-          role: "guest", dept: null, fromAccessList: true,
+          role: "guest", dept: null, fromAccessList: true, canLogin: false,
         });
       });
-      if (extra) console.log(`[ICS] CategoryAccess 목록에서 사용자 ${extra}명 병합`);
+      if (extra) console.log(`[ICS] CategoryAccess 목록에서 사용자 ${extra}명 병합 (표시 전용, 로그인 불가)`);
     }
 
     // Users 시트의 Role 대신, 권한 관리 화면에서 직접 지정한 RoleOverride가 있으면 그걸로 덮어쓴다
@@ -6720,7 +6723,9 @@ async function icsBoot(account) {
     account.idTokenClaims?.preferred_username,
   ].filter(Boolean).map((e) => e.toLowerCase());
   const myEmail = candidateEmails[0] || "";
-  let matched = INITIAL_USERS.find(u => candidateEmails.includes(u.email.toLowerCase()));
+  // canLogin === false 인 항목은 카테고리 접근 권한 표시용으로만 병합된 계정이므로
+  // 사용자 마스터(employee_search.xlsx)에 등록된 것으로 보지 않는다.
+  let matched = INITIAL_USERS.find(u => u.canLogin !== false && candidateEmails.includes(u.email.toLowerCase()));
   if (!matched) {
     // 사용자 마스터(employee_search.xlsx)에 없는 계정은 접근을 차단한다.
     // 예전에는 guest 로 들여보냈으나, guest 가 전 부서 조회 권한을 갖는 구조라
