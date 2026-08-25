@@ -554,8 +554,6 @@ const STR = {
       rejectReasonPlaceholder: "담당자에게 전달할 반려 사유를 입력하세요.",
       noPending: "검토 대기 중인 항목이 없습니다.", noDone: "검토 이력이 없습니다.",
       reviewBtn: "검토하기", noAttachments: "첨부된 샘플링 자료 없음",
-      pendingEditTitle: "통제 항목 변경 승인 대기",
-      pendingEditDesc: "담당자(Accessor)가 수정 요청한 통제 항목 내용입니다. 검토자 또는 관리자가 승인해야 실제 내용에 반영됩니다.",
       noPendingEdit: "승인 대기 중인 통제 항목 변경이 없습니다.",
       beforeLabel: "변경 전", afterLabel: "변경 후",
       approveEditBtn: "변경 승인", rejectEditBtn: "변경 반려",
@@ -848,8 +846,6 @@ const STR = {
       rejectReasonPlaceholder: "Enter the reason to send back to the accessor.",
       noPending: "No items awaiting review.", noDone: "No review history yet.",
       reviewBtn: "Review", noAttachments: "No sampling evidence attached",
-      pendingEditTitle: "Control item changes awaiting approval",
-      pendingEditDesc: "These are control item edits requested by an Accessor. A reviewer or admin must approve them before they take effect.",
       noPendingEdit: "No control item changes are awaiting approval.",
       beforeLabel: "Before", afterLabel: "After",
       approveEditBtn: "Approve change", rejectEditBtn: "Reject change",
@@ -1691,8 +1687,8 @@ function LearnPage({ currentUser, learnContent, setLearnContent, learnVideos, se
                           onChange={(e) => setRenameDraft(e.target.value)}
                           onKeyDown={(e) => e.key === "Enter" && saveRename()}
                         />
-                        <button onClick={saveRename} className="text-teal-600 flex-shrink-0"><Check size={14} /></button>
-                        <button onClick={() => setRenamingId(null)} className="text-slate-400 flex-shrink-0"><X size={14} /></button>
+                        <button onClick={saveRename} aria-label={t("common.save")} title={t("common.save")} className="text-teal-600 flex-shrink-0"><Check size={14} /></button>
+                        <button onClick={() => setRenamingId(null)} aria-label={t("common.cancel")} title={t("common.cancel")} className="text-slate-400 flex-shrink-0"><X size={14} /></button>
                       </div>
                     ) : (
                       <p className="text-xs text-slate-600 truncate flex-1">
@@ -1931,7 +1927,7 @@ function ControlList({ controls: allControls, filter, setFilter, isAdmin, allowe
   const LIST_PAGE_SIZE = 20;
 
   const myEmail = (currentUser?.email || "").toLowerCase();
-  const scoped = isAdmin ? allControls : allControls.filter((c) => c.accessor === myEmail || c.reviewer === myEmail || (allowedDepts && allowedDepts.includes(c.dept)));
+  const scoped = isAdmin ? allControls : allControls.filter((c) => (c.accessor || "").toLowerCase() === myEmail || (c.reviewer || "").toLowerCase() === myEmail || (allowedDepts && allowedDepts.includes(c.dept)));
   const scopedDeptIds = [...new Set(scoped.map((c) => c.dept))];
   const visibleDeptOptions = isAdmin ? departments : departments.filter((d) => scopedDeptIds.includes(d.id));
 
@@ -2267,7 +2263,7 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
   const fileInputRef = useRef(null);
 
   const myEmail = (currentUser?.email || "").toLowerCase();
-  const scoped = isAdmin ? allControls : allControls.filter((c) => c.accessor === myEmail || c.reviewer === myEmail || (allowedDepts && allowedDepts.includes(c.dept)));
+  const scoped = isAdmin ? allControls : allControls.filter((c) => (c.accessor || "").toLowerCase() === myEmail || (c.reviewer || "").toLowerCase() === myEmail || (allowedDepts && allowedDepts.includes(c.dept)));
   const scopedDeptIds = [...new Set(scoped.map((c) => c.dept))];
   const visibleDeptOptions = isAdmin ? departments : departments.filter((d) => scopedDeptIds.includes(d.id));
   const list = deptFilter ? scoped.filter((c) => c.dept === deptFilter) : scoped;
@@ -2416,7 +2412,8 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
     setCodeError("");
   }
   function openEdit(c) {
-    const src = c.pendingEdit || c;
+    // pendingEdit(수정 요청 → 승인 대기) 흐름은 2026-07-30(895c3f6)에 제거되어 항상 null 이다.
+    const src = c;
     setForm({ code: src.code, dept: src.dept, cat: src.cat, name: src.name, desc: src.desc, accessor: src.accessor, reviewer: src.reviewer, frequency: src.frequency, importance: src.importance });
     setEditingId(c.id);
     setCodeError("");
@@ -2588,16 +2585,11 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
           </thead>
           <tbody className="divide-y divide-slate-50">
             {pagedList.map((c) => (
-              <tr key={c.id} onClick={() => setDetail(c)} className={"cursor-pointer hover:bg-slate-50" + (c.pendingEdit ? " bg-amber-50/60" : "")}>
+              <tr key={c.id} onClick={() => setDetail(c)} className="cursor-pointer hover:bg-slate-50">
                 <td className="px-4 py-3 text-slate-500 text-xs font-mono whitespace-nowrap">{c.code}</td>
                 <td className="px-4 py-3 text-slate-700 font-medium">
                   <div className="flex items-center gap-2">
                     <span className="max-w-[340px] truncate" title={cName(c, lang)}>{cName(c, lang)}</span>
-                    {c.pendingEdit && (
-                      <span className="flex-shrink-0 inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full whitespace-nowrap" style={{ backgroundColor: "#FBEDDC", color: "#8A5A0C" }}>
-                        <Clock size={11} /> {t("manage.pendingBadge")}
-                      </span>
-                    )}
                   </div>
                 </td>
                 <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{deptName(c.dept, lang, departments)}</td>
@@ -3347,8 +3339,11 @@ function FSAReviewPage({ controls, setControls, currentUser, addLog, isArchived,
   const [detail, setDetail] = useState(null);
 
   const isAdmin = currentUser.role === "admin";
-  const pending = controls.filter((c) => c.fsaStatus === "submitted_self" && (isAdmin || c.reviewer === currentUser.email || (allowedDepts && allowedDepts.includes(c.dept))));
-  const done = controls.filter((c) => (c.fsaStatus === "completed" || c.fsaStatus === "returned") && (isAdmin || c.reviewer === currentUser.email || (allowedDepts && allowedDepts.includes(c.dept))));
+  // 이메일은 마스터 표기(대문자 혼입)와 M365 토큰 값이 다를 수 있어 항상 소문자로 맞춰 비교한다.
+  const myEmail = (currentUser.email || "").toLowerCase();
+  const isMyReview = (c) => (c.reviewer || "").toLowerCase() === myEmail;
+  const pending = controls.filter((c) => c.fsaStatus === "submitted_self" && (isAdmin || isMyReview(c) || (allowedDepts && allowedDepts.includes(c.dept))));
+  const done = controls.filter((c) => (c.fsaStatus === "completed" || c.fsaStatus === "returned") && (isAdmin || isMyReview(c) || (allowedDepts && allowedDepts.includes(c.dept))));
 
   function startEdit(c) {
     setEditing(c.id);
@@ -3536,8 +3531,11 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, sh
   const [detail, setDetail] = useState(null);
 
   const isAdmin = currentUser.role === "admin";
-  const pending = controls.filter((c) => c.status === "submitted_self" && (isAdmin || c.reviewer === currentUser.email || (allowedDepts && allowedDepts.includes(c.dept))));
-  const done = controls.filter((c) => (c.status === "completed" || c.status === "returned") && (isAdmin || c.reviewer === currentUser.email || (allowedDepts && allowedDepts.includes(c.dept))));
+  // 이메일은 마스터 표기(대문자 혼입)와 M365 토큰 값이 다를 수 있어 항상 소문자로 맞춰 비교한다.
+  const myEmail = (currentUser.email || "").toLowerCase();
+  const isMyReview = (c) => (c.reviewer || "").toLowerCase() === myEmail;
+  const pending = controls.filter((c) => c.status === "submitted_self" && (isAdmin || isMyReview(c) || (allowedDepts && allowedDepts.includes(c.dept))));
+  const done = controls.filter((c) => (c.status === "completed" || c.status === "returned") && (isAdmin || isMyReview(c) || (allowedDepts && allowedDepts.includes(c.dept))));
 
   function startEdit(c) {
     setEditing(c.id);
@@ -5425,9 +5423,13 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
     setLog((prev) => [{ id: uid("log"), date: today, actor, actionKey, code, name, nameEn, year: selectedYear }, ...prev]);
     if (usingSharePointData) {
       const detail = name ? (nameEn && nameEn !== name ? `${name} / ${nameEn}` : name) : "";
-      icsCreateItem(ICS_LISTS.log, { Title: actionKey, ActorEmail: actor, ControlId: code, Detail: detail }).catch((e) =>
-        console.warn("[ICS] 로그 저장 실패:", e.message)
-      );
+      icsCreateItem(ICS_LISTS.log, { Title: actionKey, ActorEmail: actor, ControlId: code, Detail: detail }).catch((e) => {
+        console.warn("[ICS] 로그 저장 실패:", e.message);
+        // 활동 로그는 감사 대응 근거자료라 조용히 실패하면 안 된다.
+        showToast(lang === "en"
+          ? "Saved, but the activity log could not be recorded. Please notify IT."
+          : "처리는 완료되었으나 활동 로그 저장에 실패했습니다. IT로 알려주세요.");
+      });
     }
   }
 
