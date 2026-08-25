@@ -6396,6 +6396,25 @@ async function loadIcsUiStrings(token) {
 
 // ICS 전용 마스터 설정 파일(ics_category_access.xlsx) 하나에서 사용자/부서/샘플링기준/문의이메일/카테고리권한을 전부 읽어온다.
 // 시트 구성: Users / Departments / SamplingMatrix / Contact / CategoryAccess (시트가 없으면 해당 항목만 코드 기본값 유지)
+// APS 전 시스템이 공용으로 쓰는 직원 마스터. ics_category_access.xlsx 와 같은 문서 라이브러리에 있다.
+// 실패해도 예외를 던지지 않고 null 을 돌려주어, Users 시트만으로도 앱이 뜨도록 한다.
+async function loadIcsEmployeeRows(token) {
+  try {
+    const docDriveId = await getIcsDocDriveId(token);
+    const res = await fetch(`${GRAPH}/drives/${docDriveId}/root:/employee_search.xlsx:/content`,
+      { headers: { Authorization: "Bearer " + token }, cache: "no-cache" });
+    if (!res.ok) throw new Error(`employee_search.xlsx not found (${res.status})`);
+    const buf = await res.arrayBuffer();
+    const wb = XLSX.read(buf, { type: "array" });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    if (!sheet) throw new Error("시트 없음");
+    return XLSX.utils.sheet_to_json(sheet, { header: 1 });
+  } catch (e) {
+    console.warn("[ICS] employee_search.xlsx 로드 실패:", e.message);
+    return null;
+  }
+}
+
 async function loadIcsMasterConfig(token) {
   const docDriveId = await getIcsDocDriveId(token);
   const res = await fetch(`${GRAPH}/drives/${docDriveId}/root:/ics_category_access.xlsx:/content`, { headers: { Authorization: "Bearer " + token }, cache: "no-cache" });
@@ -6454,36 +6473,64 @@ async function loadIcsMasterConfig(token) {
     if (email) ICS_CONTACT_EMAIL = email;
   }
 
-  // --- Users 시트(필수): Email | NameKo | NameEn | Role(accessor/reviewer/admin/cfo/rd, 비어있으면 guest) | Dept(accessor/reviewer만 해당) ---
-  // 전 직원 명단을 그대로 긁어와도(Role 빈칸인 사람 다수) 전부 포함시킨다 - 카테고리 접근 권한 화면에서 누구에게나 권한을 부여할 수 있어야 하므로.
-  const userRows = sheetRows("Users");
-  if (!userRows || userRows.length < 2) throw new Error("ics_category_access.xlsx의 Users 시트에서 사용자 정보를 찾지 못함");
-  const uHeader = userRows[0].map((h) => String(h || "").trim());
-  const emailIdx = colIdx(uHeader, "Email");
-  const nameKoIdx = colIdx(uHeader, "NameKo");
-  const nameEnIdx = colIdx(uHeader, "NameEn");
-  const roleIdx = colIdx(uHeader, "Role");
-  const deptIdx = colIdx(uHeader, "Dept");
+  // --- 사용자 마스터: employee_search.xlsx (APS 전 시스템 공용) ---
+  // 열: Company | Department | Team | EngName | EMail | WMC | Boss | Boss of Boss
+  // ICS 역할(Accessor/Reviewer/Admin/CFO/RD)은 이 파일에 없으므로 전원 guest 로 시작하고,
+  // 실제 역할은 ICS_CategoryAccess 목록의 RoleOverride 에서 덮어쓴다(기존과 동일한 흐름).
   const ROLE_PRIORITY = { admin: 0, rd: 1, cfo: 2, reviewer: 3, accessor: 4, guest: 5 };
   const byEmail = {};
-  userRows.slice(1).forEach((row) => {
-    const email = emailIdx >= 0 ? String(row[emailIdx] || "").trim().toLowerCase() : "";
-    if (!email) return;
-    let role = roleIdx >= 0 ? String(row[roleIdx] || "").trim().toLowerCase() : "";
-    if (!(role in ROLE_PRIORITY)) role = "guest"; // ICS 역할이 없는 일반 직원 - 로그인은 가능, 카테고리 권한으로만 화면 노출 제어
-    const nameKo = nameKoIdx >= 0 ? String(row[nameKoIdx] || "").trim() : "";
-    const nameEn = nameEnIdx >= 0 ? String(row[nameEnIdx] || "").trim() : "";
-    const dept = deptIdx >= 0 ? String(row[deptIdx] || "").trim() : "";
-    const u = {
-      email, name: nameKo || email, nameEn: nameEn || nameKo || email, role,
-      dept: (role === "accessor" || role === "reviewer") && dept ? dept : null,
-    };
-    // 한 이메일이 여러 역할에 동시 등록된 경우, 더 높은 권한 역할을 우선 적용
-    const existing = byEmail[email];
-    if (!existing || ROLE_PRIORITY[role] < ROLE_PRIORITY[existing.role]) byEmail[email] = u;
-  });
+
+  const empRows = await loadIcsEmployeeRows(token);
+  if (empRows && empRows.length > 1) {
+    const eHeader = empRows[0].map((h) => String(h || "").trim());
+    const eMailIdx = colIdx(eHeader, "EMail") >= 0 ? colIdx(eHeader, "EMail") : colIdx(eHeader, "Email");
+    const eNameIdx = colIdx(eHeader, "EngName");
+    const eDeptIdx = colIdx(eHeader, "Department");
+    empRows.slice(1).forEach((row) => {
+      const email = eMailIdx >= 0 ? String(row[eMailIdx] || "").trim().toLowerCase() : "";
+      if (!email) return;
+      const nm = eNameIdx >= 0 ? String(row[eNameIdx] || "").trim() : "";
+      byEmail[email] = {
+        email, name: nm || email, nameEn: nm || email, role: "guest", dept: null,
+        deptLabel: eDeptIdx >= 0 ? String(row[eDeptIdx] || "").trim() : "",
+      };
+    });
+    console.log(`[ICS] employee_search.xlsx 사용자 ${Object.keys(byEmail).length}명 로드`);
+  } else {
+    console.warn("[ICS] employee_search.xlsx 를 읽지 못함 - Users 시트로 대체 시도");
+  }
+
+  // Users 시트는 보조 명단으로만 쓴다.
+  // employee_search 에 없는 계정(외부 감사인·이관 대기 등)이 조용히 사라지지 않도록 병합한다.
+  // 시트가 없거나 비어 있어도 오류로 처리하지 않는다.
+  const userRows = sheetRows("Users");
+  if (userRows && userRows.length > 1) {
+    const uHeader = userRows[0].map((h) => String(h || "").trim());
+    const emailIdx = colIdx(uHeader, "Email");
+    const nameKoIdx = colIdx(uHeader, "NameKo");
+    const nameEnIdx = colIdx(uHeader, "NameEn");
+    const roleIdx = colIdx(uHeader, "Role");
+    const deptIdx = colIdx(uHeader, "Dept");
+    let merged = 0;
+    userRows.slice(1).forEach((row) => {
+      const email = emailIdx >= 0 ? String(row[emailIdx] || "").trim().toLowerCase() : "";
+      if (!email || byEmail[email]) return; // employee_search 값을 우선한다
+      let role = roleIdx >= 0 ? String(row[roleIdx] || "").trim().toLowerCase() : "";
+      if (!(role in ROLE_PRIORITY)) role = "guest";
+      const nameKo = nameKoIdx >= 0 ? String(row[nameKoIdx] || "").trim() : "";
+      const nameEn = nameEnIdx >= 0 ? String(row[nameEnIdx] || "").trim() : "";
+      const dept = deptIdx >= 0 ? String(row[deptIdx] || "").trim() : "";
+      byEmail[email] = {
+        email, name: nameKo || email, nameEn: nameEn || nameKo || email, role,
+        dept: (role === "accessor" || role === "reviewer") && dept ? dept : null,
+      };
+      merged++;
+    });
+    if (merged) console.log(`[ICS] Users 시트에서 ${merged}명 추가 병합 (employee_search 미등록 계정)`);
+  }
+
   const dedupedUsers = Object.values(byEmail);
-  if (!dedupedUsers.length) throw new Error("ics_category_access.xlsx Users 시트에서 유효한 사용자를 하나도 찾지 못함");
+  if (!dedupedUsers.length) throw new Error("사용자 명단을 찾지 못했습니다 (employee_search.xlsx · Users 시트 모두 비어 있음)");
   INITIAL_USERS.length = 0;
   dedupedUsers.forEach((u, i) => { u.id = `u${i + 1}`; INITIAL_USERS.push(u); });
   // 카테고리 접근 권한은 더 이상 이 Excel 시트에서 읽지 않는다 - loadIcsCategoryAccessList()가 ICS_CategoryAccess
