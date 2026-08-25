@@ -1978,7 +1978,7 @@ function ControlList({ controls: allControls, filter, setFilter, isAdmin, allowe
               return (
                 <tr key={c.id} onClick={() => setDetail(c)} className={`cursor-pointer transition-colors hover:bg-slate-100/70 ${i % 2 === 1 ? "bg-slate-50/50" : ""}`}>
                   <td className="pl-3 pr-4 py-3 text-slate-500 text-xs font-mono whitespace-nowrap" style={{ boxShadow: `inset 3px 0 0 ${RISK_META[risk].color}` }}>{c.code}</td>
-                  <td className="px-4 py-3 text-slate-700 font-medium"><div className="max-w-[320px] truncate" title={cName(c, lang)}>{cName(c, lang)}</div></td>
+                  <td className="px-4 py-3 text-slate-700 font-medium"><div className="max-w-[420px] truncate" title={cName(c, lang)}>{cName(c, lang)}</div></td>
                   <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{deptName(c.dept, lang, departments)}</td>
                   <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{catName(c.cat, lang)}</td>
                   <td className="px-4 py-3 text-slate-600"><div className="max-w-[180px] truncate" title={personByEmail(c.accessor, lang, users)}>{personByEmail(c.accessor, lang, users)}</div></td>
@@ -2508,13 +2508,13 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-slate-500 text-xs">
             <tr>
-              <th className="text-left font-medium px-4 py-3">{t("list.colCode")}</th>
-              <th className="text-left font-medium px-4 py-3">{t("list.colName")}</th>
-              <th className="text-left font-medium px-4 py-3">{t("list.colDept")}</th>
-              <th className="text-left font-medium px-4 py-3">{t("list.colCat")}</th>
-              <th className="text-left font-medium px-4 py-3">{t("list.colAccessor")}</th>
-              <th className="text-left font-medium px-4 py-3">{t("list.colReviewer")}</th>
-              <th className="text-left font-medium px-4 py-3">{t("manage.colSample")}</th>
+              <th className="text-left font-medium px-4 py-3 whitespace-nowrap">{t("list.colCode")}</th>
+              <th className="text-left font-medium px-4 py-3 whitespace-nowrap">{t("list.colName")}</th>
+              <th className="text-left font-medium px-4 py-3 whitespace-nowrap">{t("list.colDept")}</th>
+              <th className="text-left font-medium px-4 py-3 whitespace-nowrap">{t("list.colCat")}</th>
+              <th className="text-left font-medium px-4 py-3 whitespace-nowrap">{t("list.colAccessor")}</th>
+              <th className="text-left font-medium px-4 py-3 whitespace-nowrap">{t("list.colReviewer")}</th>
+              <th className="text-left font-medium px-4 py-3 whitespace-nowrap">{t("manage.colSample")}</th>
               {canEdit && <th className="text-right font-medium px-4 py-3"> </th>}
             </tr>
           </thead>
@@ -2523,18 +2523,20 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
               <tr key={c.id} onClick={() => setDetail(c)} className={"cursor-pointer hover:bg-slate-50" + (c.pendingEdit ? " bg-amber-50/60" : "")}>
                 <td className="px-4 py-3 text-slate-500 text-xs font-mono whitespace-nowrap">{c.code}</td>
                 <td className="px-4 py-3 text-slate-700 font-medium">
-                  {cName(c, lang)}
-                  {c.pendingEdit && (
-                    <span className="ml-2 inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full" style={{ backgroundColor: "#FBEDDC", color: "#8A5A0C" }}>
-                      <Clock size={11} /> {t("manage.pendingBadge")}
-                    </span>
-                  )}
+                  <div className="flex items-center gap-2">
+                    <span className="max-w-[400px] truncate" title={cName(c, lang)}>{cName(c, lang)}</span>
+                    {c.pendingEdit && (
+                      <span className="flex-shrink-0 inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full whitespace-nowrap" style={{ backgroundColor: "#FBEDDC", color: "#8A5A0C" }}>
+                        <Clock size={11} /> {t("manage.pendingBadge")}
+                      </span>
+                    )}
+                  </div>
                 </td>
-                <td className="px-4 py-3 text-slate-600">{deptName(c.dept, lang, departments)}</td>
-                <td className="px-4 py-3 text-slate-600">{catName(c.cat, lang)}</td>
-                <td className="px-4 py-3 text-slate-600">{personByEmail(c.accessor, lang, users)}</td>
-                <td className="px-4 py-3 text-slate-600">{personByEmail(c.reviewer, lang, users)}</td>
-                <td className="px-4 py-3 text-slate-600 text-xs">{freqLabel(c.frequency, lang)} · {importanceLabel(c.importance, lang)} · {c.sampleSize}{t("common.items")}</td>
+                <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{deptName(c.dept, lang, departments)}</td>
+                <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{catName(c.cat, lang)}</td>
+                <td className="px-4 py-3 text-slate-600"><div className="max-w-[210px] truncate" title={personByEmail(c.accessor, lang, users)}>{personByEmail(c.accessor, lang, users)}</div></td>
+                <td className="px-4 py-3 text-slate-600"><div className="max-w-[210px] truncate" title={personByEmail(c.reviewer, lang, users)}>{personByEmail(c.reviewer, lang, users)}</div></td>
+                <td className="px-4 py-3 text-slate-600 text-xs whitespace-nowrap">{freqLabel(c.frequency, lang)} · {importanceLabel(c.importance, lang)} · {c.sampleSize}{t("common.items")}</td>
                 {canEdit && (
                   <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-end gap-2">
@@ -5170,7 +5172,7 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
           )}
 
           <div className="flex-1 overflow-y-auto p-6">
-            <div className="max-w-6xl mx-auto">
+            <div className="max-w-[1600px] mx-auto">
             {page === "dashboard" && <Dashboard controls={controlsForYear} goTo={goTo} isAdmin={isAdmin} allowedDepts={allowedDepts} />}
             {page === "learn" && (
               <LearnPage
