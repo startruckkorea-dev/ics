@@ -267,6 +267,7 @@ const ACTION_LABELS = {
   edit_rejected: { ko: "통제 항목 변경 반려", en: "Control item change rejected" },
   bulk_upload: { ko: "엑셀 일괄 업로드", en: "Bulk upload from Excel" },
   cfo_confirm: { ko: "CFO 최종 결과 컨펌", en: "CFO confirmed final results" },
+  start_new_year: { ko: "새 회계연도 시작", en: "Started new fiscal year" },
   rd_confirm: { ko: "RD 최종 결과 컨펌", en: "RD confirmed final results" },
   cfo_cancel: { ko: "CFO 최종 결과 컨펌 취소", en: "CFO cancelled final confirmation" },
   rd_cancel: { ko: "RD 최종 결과 컨펌 취소", en: "RD cancelled final confirmation" },
@@ -403,6 +404,10 @@ function buildArchiveYearControls(sourceControls, sourceYear, newYear) {
     .map((c) => ({
       ...c,
       id: uid(),
+      // SharePoint 식별자는 반드시 초기화한다. 그대로 두면 새 연도 항목이
+      // 이전 연도와 같은 목록 항목을 가리켜, 평가 제출 시 이전 연도를 덮어쓴다.
+      spId: null,
+      requestSpId: null,
       year: newYear,
       status: "not_started",
       selfRisk: null,
@@ -679,6 +684,9 @@ const STR = {
       yearListTitle: "등록된 연도",
       yearControlsCount: "통제 항목",
       startNewYearBtn: "새 회계연도 시작",
+      yearProgressTitle: "새 회계연도를 준비하고 있습니다",
+      yearProgressNotice: "통제 항목을 복제하는 중입니다. 창을 닫거나 새로고침하지 마세요.",
+      yearProgressFailed: "실패",
       startNewYearAdminOnly: "새 회계연도 시작은 관리자만 가능합니다.",
       yearConfirmRequired: "CFO와 RD의 최종 결과 컨펌이 모두 완료되어야 다음 회계연도를 시작할 수 있습니다.",
       confirmTitle: "새 회계연도를 시작할까요?",
@@ -974,6 +982,9 @@ const STR = {
       yearListTitle: "Registered years",
       yearControlsCount: "control items",
       startNewYearBtn: "Start new fiscal year",
+      yearProgressTitle: "Preparing the new fiscal year",
+      yearProgressNotice: "Copying control items. Please do not close or refresh this page.",
+      yearProgressFailed: "Failed",
       startNewYearAdminOnly: "Only admins can start a new fiscal year.",
       yearConfirmRequired: "Both the CFO and RD must confirm the final results before the next fiscal year can start.",
       confirmTitle: "Start a new fiscal year?",
@@ -4366,9 +4377,9 @@ function SettingsPage({ currentUser, years, selectedYear, activeYear, startNewYe
   const [confirming, setConfirming] = useState(false);
   const nextYear = String(Number(activeYear) + 1);
 
-  function confirmStart() {
-    startNewYear(nextYear);
-    setConfirming(false);
+  async function confirmStart() {
+    setConfirming(false);       // 진행률 오버레이가 보이도록 확인 모달을 먼저 닫는다
+    await startNewYear(nextYear);
   }
 
   return (
@@ -5434,6 +5445,8 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
 
   const [currentUserId] = useState(initialUserId || INITIAL_USERS[0]?.id);
   const [listFilter, setListFilter] = useState({ dept: "", cat: "", risk: "", status: "" });
+  // 새 회계연도 생성 진행률 ({done, total, failed}) - 진행 중에는 화면 조작을 막는다.
+  const [yearProgress, setYearProgress] = useState(null);
   const [permissions, setPermissions] = useState(() => computeInitialPermissions(usingSharePointData ? initialControls : INITIAL_CONTROLS));
   const [learnContent, setLearnContent] = useState({
     ko: { intro: STR.ko.learn.intro, tips: [...STR.ko.learn.tips] },
@@ -5443,7 +5456,13 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
   const [learnImages, setLearnImages] = useState([]);
 
   // 연도(회계연도) 아카이브: years는 오래된순으로 정렬, 마지막 값이 현재 진행 중인(수정 가능한) 연도.
-  const [years, setYears] = useState(["2026"]);
+  // 연도 목록은 SharePoint 에 별도로 저장하지 않고, 로드된 통제 항목의 Year 값에서 복원한다.
+  // (새 회계연도 항목이 생성되면 그 연도가 자동으로 목록에 나타난다)
+  const [years, setYears] = useState(() => {
+    const src = usingSharePointData ? initialControls : INITIAL_CONTROLS;
+    const found = [...new Set((src || []).map((c) => String(c.year || "")).filter(Boolean))];
+    return found.length ? found.sort() : ["2026"];
+  });
   const [selectedYear, setSelectedYear] = useState("2026");
   const activeYear = years[years.length - 1];
 
@@ -5531,13 +5550,71 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
     setPage(pageKey);
   }
 
-  function startNewYear(newYear) {
+  // 새 회계연도 시작. 현재 연도의 통제 항목 구성을 복제해 SharePoint(ICS_Controls)에
+  // 실제로 생성한다. 예전에는 화면 상태만 바꿔 새로고침하면 사라졌다.
+  // 248건 규모라 SharePoint 스로틀링을 피해 순차 생성하고, 진행률을 화면에 표시한다.
+  async function startNewYear(newYear) {
     const newControls = buildArchiveYearControls(controls, activeYear, newYear);
-    setControls((prev) => [...prev, ...newControls]);
-    setYears((prev) => [...prev, newYear]);
+    if (!newControls.length) {
+      alert(lang === "en" ? "There are no control items to copy." : "복제할 통제 항목이 없습니다.");
+      return;
+    }
+
+    if (!usingSharePointData) {
+      // 로컬 모드(SharePoint 미사용)에서는 기존처럼 화면 상태만 갱신한다.
+      setControls((prev) => [...prev, ...newControls]);
+      setYears((prev) => [...prev, newYear]);
+      setYearConfirmations((prev) => ({ ...prev, [newYear]: { cfo: null, rd: null } }));
+      setSelectedYear(newYear);
+      setListFilter({ dept: "", cat: "", risk: "", status: "" });
+      return;
+    }
+
+    setYearProgress({ done: 0, total: newControls.length, failed: 0 });
+    const created = [];
+    let failed = 0;
+    for (let i = 0; i < newControls.length; i++) {
+      const c = newControls[i];
+      try {
+        const res = await icsCreateItem(ICS_LISTS.controls, {
+          Title: c.code, Dept: c.dept, Category: c.cat,
+          NameKo: c.name, NameEn: c.nameEn, DescKo: c.desc, DescEn: c.descEn,
+          AccessorEmail: c.accessor, ReviewerEmail: c.reviewer,
+          Year: newYear, Frequency: c.frequency, Importance: c.importance,
+        });
+        created.push({ ...c, spId: res.id });
+      } catch (e) {
+        failed++;
+        console.warn(`[ICS] 새 연도 항목 생성 실패 (${c.code}):`, e.message);
+      }
+      setYearProgress({ done: i + 1, total: newControls.length, failed });
+    }
+
+    if (!created.length) {
+      setYearProgress(null);
+      alert(lang === "en"
+        ? "Failed to create the new fiscal year. Please contact IT."
+        : "새 회계연도 생성에 실패했습니다. IT로 문의해 주세요.");
+      return;
+    }
+
+    setControls((prev) => [...prev, ...created]);
+    setYears((prev) => (prev.includes(newYear) ? prev : [...prev, newYear]));
     setYearConfirmations((prev) => ({ ...prev, [newYear]: { cfo: null, rd: null } }));
     setSelectedYear(newYear);
     setListFilter({ dept: "", cat: "", risk: "", status: "" });
+    addLog(currentUser.email, "start_new_year", "-", newYear, newYear);
+    setYearProgress(null);
+
+    if (failed > 0) {
+      alert(lang === "en"
+        ? `${created.length} items created, but ${failed} failed. Please check with IT before starting assessments.`
+        : `${created.length}건이 생성되었으나 ${failed}건이 실패했습니다. 평가를 시작하기 전에 IT로 확인해 주세요.`);
+    } else {
+      showToast(lang === "en"
+        ? `Fiscal year ${newYear} started with ${created.length} control items.`
+        : `${newYear} 회계연도가 시작되었습니다. 통제 항목 ${created.length}건이 생성되었습니다.`);
+    }
   }
 
   function confirmYear(role) {
@@ -5567,6 +5644,29 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
     <LangContext.Provider value={{ lang, t, setLang }}>
     <AppDataContext.Provider value={{ departments, setDepartments, users, setUsers }}>
       <div className="flex w-full" style={{ height: "100vh", backgroundColor: "#F5F6F8", fontFamily: "'Segoe UI',sans-serif" }}>
+        {yearProgress && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/40">
+            <div className="bg-white rounded-2xl shadow-2xl px-8 py-7 flex flex-col items-center gap-3" style={{ minWidth: 320 }}>
+              <Loader2 size={28} className="animate-spin" style={{ color: BRAND.accent }} />
+              <p className="text-sm font-semibold text-slate-700">{t("settings.yearProgressTitle")}</p>
+              <p className="text-xs text-slate-500">{yearProgress.done} / {yearProgress.total}{t("common.items")}</p>
+              <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                <div
+                  className="h-full rounded-full transition-all"
+                  style={{
+                    width: `${yearProgress.total ? Math.round((yearProgress.done / yearProgress.total) * 100) : 0}%`,
+                    backgroundColor: BRAND.accent,
+                  }}
+                />
+              </div>
+              <p className="text-xs text-slate-400 text-center">{t("settings.yearProgressNotice")}</p>
+              {yearProgress.failed > 0 && (
+                <p className="text-xs text-red-600">{t("settings.yearProgressFailed")} {yearProgress.failed}{t("common.items")}</p>
+              )}
+            </div>
+          </div>
+        )}
+
         {toast && (
           <div
             className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/20 pointer-events-none transition-opacity duration-200"
