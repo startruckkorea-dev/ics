@@ -4836,13 +4836,13 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
 
   async function saveDept() {
     if (!canEditDept || !deptForm) return;
-    const code = (deptForm.id || "").trim().toLowerCase();
+    const code = (deptForm.id || "").trim();  // 입력 표기 그대로 보존 (대문자 체계 지원)
     const ko = (deptForm.ko || "").trim();
     const en = (deptForm.en || "").trim() || ko;
     if (!ko) { setDeptError(t("settings.deptNameRequired")); return; }
     if (!deptEditing) {
       if (!code || !/^[a-z0-9_-]+$/i.test(code)) { setDeptError(t("settings.deptCodeRequired")); return; }
-      if (departments.some((d) => d.id.toLowerCase() === code)) { setDeptError(t("settings.deptCodeDuplicate")); return; }
+      if (departments.some((d) => d.id.toLowerCase() === code.toLowerCase())) { setDeptError(t("settings.deptCodeDuplicate")); return; }
     }
     setDeptError("");
     setDeptSaving(true);
