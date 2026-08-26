@@ -2839,7 +2839,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
 
   function startEdit(c) {
     setEditing(c.id);
-    setDraft({ risk: c.selfRisk, comment: c.selfComment || "", sampleSize: c.actualSample ?? recommendedSample(c.importance, c.frequency), attachments: c.attachments || [] });
+    setDraft({ risk: c.selfRisk, comment: c.selfComment || "", frequency: c.frequency, importance: c.importance, sampleSize: c.actualSample ?? recommendedSample(c.importance, c.frequency), attachments: c.attachments || [] });
   }
 
   const [saving, setSaving] = useState(null);
@@ -2878,6 +2878,15 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
       }
       const attachedFilesField = finalAttachments.map((a) => `${a.name}|${a.webUrl}`).join(";");
 
+      // 3-0) 점검빈도·중요도가 폼에서 변경되었으면 통제 항목(ICS_Controls)에 먼저 반영한다.
+      //      권장 샘플링 건수의 근거가 되는 값이라 평가 내용과 함께 확정되어야 한다.
+      const newFreq = draft.frequency ?? c.frequency;
+      const newImp = draft.importance ?? c.importance;
+      if (c.spId && (newFreq !== c.frequency || newImp !== c.importance)) {
+        await icsUpdateItem(ICS_LISTS.controls, c.spId, { Frequency: newFreq, Importance: newImp });
+        addLog(currentUser.email, "edit_control", c.code, c.name, c.nameEn);
+      }
+
       // 3) 평가 내용 + 첨부파일 목록을 함께 저장
       await icsUpdateItem(ICS_LISTS.requests, spId, {
         Status: "submitted_self",
@@ -2892,7 +2901,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
       setControls((prev) =>
         prev.map((x) =>
           x.id === c.id
-            ? { ...x, requestSpId: spId, status: "submitted_self", selfRisk: draft.risk, selfComment: draft.comment, selfCommentEn: draft.comment, selfDate: today, actualSample: draft.sampleSize, attachments: finalAttachments }
+            ? { ...x, requestSpId: spId, frequency: newFreq, importance: newImp, status: "submitted_self", selfRisk: draft.risk, selfComment: draft.comment, selfCommentEn: draft.comment, selfDate: today, actualSample: draft.sampleSize, attachments: finalAttachments }
             : x
         )
       );
@@ -3022,7 +3031,21 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
 function SelfAssessForm({ control, draft, setDraft, onCancel, onSubmit }) {
   const { lang, t } = useLang();
   const fileInputRef = useRef(null);
-  const recommended = recommendedSample(control.importance, control.frequency);
+  // 점검빈도·중요도는 자가평가 폼에서 수정할 수 있다. 값이 바뀌면 권장 샘플링 건수도 따라 바뀐다.
+  const curFreq = draft.frequency ?? control.frequency;
+  const curImp = draft.importance ?? control.importance;
+  const recommended = recommendedSample(curImp, curFreq);
+
+  // 기준을 바꾸면 권장 건수도 맞춰준다.
+  // 담당자가 실제 건수를 이미 직접 조정한 경우에는 그 값을 덮어쓰지 않는다.
+  function changeCriteria(patch) {
+    const nextFreq = patch.frequency ?? curFreq;
+    const nextImp = patch.importance ?? curImp;
+    const prevReco = recommendedSample(curImp, curFreq);
+    const next = { ...draft, ...patch };
+    if (Number(draft.sampleSize) === prevReco) next.sampleSize = recommendedSample(nextImp, nextFreq);
+    setDraft(next);
+  }
 
   function handleFiles(e) {
     const files = Array.from(e.target.files || []);
@@ -3067,10 +3090,33 @@ function SelfAssessForm({ control, draft, setDraft, onCancel, onSubmit }) {
         onChange={(e) => setDraft({ ...draft, comment: e.target.value })}
       />
 
-      <div className="mt-4 grid grid-cols-2 gap-3 items-end">
+      <div className="mt-4 grid grid-cols-2 gap-3">
+        <div>
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">{t("manage.fieldFreq")}</p>
+          <select
+            className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-100 focus:border-teal-400 bg-white"
+            value={curFreq}
+            onChange={(e) => changeCriteria({ frequency: e.target.value })}
+          >
+            {FREQUENCY_OPTIONS.map((f) => <option key={f.id} value={f.id}>{f[lang]}</option>)}
+          </select>
+        </div>
+        <div>
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">{t("manage.fieldImportance")}</p>
+          <select
+            className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-100 focus:border-teal-400 bg-white"
+            value={curImp}
+            onChange={(e) => changeCriteria({ importance: e.target.value })}
+          >
+            {IMPORTANCE_OPTIONS.map((im) => <option key={im.id} value={im.id}>{im[lang]}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div className="mt-3 grid grid-cols-2 gap-3 items-end">
         <div>
           <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">{t("self.sampleCount")}</p>
-          <p className="text-[11px] text-slate-400 mb-1.5">{t("self.recommendedNote")} {recommended}{t("common.items")} · {importanceLabel(control.importance, lang)} · {freqLabel(control.frequency, lang)}</p>
+          <p className="text-[11px] text-slate-400 mb-1.5">{t("self.recommendedNote")} {recommended}{t("common.items")} · {importanceLabel(curImp, lang)} · {freqLabel(curFreq, lang)}</p>
           <input
             type="number"
             min={0}
