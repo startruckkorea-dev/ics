@@ -1328,7 +1328,7 @@ const DESC_MAX = 1000;
 // 변경 요청 사유 입력 상한.
 const REASON_MAX = 500;
 
-const inputCls = "w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-100 focus:border-teal-400";
+const inputCls = "w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-100 focus:border-teal-400";
 
 /* ------------------------------------------------------------------ */
 /* 사이드바                                                             */
@@ -1494,7 +1494,7 @@ function Dashboard({ controls: allControls, goTo, isAdmin, allowedDepts }) {
       />
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-        <div className="relative bg-white rounded-xl border border-slate-100 p-4 overflow-hidden">
+        <div className="relative bg-white rounded-xl border border-slate-200 shadow-sm p-4 overflow-hidden">
           <div className="absolute top-0 left-0 right-0 h-1" style={{ backgroundColor: BRAND.navy }} />
           <div className="flex items-center justify-between mb-1.5">
             <p className="text-xs text-slate-500">{t("dashboard.kpiTotal")}</p>
@@ -1502,7 +1502,7 @@ function Dashboard({ controls: allControls, goTo, isAdmin, allowedDepts }) {
           </div>
           <p className="text-2xl font-bold text-slate-800">{stats.total}</p>
         </div>
-        <div className="relative bg-white rounded-xl border border-slate-100 p-4 overflow-hidden">
+        <div className="relative bg-white rounded-xl border border-slate-200 shadow-sm p-4 overflow-hidden">
           <div className="absolute top-0 left-0 right-0 h-1" style={{ backgroundColor: BRAND.accent }} />
           <div className="flex items-center justify-between mb-1.5">
             <p className="text-xs text-slate-500">{t("dashboard.kpiCompletion")}</p>
@@ -1527,7 +1527,7 @@ function Dashboard({ controls: allControls, goTo, isAdmin, allowedDepts }) {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-5 mb-6">
-        <div className="lg:col-span-3 bg-white rounded-xl border border-slate-100 p-5">
+        <div className="lg:col-span-3 bg-white rounded-xl border border-slate-200 shadow-sm p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-semibold text-slate-700">{t("dashboard.matrixTitle")}</h3>
             <div className="flex items-center gap-3 text-xs text-slate-500">
@@ -1597,7 +1597,7 @@ function Dashboard({ controls: allControls, goTo, isAdmin, allowedDepts }) {
           </div>
         </div>
 
-        <div className="lg:col-span-2 bg-white rounded-xl border border-slate-100 p-5">
+        <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm p-5">
           <h3 className="text-sm font-semibold text-slate-700 mb-4">{t("dashboard.chartTitle")}</h3>
           <ResponsiveContainer width="100%" height={Math.max(180, deptsWithData.length * 34)}>
             <BarChart data={barData} layout="vertical" margin={{ left: 10, right: 10 }} barSize={16}>
@@ -1810,12 +1810,12 @@ function LearnPage({ currentUser, learnContent, setLearnContent, learnVideos, se
         subtitle={t("learn.subtitle")}
       />
 
-      <div className="bg-white rounded-xl border border-slate-100 p-5 mb-5">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 mb-5">
         <h3 className="text-sm font-semibold text-slate-700 mb-2">{t("learn.introTitle")}</h3>
         <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-wrap">{content.intro}</p>
       </div>
 
-      <div className="bg-white rounded-xl border border-slate-100 p-5 mb-5">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 mb-5">
         <h3 className="text-sm font-semibold text-slate-700 mb-3">{t("learn.componentsTitle")}</h3>
         <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
           {CATEGORIES.map((c) => (
@@ -1828,7 +1828,7 @@ function LearnPage({ currentUser, learnContent, setLearnContent, learnVideos, se
         </div>
       </div>
 
-      <div className="bg-white rounded-xl border border-slate-100 p-5 mb-5">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 mb-5">
         <div className="flex items-center justify-between mb-1">
           <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
             <PlayCircle size={16} className="text-teal-600" /> {t("learn.videoTitle")}
@@ -1937,7 +1937,7 @@ function LearnPage({ currentUser, learnContent, setLearnContent, learnVideos, se
         )}
       </div>
 
-      <div className="bg-white rounded-xl border border-slate-100 p-5 mb-5">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 mb-5">
         <div className="flex items-center justify-between mb-1">
           <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
             <ImageIcon size={16} className="text-teal-600" /> {t("learn.imageTitle")}
@@ -2050,7 +2050,7 @@ function LearnPage({ currentUser, learnContent, setLearnContent, learnVideos, se
         </div>
       )}
 
-      <div className="bg-white rounded-xl border border-slate-100 p-5">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
         <h3 className="text-sm font-semibold text-slate-700 mb-3">{t("learn.tipsTitle")}</h3>
         <ul className="space-y-2">
           {content.tips.map((tip, i) => (
@@ -2062,7 +2062,7 @@ function LearnPage({ currentUser, learnContent, setLearnContent, learnVideos, se
         </ul>
       </div>
 
-      <div className="bg-white rounded-xl border border-slate-100 p-5 mt-5">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 mt-5">
         <h3 className="text-sm font-semibold text-slate-700 mb-1 flex items-center gap-2">
           <ClipboardList size={16} className="text-teal-600" /> {t("learn.sampleTableTitle")}
         </h3>
@@ -2137,7 +2137,7 @@ function ControlList({ controls: allControls, filter, setFilter, isAdmin, allowe
         subtitle={isAdmin ? t("list.subtitleAdmin") : `${t("list.subtitleScoped")} (${visibleDeptOptions.map((d) => d[lang]).join(", ") || t("dashboard.noAssigned")})`}
       />
 
-      <div className="bg-white rounded-xl border border-slate-100 p-4 mb-4 flex flex-wrap items-center gap-3">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-4 flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-[180px]">
           <Search size={15} className="absolute left-3 top-2.5 text-slate-400" />
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t("list.searchPlaceholder")} className={`${inputCls} pl-8`} />
@@ -2162,7 +2162,7 @@ function ControlList({ controls: allControls, filter, setFilter, isAdmin, allowe
         <span className="text-xs text-slate-400 ml-auto">{filtered.length}{t("common.items")}</span>
       </div>
 
-      <div className="bg-white rounded-xl border border-slate-100 overflow-x-auto">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wide">
             <tr>
@@ -2176,7 +2176,7 @@ function ControlList({ controls: allControls, filter, setFilter, isAdmin, allowe
               <th className="text-left font-semibold px-4 py-3 whitespace-nowrap">{t("list.colRisk")}</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-50">
+          <tbody className="divide-y divide-slate-100">
             {pagedControls.map((c, i) => {
               const risk = finalRisk(c);
               return (
@@ -3086,7 +3086,7 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
         <span className="text-xs text-slate-400 flex-shrink-0">{list.length}{t("common.items")}</span>
       </div>
 
-      <div className="bg-white rounded-xl border border-slate-100 overflow-x-auto">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-slate-500 text-xs">
             <tr>
@@ -3102,7 +3102,7 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
               {canEdit && <th className="text-right font-medium px-4 py-3 whitespace-nowrap">{t("manage.colAction")}</th>}
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-50">
+          <tbody className="divide-y divide-slate-100">
             {pagedList.map((c) => (
               <tr key={c.id} onClick={() => setDetail(c)} className="cursor-pointer hover:bg-slate-50">
                 <td className="px-4 py-3 text-slate-500 text-xs font-mono whitespace-nowrap">{c.code}</td>
@@ -3301,7 +3301,7 @@ function useAssessmentFilter(source, lang, users, departments) {
 function AssessmentFilterBar({ f, t, minItems }) {
   if (minItems <= 12 && !f.active) return null;
   return (
-    <div className="bg-white rounded-xl border border-slate-100 p-4 mb-4 flex flex-wrap items-center gap-3">
+    <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-4 flex flex-wrap items-center gap-3">
       <div className="relative flex-1 min-w-[180px]">
         <Search size={15} className="absolute left-3 top-2.5 text-slate-400" />
         <input
@@ -3761,11 +3761,11 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
           <AlertTriangle size={15} className="text-amber-500" /> {t("self.needsAction")} ({todo.length})
         </h3>
         {todo.length === 0 ? (
-          <div className="bg-white rounded-xl border border-slate-100"><EmptyState text={t("self.noNeedsAction")} /></div>
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm"><EmptyState text={t("self.noNeedsAction")} /></div>
         ) : (
           <div className="space-y-3">
             {todo.map((c) => (
-              <div key={c.id} className="bg-white rounded-xl border border-slate-100 p-4">
+              <div key={c.id} className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
                 <div className="flex items-start justify-between gap-3 mb-2">
                   <p className="text-[13px] text-slate-400 font-mono">{c.code} · {deptName(c.dept, lang, departments)}</p>
                   <div className="flex items-center gap-2 flex-shrink-0">
@@ -3831,7 +3831,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
 
       <div>
         <h3 className="text-sm font-semibold text-slate-700 mb-3">{t("self.submitted")} ({inProgress.length})</h3>
-        <div className="bg-white rounded-xl border border-slate-100 divide-y divide-slate-50">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm divide-y divide-slate-100">
           {inProgress.map((c) => (
             <div key={c.id} className="p-4">
               <div className="flex items-start justify-between gap-3 mb-1">
@@ -3916,7 +3916,7 @@ function SelfAssessForm({ control, draft, setDraft, onCancel, onSubmit }) {
   }
 
   return (
-    <div className="bg-white border border-slate-200 rounded-xl p-5 mt-3 shadow-sm">
+    <div className="bg-white border border-slate-300 rounded-xl p-5 mt-3 shadow-sm">
       {/* 리스크 수준(좌) 과 평가 기준·첨부(우) 를 나란히 배치해 세로 길이를 줄인다.
           좁은 화면에서는 자동으로 위아래로 쌓인다. */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-x-6 gap-y-5">
@@ -3942,7 +3942,7 @@ function SelfAssessForm({ control, draft, setDraft, onCancel, onSubmit }) {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 items-end xl:pl-6 xl:border-l xl:border-slate-100">
+        <div className="grid grid-cols-2 gap-3 items-end xl:pl-6 xl:border-l xl:border-slate-200">
         <div>
           <p className="text-[13px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5">{t("manage.fieldFreq")}</p>
           <select
@@ -3971,7 +3971,7 @@ function SelfAssessForm({ control, draft, setDraft, onCancel, onSubmit }) {
           <input
             type="number"
             min={0}
-            className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-100 focus:border-teal-400"
+            className="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-100 focus:border-teal-400"
             value={draft.sampleSize}
             onChange={(e) => setDraft({ ...draft, sampleSize: Math.max(0, Number(e.target.value)) })}
           />
@@ -3981,7 +3981,7 @@ function SelfAssessForm({ control, draft, setDraft, onCancel, onSubmit }) {
             type="button"
             onClick={() => fileInputRef.current?.click()}
             className="w-full flex items-center justify-center gap-1.5 border-2 border-dashed rounded-xl py-[13px] text-xs font-medium transition-colors"
-            style={{ borderColor: "#D8DEE6", color: "#64748B" }}
+            style={{ borderColor: "#B6C0CC", color: "#64748B" }}
             onMouseEnter={(e) => { e.currentTarget.style.borderColor = BRAND.accent; e.currentTarget.style.color = BRAND.accent; }}
             onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#D8DEE6"; e.currentTarget.style.color = "#64748B"; }}
           >
@@ -3993,7 +3993,7 @@ function SelfAssessForm({ control, draft, setDraft, onCancel, onSubmit }) {
         </div>
       </div>
 
-      <div className="border-t border-slate-100 mt-5 pt-4">
+      <div className="border-t border-slate-200 mt-5 pt-4">
       <p className="text-[13px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
         {t("self.commentPlaceholder")}
         <span className="ml-1.5 font-normal normal-case"
@@ -4002,7 +4002,7 @@ function SelfAssessForm({ control, draft, setDraft, onCancel, onSubmit }) {
         </span>
       </p>
       <textarea
-        className="w-full border border-slate-200 rounded-xl px-3.5 py-3 text-[15px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-100 focus:border-teal-400 resize-none"
+        className="w-full border border-slate-300 rounded-xl px-3.5 py-3 text-[15px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-100 focus:border-teal-400 resize-none"
         rows={3}
         placeholder={t("self.commentPlaceholder")}
         value={draft.comment}
@@ -4013,7 +4013,7 @@ function SelfAssessForm({ control, draft, setDraft, onCancel, onSubmit }) {
       {(draft.attachments || []).length > 0 && (
         <ul className="mt-3 space-y-1.5">
           {draft.attachments.map((a, i) => (
-            <li key={i} className="flex items-center gap-2 text-xs text-slate-600 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
+            <li key={i} className="flex items-center gap-2 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
               <Paperclip size={12} className="text-slate-400 flex-shrink-0" />
               <span className="truncate">{a.name}</span>
               <span className="text-slate-400 flex-shrink-0">{a.size}</span>
@@ -4028,7 +4028,7 @@ function SelfAssessForm({ control, draft, setDraft, onCancel, onSubmit }) {
           {t("self.needTitle")} {missing.join(" · ")}
         </p>
       )}
-      <div className="flex justify-end gap-2 mt-4 pt-4 border-t border-slate-100">
+      <div className="flex justify-end gap-2 mt-4 pt-4 border-t border-slate-200">
         <button onClick={onCancel} className="px-4 py-2 text-sm text-slate-500 rounded-lg hover:bg-slate-50">{t("common.cancel")}</button>
         <button onClick={onSubmit} disabled={missing.length > 0}
                 title={missing.length ? `${t("self.needTitle")}\n${missing.map((m) => "· " + m).join("\n")}` : ""}
@@ -4247,13 +4247,13 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
           <AlertTriangle size={15} className="text-amber-500" /> {t("fsa.needsAction")} ({todo.length})
         </h3>
         {todo.length === 0 ? (
-          <div className="bg-white rounded-xl border border-slate-100">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
             <EmptyState text={waitingIsa > 0 ? t("fsa.waitingIsa") : t("fsa.noNeedsAction")} />
           </div>
         ) : (
           <div className="space-y-3">
             {todo.map((c) => (
-              <div key={c.id} className="bg-white rounded-xl border border-slate-100 p-4">
+              <div key={c.id} className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
                 <div className="flex items-start justify-between gap-3 mb-1 cursor-pointer" onClick={() => setDetail(c)}>
                   <div>
                     <p className="text-xs text-slate-400 font-mono mb-0.5">{c.code} · {deptName(c.dept, lang, departments)} · {catName(c.cat, lang)}</p>
@@ -4294,7 +4294,7 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
 
       <div>
         <h3 className="text-sm font-semibold text-slate-700 mb-3">{t("fsa.submitted")} ({submitted.length})</h3>
-        <div className="bg-white rounded-xl border border-slate-100 divide-y divide-slate-50">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm divide-y divide-slate-100">
           {submitted.map((c) => (
             <div key={c.id} className="p-4">
               <div className="flex items-start justify-between gap-3 mb-1 cursor-pointer" onClick={() => setDetail(c)}>
@@ -4437,11 +4437,11 @@ function FSAReviewPage({ controls, setControls, currentUser, addLog, isArchived,
       <div className="mb-6">
         <h3 className="text-sm font-semibold text-slate-700 mb-3">{t("fsaReview.pending")} ({pending.length})</h3>
         {pending.length === 0 ? (
-          <div className="bg-white rounded-xl border border-slate-100"><EmptyState text={t("fsaReview.noPending")} /></div>
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm"><EmptyState text={t("fsaReview.noPending")} /></div>
         ) : (
           <div className="space-y-3">
             {pending.map((c) => (
-              <div key={c.id} className="bg-white rounded-xl border border-slate-100 p-4">
+              <div key={c.id} className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
                 <div className="flex items-start justify-between gap-3 mb-2 cursor-pointer" onClick={() => setDetail(c)}>
                   <div>
                     <p className="text-xs text-slate-400 font-mono mb-0.5">{c.code} · {deptName(c.dept, lang, departments)} · {catName(c.cat, lang)}</p>
@@ -4508,7 +4508,7 @@ function FSAReviewPage({ controls, setControls, currentUser, addLog, isArchived,
 
       <div>
         <h3 className="text-sm font-semibold text-slate-700 mb-3">{t("fsaReview.done")} ({done.length})</h3>
-        <div className="bg-white rounded-xl border border-slate-100 divide-y divide-slate-50">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm divide-y divide-slate-100">
           {done.map((c) => (
             <div key={c.id} className="p-4 flex items-start justify-between gap-3 cursor-pointer hover:bg-slate-50" onClick={() => setDetail(c)}>
               <div>
@@ -4627,11 +4627,11 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, sh
       <div className="mb-6">
         <h3 className="text-sm font-semibold text-slate-700 mb-3">{t("review.pending")} ({pending.length})</h3>
         {pending.length === 0 ? (
-          <div className="bg-white rounded-xl border border-slate-100"><EmptyState text={t("review.noPending")} /></div>
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm"><EmptyState text={t("review.noPending")} /></div>
         ) : (
           <div className="space-y-3">
             {pending.map((c) => (
-              <div key={c.id} className="bg-white rounded-xl border border-slate-100 p-4">
+              <div key={c.id} className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
                 <div className="flex items-start justify-between gap-3 mb-2 cursor-pointer" onClick={() => setDetail(c)}>
                   <div>
                     <p className="text-xs text-slate-400 font-mono mb-0.5">{c.code} · {deptName(c.dept, lang, departments)} · {catName(c.cat, lang)}</p>
@@ -4718,7 +4718,7 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, sh
 
       <div>
         <h3 className="text-sm font-semibold text-slate-700 mb-3">{t("review.done")} ({done.length})</h3>
-        <div className="bg-white rounded-xl border border-slate-100 divide-y divide-slate-50">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm divide-y divide-slate-100">
           {done.map((c) => (
             <div key={c.id} className="p-4 flex items-start justify-between gap-3 cursor-pointer hover:bg-slate-50" onClick={() => setDetail(c)}>
               <div>
@@ -4939,7 +4939,7 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
       <SectionHeader icon={ClipboardCheck} title={t("approval.title")} subtitle={t("approval.subtitle")} />
 
       {loading ? (
-        <div className="bg-white rounded-xl border border-slate-100 p-8 flex items-center justify-center gap-2 text-sm text-slate-500">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-8 flex items-center justify-center gap-2 text-sm text-slate-500">
           <Loader2 size={16} className="animate-spin" /> {t("common.loading")}
         </div>
       ) : (
@@ -4953,7 +4953,7 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
             ) : (
               <div className="space-y-3">
                 {myTurn.map((r) => (
-                  <div key={r.spId} className="bg-white rounded-xl border border-slate-100 p-5">
+                  <div key={r.spId} className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
                     <div className="flex items-start justify-between gap-3 flex-wrap">
                       <div className="min-w-0">
                         <p className="text-xs text-slate-400 font-mono">{r.code} · {r.year}</p>
@@ -5031,7 +5031,7 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
             ) : (
               <div className="space-y-2">
                 {mine.map((r) => (
-                  <div key={r.spId} className="bg-white rounded-xl border border-slate-100 p-4">
+                  <div key={r.spId} className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
                     <div className="flex items-start justify-between gap-3 flex-wrap">
                       <div className="min-w-0">
                         <p className="text-xs text-slate-400 font-mono">{r.code} · {r.reqType === "delete" ? t("approval.typeDelete") : t("approval.typeEdit")}</p>
@@ -5073,7 +5073,7 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
             {done.length === 0 ? (
               <EmptyState text={t("approval.noHistory")} />
             ) : (
-              <div className="bg-white rounded-xl border border-slate-100 divide-y divide-slate-50">
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm divide-y divide-slate-100">
                 {done.map((r) => {
                   const last = [...r.steps].reverse().find((st) => st.status !== "pending");
                   const decided = r.steps.filter((st) => st.status !== "pending");
@@ -5204,7 +5204,7 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
       <SectionHeader icon={History} title={t("history.title")} subtitle={t("history.subtitle")} />
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-5 mb-6">
-        <div className="lg:col-span-2 bg-white rounded-xl border border-slate-100 p-5">
+        <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm p-5">
           <h3 className="text-sm font-semibold text-slate-700 mb-4">{t("history.pieTitle")}</h3>
           <ResponsiveContainer width="100%" height={220}>
             <PieChart>
@@ -5217,9 +5217,9 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
           </ResponsiveContainer>
         </div>
 
-        <div className="lg:col-span-3 bg-white rounded-xl border border-slate-100 p-5">
+        <div className="lg:col-span-3 bg-white rounded-xl border border-slate-200 shadow-sm p-5">
           <h3 className="text-sm font-semibold text-slate-700 mb-4 flex items-center gap-2"><FileText size={15} /> {t("history.logTitle")}</h3>
-          <div className="divide-y divide-slate-50 max-h-56 overflow-y-auto pr-2">
+          <div className="divide-y divide-slate-100 max-h-56 overflow-y-auto pr-2">
             {log.map((l) => {
               const ctrl = controls.find((c) => c.code === l.code);
               const label = ctrl ? cName(ctrl, lang) : (lang === "en" ? l.nameEn : l.name);
@@ -5239,8 +5239,8 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
         </div>
       </div>
 
-      <div className="bg-white rounded-xl border border-slate-100 overflow-hidden">
-        <div className="px-5 py-4 border-b border-slate-50 flex items-center justify-between gap-3 flex-wrap">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3 flex-wrap">
           <h3 className="text-sm font-semibold text-slate-700">{t("history.tableTitle")}</h3>
           <div className="flex items-center gap-2">
             <input
@@ -5277,7 +5277,7 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
               <th className="text-left font-medium px-4 py-3 whitespace-nowrap">{t("list.colStatus")}</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-50">
+          <tbody className="divide-y divide-slate-100">
             {pagedTableControls.map((c) => (
               <tr key={c.id} onClick={() => setDetail(c)} className="cursor-pointer hover:bg-slate-50">
                 <td className="px-4 py-2.5 text-slate-500 text-xs font-mono whitespace-nowrap">{c.code}</td>
@@ -5297,7 +5297,7 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
         </table>
         </div>
         {filteredTableControls.length > 0 && (
-          <div className="flex items-center justify-between px-5 py-3 border-t border-slate-50 text-xs text-slate-500">
+          <div className="flex items-center justify-between px-5 py-3 border-t border-slate-100 text-xs text-slate-500">
             <span>{clampedTablePage * TABLE_PAGE_SIZE + 1}–{Math.min((clampedTablePage + 1) * TABLE_PAGE_SIZE, filteredTableControls.length)} / {filteredTableControls.length}{t("common.items")}</span>
             <div className="flex items-center gap-2">
               <button
@@ -5377,20 +5377,20 @@ function FinalReportPage({ controls, currentUser, activeYear, yearConfirmation, 
       <SectionHeader icon={FileCheck2} title={t("finalReport.title")} subtitle={`${activeYear} ${t("finalReport.subtitle")}`} />
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-        <div className="bg-white rounded-xl border border-slate-100 p-4">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
           <p className="text-xs text-slate-500 mb-1">{t("dashboard.kpiTotal")}</p>
           <p className="text-2xl font-semibold text-slate-800">{stats.total}</p>
         </div>
-        <div className="bg-white rounded-xl border border-slate-100 p-4">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
           <p className="text-xs text-slate-500 mb-1">{t("finalReport.isaRate")}</p>
           <p className="text-2xl font-semibold text-slate-800">{stats.isaRate}%</p>
         </div>
-        <div className="bg-white rounded-xl border border-slate-100 p-4">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
           <p className="text-xs text-slate-500 mb-1">{t("finalReport.fsaRate")}</p>
           <p className="text-2xl font-semibold text-slate-800">{stats.fsaRate}%</p>
         </div>
         {["orange", "red"].map((r) => (
-          <div key={r} className="bg-white rounded-xl border border-slate-100 p-4">
+          <div key={r} className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
             <p className="text-xs text-slate-500 mb-1 flex items-center gap-1.5">
               <RiskDot risk={r} size={8} /> {RISK_META[r][lang]}
             </p>
@@ -5399,7 +5399,7 @@ function FinalReportPage({ controls, currentUser, activeYear, yearConfirmation, 
         ))}
       </div>
 
-      <div className="bg-white rounded-xl border border-slate-100 p-5 mb-6">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 mb-6">
         <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
           <h3 className="text-sm font-semibold text-slate-700">{t("dashboard.matrixTitle")}</h3>
           <div className="flex items-center gap-3 text-xs text-slate-500">
@@ -5465,13 +5465,13 @@ function FinalReportPage({ controls, currentUser, activeYear, yearConfirmation, 
         </div>
       </div>
 
-      <div className="bg-white rounded-xl border border-slate-100 mb-6">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm mb-6">
         <div className="p-5 pb-3">
           <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
             <AlertTriangle size={15} className="text-red-500" /> {t("finalReport.redListTitle")} ({redItems.length})
           </h3>
         </div>
-        <div className="divide-y divide-slate-50">
+        <div className="divide-y divide-slate-100">
           {redItems.map((c) => (
             <div key={c.id} onClick={() => setDetail(c)} className="px-5 py-3 flex items-start justify-between gap-3 cursor-pointer hover:bg-slate-50">
               <div>
@@ -5500,7 +5500,7 @@ function FinalReportPage({ controls, currentUser, activeYear, yearConfirmation, 
           const confirmBlocked = role === "rd" && !yearConfirmation.cfo;
           const designatedUser = users.find((u) => u.role === role); // ics_category_access.xlsx의 Users 시트에서 Role=cfo/rd로 지정된 실제 담당자
           return (
-          <div key={role} className="bg-white rounded-xl border border-slate-100 p-5">
+          <div key={role} className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
             <div className="flex items-center justify-between mb-1">
               <h3 className="text-sm font-semibold text-slate-700">{t(`roles.${role}`)} {t("finalReport.confirmTitle")}</h3>
               {info ? (
@@ -5712,7 +5712,7 @@ function SettingsPage({ currentUser, years, selectedYear, activeYear, startNewYe
     <div>
       <SectionHeader icon={Settings} title={t("settings.title")} subtitle={t("settings.subtitle")} />
 
-      <div className="bg-white rounded-xl border border-slate-100 p-5">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
         <h3 className="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2"><ClipboardList size={15} /> {t("settings.cosoTitle")}</h3>
         <p className="text-sm text-slate-500 mb-3">{t("settings.cosoDesc")}</p>
         <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
@@ -5725,12 +5725,12 @@ function SettingsPage({ currentUser, years, selectedYear, activeYear, startNewYe
         </div>
       </div>
 
-      <div className="bg-white rounded-xl border border-slate-100 p-5 mt-5">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 mt-5">
         <h3 className="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2"><CalendarClock size={15} /> {t("settings.yearMgmtTitle")}</h3>
         <p className="text-sm text-slate-500 mb-4">{t("settings.yearMgmtDesc")}</p>
 
         <p className="text-xs font-medium text-slate-400 mb-2">{t("settings.yearListTitle")}</p>
-        <div className="divide-y divide-slate-50 mb-4">
+        <div className="divide-y divide-slate-100 mb-4">
           {[...years].reverse().map((y) => {
             const count = controls.filter((c) => c.year === y).length;
             const isActive = y === activeYear;
@@ -6024,7 +6024,7 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
       </div>
 
       {isAdmin && (
-        <div className="bg-white rounded-xl border border-slate-100 p-4 mb-4">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-4">
           <h3 className="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2">
             <Plus size={15} /> {t("categoryAccess.addUserTitle")}
           </h3>
@@ -6052,7 +6052,7 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
         </div>
       )}
 
-      <div className="bg-white rounded-xl border border-slate-100 overflow-auto" style={{ maxHeight: 520 }}>
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-auto" style={{ maxHeight: 520 }}>
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-slate-500 text-xs">
             <tr>
@@ -6080,7 +6080,7 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
               {isAdmin && <th className="text-center font-medium px-3 py-2.5 whitespace-nowrap sticky top-0 z-20 bg-slate-50">{t("common.delete")}</th>}
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-50">
+          <tbody className="divide-y divide-slate-100">
             {rows.map((u) => {
               const email = u.email.toLowerCase();
               const grant = draft[email] || {};
@@ -6435,7 +6435,7 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
     <div>
       <SectionHeader icon={KeyRound} title={t("permissions.title")} subtitle={t("permissions.subtitle")} />
 
-      <div className="bg-white rounded-xl border border-slate-100 p-5 mb-5">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 mb-5">
         <div className="flex items-center justify-between gap-3 mb-3">
           <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2"><Building2 size={15} /> {t("settings.deptListTitle")}</h3>
           {isAdmin && (
@@ -6536,7 +6536,7 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <div className="bg-white rounded-xl border border-slate-100 p-5">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
           <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2 mb-3"><Users size={15} /> {t("settings.userListTitle")}</h3>
           <input
             type="text"
@@ -6545,7 +6545,7 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
             placeholder={t("common.search")}
             className={`${inputCls} mb-2`}
           />
-          <div className="divide-y divide-slate-50 max-h-96 overflow-y-auto">
+          <div className="divide-y divide-slate-100 max-h-96 overflow-y-auto">
             {searchedUsers.map((u) => (
               <button
                 key={u.id}
@@ -6569,7 +6569,7 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
           </div>
         </div>
 
-        <div className="bg-white rounded-xl border border-slate-100 p-5">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
           <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2 mb-3">
             <Building2 size={15} /> {selectedDeptId ? t("permissions.deptUsersTitle") : t("permissions.selectedDeptTitle")}
           </h3>
@@ -6613,7 +6613,7 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
                 </div>
               )}
 
-              <div className="divide-y divide-slate-50 max-h-80 overflow-y-auto pr-2">
+              <div className="divide-y divide-slate-100 max-h-80 overflow-y-auto pr-2">
                 {usersForDept(selectedDeptId).map((u) => {
                   const caps = capacitiesForDept(u, selectedDeptId);
                   return (
@@ -6717,7 +6717,7 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
                           ))}
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-50">
+                      <tbody className="divide-y divide-slate-100">
                         {departments.map((d) => (
                           <tr key={d.id} className="hover:bg-slate-50">
                             <td className="py-2.5 text-sm text-slate-600 whitespace-nowrap">{d[lang]}</td>
@@ -8093,7 +8093,7 @@ function IcsAccessDenied({ userEmail, adminEmails }) {
   const body = encodeURIComponent(`ICS(내부통제관리시스템) 접근 권한을 요청드립니다.\n계정: ${userEmail}`);
   return (
     <div className="min-h-screen flex items-center justify-center p-6" style={{ background: "#F5F6F8" }}>
-      <div className="bg-white rounded-xl border border-slate-200 p-8 max-w-md w-full text-center">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-8 max-w-md w-full text-center">
         <AlertTriangle size={32} className="mx-auto text-amber-500 mb-3" />
         <h2 className="text-lg font-semibold text-slate-800 mb-1">접근 권한 없음</h2>
         <p className="text-sm text-slate-500 mb-4">
