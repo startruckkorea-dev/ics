@@ -598,6 +598,8 @@ const STR = {
       reqBtn: "항목 수정 요청", reqPending: "수정 결재 중",
       reqTitle: "통제 항목 수정 요청", reqSubmit: "결재 상신",
       reqHint: "통제명·통제영역·설명 수정을 요청합니다.",
+      reqLineTitle: "결재선",
+      reqNoLine: "결재선을 확인할 수 없습니다. IT로 문의해 주세요.",
       reqNotice: "수정 요청은 1차 MC · 2차 ICS · 3차 최종 결재를 모두 거쳐야 실제로 반영됩니다. 통제 코드와 담당자는 이 화면에서 변경할 수 없습니다.",
       noNeedsAction: "현재 평가가 필요한 항목이 없습니다.", noSubmitted: "제출된 평가가 없습니다.",
       recommendedShort: "권장",
@@ -922,6 +924,8 @@ const STR = {
       reqBtn: "Request change", reqPending: "Change in approval",
       reqTitle: "Control item change request", reqSubmit: "Submit for approval",
       reqHint: "Request changes to the control name, component, or description.",
+      reqLineTitle: "Approval line",
+      reqNoLine: "Approval line could not be determined. Please contact IT.",
       reqNotice: "A change request takes effect only after all three approvals (MC, ICS, Final). The control code and assignees cannot be changed here.",
       noNeedsAction: "No items currently need assessment.", noSubmitted: "No assessments submitted yet.",
       recommendedShort: "recommended",
@@ -1257,6 +1261,9 @@ function ResetConfirmModal({ title, description, resetPassword, onConfirm, onClo
     </Modal>
   );
 }
+
+// 통제 설명 입력 상한. SharePoint 여러 줄 텍스트 컬럼이 넉넉히 수용하는 길이로 잡았다.
+const DESC_MAX = 1000;
 
 const inputCls = "w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-100 focus:border-teal-400";
 
@@ -3161,7 +3168,10 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
   function openRequest(c) {
     const r = changeReqs[c.code];
     if (r && r.status === "pending") { alert(t("manage.lockedPending")); return; }
-    setReqForm({ control: c, name: cName(c, lang), desc: cDesc(c, lang), cat: c.cat });
+    setReqForm({
+      control: c, name: cName(c, lang), desc: cDesc(c, lang), cat: c.cat,
+      steps: buildApprovalSteps(currentUser.email),   // 신청 전에 결재선을 미리 보여준다
+    });
   }
 
   async function submitRequest() {
@@ -3327,11 +3337,45 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
               </select>
             </Field>
             <Field label={t("manage.fieldDesc")}>
-              <textarea className={inputCls} rows={4} value={reqForm.desc}
-                        onChange={(e) => setReqForm({ ...reqForm, desc: e.target.value })} />
+              <textarea
+                className={inputCls}
+                rows={4}
+                maxLength={DESC_MAX}
+                value={reqForm.desc}
+                onChange={(e) => setReqForm({ ...reqForm, desc: e.target.value })}
+              />
+              <p className="text-xs text-slate-400 mt-1.5 text-right">
+                {(reqForm.desc || "").length} / {DESC_MAX}
+              </p>
             </Field>
           </div>
-          <div className="bg-slate-50 rounded-lg px-3 py-2.5 mt-3 text-xs text-slate-500">
+
+          <div className="bg-slate-50 rounded-lg px-4 py-3 mt-3">
+            <p className="text-xs font-semibold text-slate-500 mb-2">{t("self.reqLineTitle")}</p>
+            {reqForm.steps.length === 0 ? (
+              <p className="text-xs text-red-600">{t("self.reqNoLine")}</p>
+            ) : (
+              <div className="flex flex-wrap items-center gap-x-1.5 gap-y-2">
+                {reqForm.steps.map((st, i) => (
+                  <React.Fragment key={i}>
+                    {i > 0 && <ChevronRight size={13} className="text-slate-300 flex-shrink-0" />}
+                    <span className="inline-flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5">
+                      <span className="text-[10px] font-semibold text-white rounded px-1.5 py-0.5"
+                            style={{ backgroundColor: BRAND.accent }}>
+                        {i + 1}
+                      </span>
+                      <span className="text-xs text-slate-700">{personByEmail(st.approver, lang, users)}</span>
+                      <span className="text-[11px] text-slate-400">
+                        {st.role === "MC" ? t("approval.stepMc") : st.role === "ICS_CONTACT" ? t("approval.stepContact") : t("approval.stepFinal")}
+                      </span>
+                    </span>
+                  </React.Fragment>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="bg-slate-50 rounded-lg px-4 py-3 mt-2 text-xs text-slate-500">
             {t("self.reqNotice")}
           </div>
           <div className="flex justify-end gap-2 mt-5">
@@ -3482,9 +3526,9 @@ function SelfAssessForm({ control, draft, setDraft, onCancel, onSubmit }) {
   }
 
   return (
-    <div className="bg-white border border-slate-200 rounded-xl p-5 mt-3 shadow-sm max-w-xl">
+    <div className="bg-white border border-slate-200 rounded-xl p-5 mt-3 shadow-sm">
       <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2.5">{t("self.riskLevel")}</p>
-      <div className="grid grid-cols-3 gap-2.5 mb-4">
+      <div className="grid grid-cols-3 gap-3 mb-4 max-w-2xl">
         {["green", "orange", "red"].map((r) => (
           <button
             key={r}
@@ -3512,7 +3556,7 @@ function SelfAssessForm({ control, draft, setDraft, onCancel, onSubmit }) {
         onChange={(e) => setDraft({ ...draft, comment: e.target.value })}
       />
 
-      <div className="mt-4 grid grid-cols-2 gap-3">
+      <div className="mt-4 grid grid-cols-2 lg:grid-cols-4 gap-3 items-end">
         <div>
           <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">{t("manage.fieldFreq")}</p>
           <select
@@ -3533,12 +3577,9 @@ function SelfAssessForm({ control, draft, setDraft, onCancel, onSubmit }) {
             {IMPORTANCE_OPTIONS.map((im) => <option key={im.id} value={im.id}>{im[lang]}</option>)}
           </select>
         </div>
-      </div>
-
-      <div className="mt-3 grid grid-cols-2 gap-3 items-end">
         <div>
           <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">{t("self.sampleCount")}</p>
-          <p className="text-[11px] text-slate-400 mb-1.5">{t("self.recommendedNote")} {recommended}{t("common.items")} · {importanceLabel(curImp, lang)} · {freqLabel(curFreq, lang)}</p>
+          <p className="text-[11px] text-slate-400 mb-1.5 truncate" title={`${t("self.recommendedNote")} ${recommended}${t("common.items")}`}>{t("self.recommendedNote")} {recommended}{t("common.items")}</p>
           <input
             type="number"
             min={0}
@@ -3606,9 +3647,9 @@ function FSAForm({ draft, setDraft, onCancel, onSubmit, control }) {
   }
 
   return (
-    <div className="bg-white border border-slate-200 rounded-xl p-5 mt-3 shadow-sm max-w-xl">
+    <div className="bg-white border border-slate-200 rounded-xl p-5 mt-3 shadow-sm">
       <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2.5">{t("fsa.riskLevel")}</p>
-      <div className="grid grid-cols-3 gap-2.5 mb-4">
+      <div className="grid grid-cols-3 gap-3 mb-4 max-w-2xl">
         {["green", "orange", "red"].map((r) => (
           <button
             key={r}
