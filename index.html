@@ -620,8 +620,9 @@ const STR = {
       reqMcPlaceholder: "결재자를 선택해 주세요",
       reqMcSearch: "이름 · 이메일 · 부서 · 팀으로 검색",
       charsMin: "자 이상",
-      attachHint: `필수 · 파일당 최대 ${ATTACH_MAX_MB}MB`,
-      attachTooBig: `파일당 최대 ${ATTACH_MAX_MB}MB까지 첨부할 수 있습니다. 아래 파일은 제외되었습니다.`,
+      attachHint: `필수 · 합계 최대 ${ATTACH_MAX_MB}MB`,
+      attachCurrent: "현재 첨부", attachAdding: "추가하려는 파일",
+      attachTooBig: `첨부 파일은 합계 ${ATTACH_MAX_MB}MB까지 가능합니다. 용량을 줄이거나 기존 첨부를 삭제해 주세요.`,
       needTitle: "제출하려면 다음이 필요합니다 —",
       needRisk: "리스크 수준 선택", needComment: `평가 근거 ${COMMENT_MIN}자 이상`,
       needSample: "샘플링 건수 입력", needAttach: "샘플링 자료 첨부",
@@ -970,8 +971,9 @@ const STR = {
       reqMcPlaceholder: "Select an approver",
       reqMcSearch: "Search by name, email, department, or team",
       charsMin: " chars min.",
-      attachHint: `Required · up to ${ATTACH_MAX_MB}MB per file`,
-      attachTooBig: `Each file must be ${ATTACH_MAX_MB}MB or less. The following were skipped.`,
+      attachHint: `Required · up to ${ATTACH_MAX_MB}MB total`,
+      attachCurrent: "Current", attachAdding: "Adding",
+      attachTooBig: `Attachments can total up to ${ATTACH_MAX_MB}MB. Please reduce the size or remove an existing file.`,
       needTitle: "To submit, you still need —",
       needRisk: "a risk level", needComment: `at least ${COMMENT_MIN} characters of rationale`,
       needSample: "a sample count", needAttach: "sampling evidence",
@@ -3890,6 +3892,9 @@ function SelfAssessForm({ control, draft, setDraft, onCancel, onSubmit }) {
   const commentLen = (draft.comment || "").trim().length;
   const sampleNum = Number(draft.sampleSize);
   const hasAttach = (draft.attachments || []).length > 0;
+  // 첨부 총 용량. SharePoint 에서 불러온 기존 첨부는 이름·URL 만 저장되어 크기를 알 수 없으므로,
+  // 이번에 새로 고른 파일만 합산한다(재제출 시 기존 첨부는 다시 올리지 않는다).
+  const attachBytes = (draft.attachments || []).reduce((n, a) => n + (a.rawSize || 0), 0);
   const missing = [];
   if (!draft.risk) missing.push(t("self.needRisk"));
   if (commentLen < COMMENT_MIN) missing.push(t("self.needComment"));
@@ -3899,15 +3904,17 @@ function SelfAssessForm({ control, draft, setDraft, onCancel, onSubmit }) {
   function handleFiles(e) {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
-    // 상한을 넘는 파일은 받지 않는다. SharePoint 업로드 실패를 미리 막는다.
-    const tooBig = files.filter((f) => f.size > ATTACH_MAX_BYTES);
-    if (tooBig.length) {
-      alert(`${t("self.attachTooBig")}\n\n` + tooBig.map((f) => `· ${f.name} (${formatBytes(f.size)})`).join("\n"));
+    // 첨부 전체 합계가 상한을 넘으면 받지 않는다. 개별 파일이 아니라 총량 기준이다.
+    const addBytes = files.reduce((n, f) => n + f.size, 0);
+    if (attachBytes + addBytes > ATTACH_MAX_BYTES) {
+      alert(`${t("self.attachTooBig")}\n\n`
+        + `${t("self.attachCurrent")} ${formatBytes(attachBytes)}\n`
+        + `${t("self.attachAdding")} ${formatBytes(addBytes)}`);
       e.target.value = "";
       return;
     }
     // file 원본은 실제 업로드(icsUploadAttachment) 시 필요, 이미 업로드된 기존 첨부(webUrl 있음)와 구분하는 용도
-    const newAttachments = files.map((f) => ({ name: f.name, size: formatBytes(f.size), file: f }));
+    const newAttachments = files.map((f) => ({ name: f.name, size: formatBytes(f.size), rawSize: f.size, file: f }));
     setDraft({ ...draft, attachments: [...(draft.attachments || []), ...newAttachments] });
     e.target.value = "";
   }
@@ -3980,14 +3987,20 @@ function SelfAssessForm({ control, draft, setDraft, onCancel, onSubmit }) {
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="w-full flex items-center justify-center gap-1.5 border-2 border-dashed rounded-xl py-[13px] text-xs font-medium transition-colors"
+            className="w-full flex flex-col items-center justify-center gap-0.5 border-2 border-dashed rounded-xl py-2 text-xs font-medium transition-colors"
             style={{ borderColor: "#B6C0CC", color: "#64748B" }}
             onMouseEnter={(e) => { e.currentTarget.style.borderColor = BRAND.accent; e.currentTarget.style.color = BRAND.accent; }}
             onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#B6C0CC"; e.currentTarget.style.color = "#64748B"; }}
           >
-            <UploadCloud size={15} /> {t("self.attachBtn")}
+            <span className="inline-flex items-center gap-1.5">
+              <UploadCloud size={15} /> {t("self.attachBtn")}
+            </span>
+            <span className="text-[11px] font-normal opacity-70">
+              {attachBytes > 0
+                ? `${formatBytes(attachBytes)} / ${ATTACH_MAX_MB}MB`
+                : t("self.attachHint")}
+            </span>
           </button>
-          <p className="text-[11px] text-slate-400 mt-1">{t("self.attachHint")}</p>
           <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFiles} />
         </div>
         </div>
