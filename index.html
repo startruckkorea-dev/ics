@@ -1457,8 +1457,12 @@ function Dashboard({ controls: allControls, goTo, isAdmin, allowedDepts }) {
     dept: d,
     cells: CATEGORIES.map((cat) => {
       const items = controls.filter((c) => c.dept === d.id && c.cat === cat.id);
-      if (items.length === 0) return { cat, risk: null, count: 0, assessed: 0 };
-      return { cat, risk: matrixCellRisk(items), count: items.length, assessed: matrixAssessedCount(items) };
+      if (items.length === 0) return { cat, risk: null, count: 0, assessed: 0, by: null };
+      // 셀에 총계만 보여주면 88건이 전부 미평가인지 양호인지 알 수 없다.
+      // 신호등별 건수를 함께 집계해 셀 안에 나눠 표시한다.
+      const by = { green: 0, orange: 0, red: 0, none: 0 };
+      items.forEach((c) => { by[finalRisk(c)] = (by[finalRisk(c)] || 0) + 1; });
+      return { cat, risk: matrixCellRisk(items), count: items.length, assessed: matrixAssessedCount(items), by };
     }),
   }));
 
@@ -1539,11 +1543,24 @@ function Dashboard({ controls: allControls, goTo, isAdmin, allowedDepts }) {
                           <button
                             title={`${row.dept[lang]} · ${cell.cat[lang]} — ${t("dashboard.matrixTotal")} ${cell.count}${t("common.items")} · ${t("dashboard.matrixAssessed")} ${cell.assessed}${t("common.items")}`}
                             onClick={() => goTo("manage", { dept: row.dept.id, cat: cell.cat.id })}
-                            className="min-w-[38px] h-7 px-1.5 rounded-lg inline-flex items-center justify-center gap-1 hover:opacity-75 transition-opacity font-semibold"
+                            className="min-w-[38px] px-1.5 py-1 rounded-lg inline-flex flex-col items-center gap-0.5 hover:opacity-75 transition-opacity"
                             style={{ backgroundColor: RISK_META[cell.risk].bg, color: RISK_META[cell.risk].text }}
                           >
-                            <RiskDot risk={cell.risk} size={7} />
-                            {cell.count}
+                            <span className="inline-flex items-center gap-1 font-semibold leading-none">
+                              <RiskDot risk={cell.risk} size={7} />
+                              {cell.count}
+                            </span>
+                            {/* 총계만으로는 88건이 전부 미평가인지 알 수 없어 신호등별 내역을 함께 보여준다.
+                                건수가 0인 신호등은 생략해 셀이 복잡해지지 않게 한다. */}
+                            <span className="inline-flex items-center gap-1 text-[10px] leading-none font-medium">
+                              {["green", "orange", "red", "none"]
+                                .filter((k) => cell.by && cell.by[k] > 0)
+                                .map((k) => (
+                                  <span key={k} style={{ color: RISK_META[k].color }} title={RISK_META[k][lang]}>
+                                    {cell.by[k]}
+                                  </span>
+                                ))}
+                            </span>
                           </button>
                         ) : (
                           <span className="text-slate-300">–</span>
@@ -5286,8 +5303,10 @@ function FinalReportPage({ controls, currentUser, activeYear, yearConfirmation, 
       dept: d,
       cells: CATEGORIES.map((cat) => {
         const items = controls.filter((c) => c.dept === d.id && c.cat === cat.id);
-        if (items.length === 0) return { cat, risk: null, count: 0, assessed: 0 };
-        return { cat, risk: matrixCellRisk(items), count: items.length, assessed: matrixAssessedCount(items) };
+        if (items.length === 0) return { cat, risk: null, count: 0, assessed: 0, by: null };
+        const by = { green: 0, orange: 0, red: 0, none: 0 };
+        items.forEach((c) => { by[finalRisk(c)] = (by[finalRisk(c)] || 0) + 1; });
+        return { cat, risk: matrixCellRisk(items), count: items.length, assessed: matrixAssessedCount(items), by };
       }),
     }));
 
@@ -5358,10 +5377,23 @@ function FinalReportPage({ controls, currentUser, activeYear, yearConfirmation, 
                       {cell.count > 0 ? (
                         <span
                           title={`${row.dept[lang]} · ${cell.cat[lang]} — ${t("dashboard.matrixTotal")} ${cell.count}${t("common.items")} · ${t("dashboard.matrixAssessed")} ${cell.assessed}${t("common.items")}`}
-                          className="w-6 h-6 rounded-md inline-flex items-center justify-center"
+                          className="px-1.5 py-1 rounded-md inline-flex flex-col items-center gap-0.5"
                           style={{ backgroundColor: RISK_META[cell.risk].bg }}
                         >
-                          <RiskDot risk={cell.risk} size={9} />
+                          <span className="inline-flex items-center gap-1 text-[12px] font-semibold leading-none"
+                                style={{ color: RISK_META[cell.risk].text }}>
+                            <RiskDot risk={cell.risk} size={7} />
+                            {cell.count}
+                          </span>
+                          <span className="inline-flex items-center gap-1 text-[10px] leading-none font-medium">
+                            {["green", "orange", "red", "none"]
+                              .filter((k) => cell.by && cell.by[k] > 0)
+                              .map((k) => (
+                                <span key={k} style={{ color: RISK_META[k].color }} title={RISK_META[k][lang]}>
+                                  {cell.by[k]}
+                                </span>
+                              ))}
+                          </span>
                         </span>
                       ) : (
                         <span className="text-slate-300">–</span>
