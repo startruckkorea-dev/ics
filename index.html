@@ -154,6 +154,12 @@ const BRAND = {
 let ICS_CONTACT_EMAIL = "";
 // 접근 권한 없음 화면에 표시할 담당자 목록 (system_config_final.xlsx 의 ICS_CONTACT)
 let ICS_CONTACT_EMAILS = [];
+// 통제 항목 변경 3차(최종) 승인자. system_config_final.xlsx 의 ICS_APPROVER_FINAL 에서 채운다.
+let ICS_APPROVER_FINAL = "";
+// employee_search.xlsx 의 상사 관계 (이메일 → { boss, bossOfBoss } · 영문 이름 기준)
+let ICS_BOSS_MAP = {};
+// 영문 이름 → 이메일 (상사 이름을 이메일로 바꾸는 데 사용)
+let ICS_NAME_TO_EMAIL = {};
 
 // 카테고리(사이드바 그룹)별 접근 권한. ics_category_access.xlsx에서 loadIcsCategoryAccess()가 채워 넣음.
 // 구조: { "이메일(소문자)": { icsOverview: bool, controlMgmt: bool, assessment: bool, adminOnly: bool, executive: bool } }
@@ -283,6 +289,10 @@ const ACTION_LABELS = {
   reset_controls: { ko: "통제 항목 전체 초기화", en: "All control items reset" },
   reset_password_changed: { ko: "초기화 비밀번호 변경", en: "Reset password changed" },
   edit_control: { ko: "통제 항목 수정", en: "Control item edited" },
+  request_edit_control: { ko: "통제 항목 수정 요청", en: "Control item change requested" },
+  request_delete_control: { ko: "통제 항목 삭제 요청", en: "Control item deletion requested" },
+  approve_change: { ko: "변경 요청 승인", en: "Change request approved" },
+  reject_change: { ko: "변경 요청 반려", en: "Change request rejected" },
   edit_learn_content: { ko: "학습 콘텐츠 수정", en: "Learning content edited" },
   withdraw_self: { ko: "자가평가 제출 철회", en: "Self-assessment submission withdrawn" },
   withdraw_fsa: { ko: "최종 자가평가 제출 철회", en: "Final self-assessment submission withdrawn" },
@@ -462,6 +472,7 @@ const STR = {
       fsa: "FSA 최종 자가평가",
       fsaReview: "FSA 2차검토",
       history: "평가 이력 · 리포트",
+      approval: "결재 승인",
       settings: "부서 및 ISA · FSA사용자 권한",
       categoryAccess: "카테고리 접근 권한",
       permissions: "권한 관리",
@@ -569,6 +580,7 @@ const STR = {
       deleteTitle: "통제 항목 삭제",
       deleteBody: "항목을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.",
       codePlaceholder: "예: FIN-CA-03", namePlaceholder: "통제 항목 이름",
+      codeLockedHint: "통제 코드는 수정할 수 없습니다. 이미 등록된 평가 내용과 연결되어 있어 코드를 바꾸면 연결이 끊어집니다.",
       descPlaceholder: "통제 활동에 대한 상세 설명", namePersonPlaceholder: "이름",
       emailPlaceholder: "이메일 주소 (예: hong.gildong@startruckkorea.com)",
     },
@@ -631,6 +643,20 @@ const STR = {
     },
     assess: {
       searchPlaceholder: "통제명 · 코드 · 담당자 검색",
+    },
+    approval: {
+      title: "결재 승인",
+      subtitle: "통제 항목 수정·삭제 요청을 승인하거나 반려합니다. 본인에게 배정된 건만 표시됩니다.",
+      myTurn: "내 결재 대기", noTurn: "결재할 요청이 없습니다.",
+      myRequests: "내가 올린 요청", noRequests: "올린 요청이 없습니다.",
+      typeEdit: "수정 요청", typeDelete: "삭제 요청",
+      requestedBy: "요청자", changeContent: "변경 내용",
+      deleteNotice: "최종 승인되면 이 통제 항목이 삭제됩니다. 이미 등록된 평가 내용도 함께 조회할 수 없게 됩니다.",
+      commentPlaceholder: "의견을 입력하세요. (반려 시 사유를 남겨 주세요)",
+      approve: "승인", reject: "반려",
+      stepMc: "1차 MC", stepContact: "2차 ICS", stepFinal: "3차 최종",
+      inProgress: "진행 중", done: "승인 완료", rejected: "반려",
+      rejectReason: "반려 사유",
     },
     finalReport: {
       title: "최종 결과 보고",
@@ -760,6 +786,7 @@ const STR = {
       fsa: "FSA Final Self-Assessment",
       fsaReview: "FSA 2nd Review",
       history: "History & Reports",
+      approval: "Change Approvals",
       settings: "Dept. & ISA/FSA User Access",
       categoryAccess: "Category Access",
       permissions: "Access Control",
@@ -865,6 +892,7 @@ const STR = {
       deleteTitle: "Delete control item",
       deleteBody: "Are you sure you want to delete this item? This action cannot be undone.",
       codePlaceholder: "e.g. FIN-CA-03", namePlaceholder: "Control item name",
+      codeLockedHint: "The control code cannot be changed. It links this item to its recorded assessments.",
       descPlaceholder: "Detailed description of the control activity", namePersonPlaceholder: "Name",
       emailPlaceholder: "Email address (e.g. jane.doe@startruckkorea.com)",
       uploading: "Uploading...",
@@ -929,6 +957,20 @@ const STR = {
     },
     assess: {
       searchPlaceholder: "Search by control name, code, or accessor",
+    },
+    approval: {
+      title: "Change Approvals",
+      subtitle: "Approve or reject control item change and deletion requests. Only requests assigned to you are shown.",
+      myTurn: "Awaiting my approval", noTurn: "No requests awaiting your approval.",
+      myRequests: "My requests", noRequests: "You have not submitted any requests.",
+      typeEdit: "Change", typeDelete: "Deletion",
+      requestedBy: "Requested by", changeContent: "Requested changes",
+      deleteNotice: "Once fully approved, this control item will be deleted along with access to its recorded assessments.",
+      commentPlaceholder: "Add a comment. (Please give a reason when rejecting)",
+      approve: "Approve", reject: "Reject",
+      stepMc: "1st MC", stepContact: "2nd ICS", stepFinal: "3rd Final",
+      inProgress: "In progress", done: "Approved", rejected: "Rejected",
+      rejectReason: "Reason",
     },
     finalReport: {
       title: "Final Report",
@@ -1213,6 +1255,9 @@ const MENU_GROUPS = [
     { key: "fsa", icon: ShieldCheck, hiddenFor: ["cfo", "rd"], categoryKey: "fsa" },
     { key: "fsaReview", icon: CheckCircle2, categoryKey: "fsaReview" },
     { key: "history", icon: History, categoryKey: "history" },
+    // 결재 승인은 별도 접근 권한 없이 전 직원이 들어올 수 있다.
+    // 본인에게 배정된 건만 표시되므로 할당이 없으면 빈 화면이 나온다.
+    { key: "approval", icon: FileCheck2 },
   ] },
   { key: "adminOnly", label: "adminOnly", items: [
     { key: "settings", icon: Settings },
@@ -2223,6 +2268,48 @@ function injectDataValidations(arrayBuffer, colMap) {
   return fflate.zipSync(files);
 }
 
+// 통제 항목 변경 요청의 결재선을 만든다.
+//   1차 MC   : 요청자의 Boss of Boss (없으면 Boss). 둘 다 없으면(CEO) 이 단계를 건너뛴다.
+//   2차      : system_config_final.xlsx 의 ICS_CONTACT
+//   3차 최종 : system_config_final.xlsx 의 ICS_APPROVER_FINAL
+function buildApprovalSteps(requesterEmail) {
+  const me = String(requesterEmail || "").toLowerCase();
+  const rel = ICS_BOSS_MAP[me] || {};
+  const mcName = rel.bossOfBoss || rel.boss || "";
+  const mcEmail = mcName ? (ICS_NAME_TO_EMAIL[mcName.toLowerCase()] || "") : "";
+
+  const steps = [];
+  // CEO 처럼 상사가 없는 경우 1차를 건너뛴다.
+  if (mcEmail && mcEmail !== me) steps.push({ role: "MC", approver: mcEmail, status: "pending" });
+  const contact = (ICS_CONTACT_EMAILS[0] || ICS_CONTACT_EMAIL || "").toLowerCase();
+  if (contact) steps.push({ role: "ICS_CONTACT", approver: contact, status: "pending" });
+  if (ICS_APPROVER_FINAL) steps.push({ role: "FINAL", approver: ICS_APPROVER_FINAL, status: "pending" });
+  return steps;
+}
+
+// ICS_ChangeRequests 목록에서 변경 요청을 읽어온다.
+async function loadIcsChangeRequests() {
+  const items = await icsListAll(ICS_LISTS.changeRequests);
+  return items.map((it) => {
+    const f = it.fields || {};
+    const parse = (v, fallback) => {
+      try { return JSON.parse(stripSpRichText(v) || ""); } catch (e) { return fallback; }
+    };
+    return {
+      spId: it.id,
+      code: String(f.Title || "").trim(),
+      year: String(f.Year || ""),
+      reqType: String(f.ReqType || "edit"),
+      requester: String(f.RequesterEmail || "").toLowerCase(),
+      payload: parse(f.Payload, {}),
+      steps: parse(f.Steps, []),
+      step: Number(f.Step || 1),
+      status: String(f.Status || "pending"),
+      created: f.Created || null,
+    };
+  });
+}
+
 function matchOption(raw, options) {
   const v = String(raw || "").trim();
   if (!v) return null;
@@ -2581,6 +2668,34 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
     try {
       if (editingId) {
         const target = allControls.find((c) => c.id === editingId);
+        // 기존 항목 수정은 곧바로 반영하지 않고 3단계 결재 요청을 생성한다.
+        // (신규 등록은 결재 없이 바로 생성된다)
+        if (usingSharePointData && target) {
+          const steps = buildApprovalSteps(currentUser.email);
+          if (!steps.length) {
+            alert(lang === "en"
+              ? "Approval line could not be determined. Please contact IT."
+              : "결재선을 확인할 수 없습니다. IT로 문의해 주세요.");
+            return;
+          }
+          await icsCreateItem(ICS_LISTS.changeRequests, {
+            Title: target.code, Year: year, ReqType: "edit",
+            RequesterEmail: currentUser.email,
+            Payload: JSON.stringify({
+              dept: form.dept, cat: form.cat, name: form.name, desc: form.desc,
+              accessor: form.accessor, reviewer: form.reviewer,
+              frequency: form.frequency, importance: form.importance,
+            }),
+            Steps: JSON.stringify(steps), Step: 1, Status: "pending",
+          });
+          addLog(currentUser.email, "request_edit_control", target.code, form.name, form.name);
+          setForm(null);
+          setEditingId(null);
+          showToast(lang === "en"
+            ? "Change request submitted for approval."
+            : "수정 요청이 결재로 상신되었습니다.");
+          return;
+        }
         if (target?.spId) await icsUpdateItem(ICS_LISTS.controls, target.spId, fields);
         setControls((prev) => prev.map((c) => (c.id === editingId ? { ...c, ...form, sampleSize: recommendedSample(form.importance, form.frequency), pendingEdit: null } : c)));
         addLog(currentUser.email, "edit_control", form.code, form.name, form.name);
@@ -2607,6 +2722,27 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
   async function remove(c) {
     setConfirmDelete(null);
     try {
+      // 삭제도 3단계 결재를 거친다.
+      if (usingSharePointData) {
+        const steps = buildApprovalSteps(currentUser.email);
+        if (!steps.length) {
+          alert(lang === "en"
+            ? "Approval line could not be determined. Please contact IT."
+            : "결재선을 확인할 수 없습니다. IT로 문의해 주세요.");
+          return;
+        }
+        await icsCreateItem(ICS_LISTS.changeRequests, {
+          Title: c.code, Year: c.year, ReqType: "delete",
+          RequesterEmail: currentUser.email,
+          Payload: JSON.stringify({}),
+          Steps: JSON.stringify(steps), Step: 1, Status: "pending",
+        });
+        addLog(currentUser.email, "request_delete_control", c.code, c.name, c.nameEn);
+        showToast(lang === "en"
+          ? "Delete request submitted for approval."
+          : "삭제 요청이 결재로 상신되었습니다.");
+        return;
+      }
       if (c.spId) await icsDeleteItem(ICS_LISTS.controls, c.spId);
       setControls((prev) => prev.filter((x) => x.id !== c.id));
       addLog(currentUser.email, "delete_control", c.code, c.name, c.nameEn);
@@ -2778,9 +2914,11 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
             <input
               className={codeError ? `${inputCls} border-red-400 focus:border-red-400 focus:ring-red-100` : inputCls}
               value={form.code}
+              disabled={!!editingId}
               onChange={(e) => { setForm({ ...form, code: e.target.value }); if (codeError) setCodeError(""); }}
               placeholder={t("manage.codePlaceholder")}
             />
+            {editingId && <p className="text-xs text-slate-400 mt-1.5">{t("manage.codeLockedHint")}</p>}
             {codeError && <p className="text-xs text-red-600 mt-1.5 flex items-start gap-1"><AlertTriangle size={12} className="flex-shrink-0 mt-0.5" />{codeError}</p>}
           </Field>
           <Field label={t("manage.fieldName")}>
@@ -4010,6 +4148,243 @@ function exportControlsToExcel(controls, lang, departments = INITIAL_DEPARTMENTS
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, lang === "en" ? "Internal Control Status" : "내부통제 현황");
   XLSX.writeFile(wb, `internal_control_status_${new Date(new Date().getTime()+9*3600*1000).toISOString().slice(0, 10)}.xlsx`);
+}
+
+// 통제 항목 변경(수정·삭제) 결재 승인 화면.
+// 별도 접근 권한 없이 전 직원이 들어올 수 있고, 본인에게 배정된 건만 표시된다.
+function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, isArchived }) {
+  const { lang, t } = useLang();
+  const { departments, users } = useAppData();
+  const [requests, setRequests] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [acting, setActing] = useState(null);
+  const [comment, setComment] = useState({});
+  const myEmail = (currentUser.email || "").toLowerCase();
+
+  async function reload() {
+    setLoading(true);
+    try { setRequests(await loadIcsChangeRequests()); }
+    catch (e) { console.warn("[ICS] 변경 요청 로드 실패:", e.message); setRequests([]); }
+    finally { setLoading(false); }
+  }
+  useEffect(() => { reload(); }, []);
+
+  // 내 차례인 건 = 진행 중 && 현재 단계의 승인자가 나
+  const myTurn = requests.filter((r) => {
+    if (r.status !== "pending") return false;
+    const cur = r.steps[r.step - 1];
+    return cur && (cur.approver || "").toLowerCase() === myEmail && cur.status === "pending";
+  });
+  // 내가 올린 요청
+  const mine = requests.filter((r) => r.requester === myEmail);
+
+  function labelOf(r) {
+    const c = controls.find((x) => x.code === r.code && x.year === r.year);
+    return c ? cName(c, lang) : r.code;
+  }
+
+  async function act(r, approved) {
+    if (isArchived) return;
+    setActing(r.spId);
+    try {
+      const steps = r.steps.map((st, i) => (i === r.step - 1
+        ? { ...st, status: approved ? "approved" : "rejected",
+            comment: (comment[r.spId] || "").trim(), date: new Date().toISOString() }
+        : st));
+      const isLast = r.step >= steps.length;
+      const nextStep = approved && !isLast ? r.step + 1 : r.step;
+      const nextStatus = !approved ? "rejected" : (isLast ? "approved" : "pending");
+
+      await icsUpdateItem(ICS_LISTS.changeRequests, r.spId, {
+        Steps: JSON.stringify(steps), Step: nextStep, Status: nextStatus,
+      });
+
+      // 최종 승인이면 실제 통제 항목에 반영한다.
+      if (nextStatus === "approved") {
+        const target = controls.find((x) => x.code === r.code && x.year === r.year);
+        if (target) {
+          if (r.reqType === "delete") {
+            if (target.spId) await icsDeleteItem(ICS_LISTS.controls, target.spId);
+            setControls((prev) => prev.filter((x) => x.id !== target.id));
+          } else {
+            const pl = r.payload || {};
+            if (target.spId) {
+              await icsUpdateItem(ICS_LISTS.controls, target.spId, {
+                Dept: pl.dept, Category: pl.cat, NameKo: pl.name, NameEn: pl.name,
+                DescKo: pl.desc, DescEn: pl.desc,
+                AccessorEmail: pl.accessor, ReviewerEmail: pl.reviewer,
+                Frequency: pl.frequency, Importance: pl.importance,
+              });
+            }
+            setControls((prev) => prev.map((x) => (x.id === target.id
+              ? { ...x, dept: pl.dept, cat: pl.cat, name: pl.name, nameEn: pl.name,
+                  desc: pl.desc, descEn: pl.desc, accessor: pl.accessor, reviewer: pl.reviewer,
+                  frequency: pl.frequency, importance: pl.importance }
+              : x)));
+          }
+        }
+      }
+
+      addLog(currentUser.email, approved ? "approve_change" : "reject_change", r.code, labelOf(r), labelOf(r));
+      showToast(approved
+        ? (nextStatus === "approved"
+            ? (lang === "en" ? "Approved. The change has been applied." : "승인되었습니다. 변경 내용이 반영되었습니다.")
+            : (lang === "en" ? "Approved. Sent to the next approver." : "승인되었습니다. 다음 결재자에게 전달됩니다."))
+        : (lang === "en" ? "Request rejected." : "요청이 반려되었습니다."));
+      setComment((prev) => ({ ...prev, [r.spId]: "" }));
+      await reload();
+    } catch (e) {
+      console.warn("[ICS] 결재 처리 실패:", e.message);
+      alert(lang === "en" ? "Failed to process the approval." : "결재 처리에 실패했습니다. 잠시 후 다시 시도해 주세요.");
+    } finally {
+      setActing(null);
+    }
+  }
+
+  const stepLabel = (st) => {
+    if (st.role === "MC") return t("approval.stepMc");
+    if (st.role === "ICS_CONTACT") return t("approval.stepContact");
+    return t("approval.stepFinal");
+  };
+
+  function StepTrail({ r }) {
+    return (
+      <div className="flex flex-wrap items-center gap-2 mt-2">
+        {r.steps.map((st, i) => {
+          const cur = r.status === "pending" && i === r.step - 1;
+          const bg = st.status === "approved" ? "#DCFCE7" : st.status === "rejected" ? "#FEE2E2" : cur ? "#E4F1F0" : "#F1F5F9";
+          const fg = st.status === "approved" ? "#15803D" : st.status === "rejected" ? "#B91C1C" : cur ? BRAND.accent : "#94A3B8";
+          return (
+            <span key={i} className="text-xs px-2.5 py-1 rounded-full whitespace-nowrap"
+                  style={{ backgroundColor: bg, color: fg }}
+                  title={`${personByEmail(st.approver, lang, users)}${st.comment ? " · " + st.comment : ""}`}>
+              {i + 1}. {stepLabel(st)} · {personByEmail(st.approver, lang, users)}
+              {st.status === "approved" ? " ✓" : st.status === "rejected" ? " ✕" : ""}
+            </span>
+          );
+        })}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <SectionHeader icon={ClipboardCheck} title={t("approval.title")} subtitle={t("approval.subtitle")} />
+
+      {loading ? (
+        <div className="bg-white rounded-xl border border-slate-100 p-8 flex items-center justify-center gap-2 text-sm text-slate-500">
+          <Loader2 size={16} className="animate-spin" /> {t("common.loading")}
+        </div>
+      ) : (
+        <>
+          <div className="mb-6">
+            <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
+              <AlertTriangle size={15} className="text-amber-500" /> {t("approval.myTurn")} ({myTurn.length})
+            </h3>
+            {myTurn.length === 0 ? (
+              <EmptyState text={t("approval.noTurn")} />
+            ) : (
+              <div className="space-y-3">
+                {myTurn.map((r) => (
+                  <div key={r.spId} className="bg-white rounded-xl border border-slate-100 p-5">
+                    <div className="flex items-start justify-between gap-3 flex-wrap">
+                      <div className="min-w-0">
+                        <p className="text-xs text-slate-400 font-mono">{r.code} · {r.year}</p>
+                        <p className="text-sm font-semibold text-slate-800 mt-0.5">{labelOf(r)}</p>
+                      </div>
+                      <span className="text-xs px-2.5 py-1 rounded-full font-medium whitespace-nowrap"
+                            style={{ backgroundColor: r.reqType === "delete" ? "#FEE2E2" : "#E4F1F0",
+                                     color: r.reqType === "delete" ? "#B91C1C" : BRAND.accent }}>
+                        {r.reqType === "delete" ? t("approval.typeDelete") : t("approval.typeEdit")}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-1.5">
+                      {t("approval.requestedBy")} {personByEmail(r.requester, lang, users)} · {formatDateTime(r.created, lang)}
+                    </p>
+
+                    {r.reqType === "edit" && (
+                      <div className="bg-slate-50 rounded-lg p-3 mt-3 text-xs text-slate-600 space-y-1">
+                        <p className="font-medium text-slate-500 mb-1">{t("approval.changeContent")}</p>
+                        <p>{t("list.colName")}: <span className="whitespace-pre-wrap">{r.payload.name || "-"}</span></p>
+                        <p>{t("list.colDept")}: {deptName(r.payload.dept, lang, departments)} · {t("list.colCat")}: {catName(r.payload.cat, lang)}</p>
+                        <p>{t("list.colAccessor")}: {personByEmail(r.payload.accessor, lang, users)} · {t("list.colReviewer")}: {personByEmail(r.payload.reviewer, lang, users)}</p>
+                        <p>{t("manage.fieldFreq")}: {freqLabel(r.payload.frequency, lang)} · {t("manage.fieldImportance")}: {importanceLabel(r.payload.importance, lang)}</p>
+                        {r.payload.desc && <p className="whitespace-pre-wrap">{t("manage.fieldDesc")}: {r.payload.desc}</p>}
+                      </div>
+                    )}
+                    {r.reqType === "delete" && (
+                      <div className="bg-red-50 rounded-lg p-3 mt-3 text-xs text-red-700">
+                        {t("approval.deleteNotice")}
+                      </div>
+                    )}
+
+                    <StepTrail r={r} />
+
+                    <textarea
+                      className={`${inputCls} mt-3`}
+                      rows={2}
+                      value={comment[r.spId] || ""}
+                      onChange={(e) => setComment((prev) => ({ ...prev, [r.spId]: e.target.value }))}
+                      placeholder={t("approval.commentPlaceholder")}
+                    />
+                    <div className="flex justify-end gap-2 mt-3">
+                      <button
+                        onClick={() => act(r, false)}
+                        disabled={acting === r.spId || isArchived}
+                        className="px-4 py-2 text-sm rounded-lg border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-40"
+                      >
+                        {t("approval.reject")}
+                      </button>
+                      <button
+                        onClick={() => act(r, true)}
+                        disabled={acting === r.spId || isArchived}
+                        className="px-4 py-2 text-sm rounded-lg text-white disabled:opacity-40 flex items-center gap-1.5"
+                        style={{ backgroundColor: BRAND.accent }}
+                      >
+                        {acting === r.spId && <Loader2 size={14} className="animate-spin" />}
+                        {t("approval.approve")}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div>
+            <h3 className="text-sm font-semibold text-slate-700 mb-3">{t("approval.myRequests")} ({mine.length})</h3>
+            {mine.length === 0 ? (
+              <EmptyState text={t("approval.noRequests")} />
+            ) : (
+              <div className="space-y-2">
+                {mine.map((r) => (
+                  <div key={r.spId} className="bg-white rounded-xl border border-slate-100 p-4">
+                    <div className="flex items-start justify-between gap-3 flex-wrap">
+                      <div className="min-w-0">
+                        <p className="text-xs text-slate-400 font-mono">{r.code} · {r.reqType === "delete" ? t("approval.typeDelete") : t("approval.typeEdit")}</p>
+                        <p className="text-sm text-slate-700 mt-0.5">{labelOf(r)}</p>
+                      </div>
+                      <span className="text-xs px-2.5 py-1 rounded-full font-medium whitespace-nowrap"
+                            style={{ backgroundColor: r.status === "approved" ? "#DCFCE7" : r.status === "rejected" ? "#FEE2E2" : "#FEF3C7",
+                                     color: r.status === "approved" ? "#15803D" : r.status === "rejected" ? "#B91C1C" : "#B45309" }}>
+                        {r.status === "approved" ? t("approval.done") : r.status === "rejected" ? t("approval.rejected") : t("approval.inProgress")}
+                      </span>
+                    </div>
+                    <StepTrail r={r} />
+                    {r.steps.filter((st) => st.status === "rejected" && st.comment).map((st, i) => (
+                      <p key={i} className="text-xs text-red-600 mt-2 whitespace-pre-wrap">
+                        {t("approval.rejectReason")}: {st.comment}
+                      </p>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
 }
 
 function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedDepts }) {
@@ -5981,6 +6356,16 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
                 ? <FSAReviewPage controls={controlsForYear} setControls={setControls} currentUser={currentUser} addLog={addLog} isArchived={isArchived} showToast={showToast} allowedDepts={reviewerDepts} />
                 : <EmptyState text="Access denied" />
             )}
+            {page === "approval" && (
+              <ApprovalPage
+                controls={controlsForYear}
+                setControls={setControls}
+                currentUser={currentUser}
+                addLog={addLog}
+                showToast={showToast}
+                isArchived={isArchived}
+              />
+            )}
             {page === "history" && (
               hasCategoryAccess(currentUser, "history")
                 ? <HistoryPage controls={controlsForYear} log={logForYear} currentUser={currentUser} allowedDepts={allowedDepts} />
@@ -6070,7 +6455,7 @@ async function apiGet(path, token) {
  * ICS_* SharePoint 목록 연동 (Controls / Requests / Log)
  * 목록 GUID를 하드코딩하지 않고 displayName으로 조회해서 캐싱한다 (오타/재생성에 안전).
  * ------------------------------------------------------------------ */
-const ICS_LISTS = { controls: "ICS_Controls", requests: "ICS_Requests", approvals: "ICS_Approvals", log: "ICS_Log", categoryAccess: "ICS_CategoryAccess", departments: "ICS_Departments" };
+const ICS_LISTS = { controls: "ICS_Controls", requests: "ICS_Requests", approvals: "ICS_Approvals", log: "ICS_Log", categoryAccess: "ICS_CategoryAccess", departments: "ICS_Departments", changeRequests: "ICS_ChangeRequests" };
 // ICS_Departments 목록이 존재하는지 여부. 없으면 부서는 ics_category_access.xlsx의 Departments 시트(읽기 전용)에서만 오고,
 // 권한 관리 화면의 부서 추가·수정·삭제는 비활성화된다.
 let ICS_DEPT_LIST_READY = false;
@@ -6681,8 +7066,21 @@ async function loadIcsContactFromSystemConfig(token) {
     if (!sheet) throw new Error("SystemConfig 시트 없음");
     const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
     const emails = [];
+    const pickEmail = (row) => {
+      let found = "";
+      (row || []).forEach((cell) => {
+        const v = String(cell || "").trim();
+        if (!found && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) found = v.toLowerCase();
+      });
+      return found;
+    };
     rows.forEach((row) => {
       const key = String((row || [])[0] || "").trim().toUpperCase();
+      if (key.startsWith("ICS_APPROVER_FINAL")) {
+        const e = pickEmail(row);
+        if (e && !ICS_APPROVER_FINAL) ICS_APPROVER_FINAL = e;
+        return;
+      }
       if (!key.startsWith("ICS_CONTACT")) return;
       (row || []).forEach((cell) => {
         const v = String(cell || "").trim();
@@ -6778,6 +7176,8 @@ async function loadIcsMasterConfig(token) {
     const eMailIdx = colIdx(eHeader, "EMail") >= 0 ? colIdx(eHeader, "EMail") : colIdx(eHeader, "Email");
     const eNameIdx = colIdx(eHeader, "EngName");
     const eDeptIdx = colIdx(eHeader, "Department");
+    const eBossIdx = colIdx(eHeader, "Boss");
+    const eBoss2Idx = colIdx(eHeader, "Boss of Boss");
     empRows.slice(1).forEach((row) => {
       const email = eMailIdx >= 0 ? String(row[eMailIdx] || "").trim().toLowerCase() : "";
       if (!email) return;
@@ -6785,6 +7185,13 @@ async function loadIcsMasterConfig(token) {
       byEmail[email] = {
         email, name: nm || email, nameEn: nm || email, role: "guest", dept: null,
         deptLabel: eDeptIdx >= 0 ? String(row[eDeptIdx] || "").trim() : "",
+      };
+      if (nm) ICS_NAME_TO_EMAIL[nm.toLowerCase()] = email;
+      // "-" 는 상사 없음을 뜻한다 (CEO 등)
+      const clean = (v) => { const t = String(v || "").trim(); return t && t !== "-" ? t : ""; };
+      ICS_BOSS_MAP[email] = {
+        boss: eBossIdx >= 0 ? clean(row[eBossIdx]) : "",
+        bossOfBoss: eBoss2Idx >= 0 ? clean(row[eBoss2Idx]) : "",
       };
     });
     console.log(`[ICS] employee_search.xlsx 사용자 ${Object.keys(byEmail).length}명 로드`);
