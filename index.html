@@ -797,6 +797,7 @@ const STR = {
       selectUserHint: "왼쪽 목록에서 사용자를 선택하면 부서별 접근 권한이 여기 표시됩니다.",
       adminAllDeptsNote: "Admin은 역할상 항상 전체 부서에 접근합니다 (아래는 참고용 표시).",
       selectAll: "전체선택", deselectAll: "전체해제",
+      adminColLocked: "Admin 역할은 전 부서 관리자라 이 열은 변경할 수 없습니다. 겸직은 Accessor/Reviewer 열에서 지정하세요.",
       addTitle: "이메일로 담당자 권한 부여",
       emailPlaceholder: "이메일 주소 입력 (예: hong.gildong@startruckkorea.com)",
       grantBtn: "권한 부여", invalidEmail: "올바른 이메일 주소를 입력해주세요.",
@@ -1140,6 +1141,7 @@ const STR = {
       selectUserHint: "Select a user from the list on the left to see their department access here.",
       adminAllDeptsNote: "Admins always have access to all departments by role (shown below for reference).",
       selectAll: "Select all", deselectAll: "Clear all",
+      adminColLocked: "Admin covers every department, so this column is fixed. Use the Accessor/Reviewer columns for additional duties.",
       addTitle: "Grant access by email",
       emailPlaceholder: "Enter email address (e.g. jane.doe@startruckkorea.com)",
       grantBtn: "Grant access", invalidEmail: "Please enter a valid email address.",
@@ -6189,17 +6191,22 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
     if (!selectedUser) { setDraft(null); return; }
     const p = permissions[selectedUser.email] || {};
     const allIds = departments.map((d) => d.id);
+    // Admin 은 정의상 전 부서 관리자이므로 Admin 열만 전 부서로 채우고 잠근다.
+    // Accessor/Reviewer 열은 저장된 값 그대로 두어 겸직을 지정할 수 있게 한다.
+    // (예: Admin 이면서 IT팀 검토자 겸임, CFO 이면서 특정 부서 검토자 겸임)
     setDraft({
       role: selectedUser.role,
-      deptsAccessor: selectedUser.role === "admin" ? allIds : p.deptsAccessor || [],
-      deptsReviewer: selectedUser.role === "admin" ? allIds : p.deptsReviewer || [],
+      deptsAccessor: p.deptsAccessor || [],
+      deptsReviewer: p.deptsReviewer || [],
       deptsAdmin: selectedUser.role === "admin" ? allIds : p.deptsAdmin || [],
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedEmail]);
 
   function toggleDraftDept(capacityKey, deptId) {
-    if (!draft || draft.role === "admin") return;
+    if (!draft) return;
+    // Admin 역할은 전 부서 관리자라 Admin 열을 바꿀 수 없다. 나머지 열은 겸직 지정용으로 연다.
+    if (draft.role === "admin" && capacityKey === "deptsAdmin") return;
     setDraft((prev) => {
       const list = prev[capacityKey];
       const next = list.includes(deptId) ? list.filter((x) => x !== deptId) : [...list, deptId];
@@ -6207,7 +6214,8 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
     });
   }
   function selectAllDraft(capacityKey, allOn) {
-    if (!draft || draft.role === "admin") return;
+    if (!draft) return;
+    if (draft.role === "admin" && capacityKey === "deptsAdmin") return;
     setDraft((prev) => ({ ...prev, [capacityKey]: allOn ? departments.map((d) => d.id) : [] }));
   }
 
@@ -6662,9 +6670,11 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
                                 <input
                                   type="checkbox"
                                   checked={draft[k].includes(d.id)}
-                                  disabled={saving}
+                                  disabled={saving || (draft.role === "admin" && k === "deptsAdmin")}
+                                  title={draft.role === "admin" && k === "deptsAdmin"
+                                    ? t("permissions.adminColLocked") : ""}
                                   onChange={() => toggleDraftDept(k, d.id)}
-                                  className="w-4 h-4 cursor-pointer disabled:cursor-not-allowed"
+                                  className="w-4 h-4 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
                                   style={{ accentColor: BRAND.accent }}
                                 />
                               </td>
