@@ -2399,7 +2399,7 @@ function PersonAutocomplete({ value, onChange, users, lang, placeholder }) {
   );
 }
 
-function ControlManage({ controls: allControls, setControls, canEdit, addLog, isAdmin, allowedDepts, currentUser, isArchived, year, resetPassword, showToast }) {
+function ControlManage({ controls: allControls, setControls, canEdit, addLog, isAdmin, allowedDepts, currentUser, isArchived, year, resetPassword, showToast, usingSharePointData }) {
   const { lang, t } = useLang();
   const { departments, users } = useAppData();
   const [form, setForm] = useState(null);
@@ -6452,6 +6452,7 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
                   year={selectedYear}
                   resetPassword={resetPassword}
                   showToast={showToast}
+                  usingSharePointData={usingSharePointData}
                 />
               ) : (
                 <EmptyState text="Access denied" />
