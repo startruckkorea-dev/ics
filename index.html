@@ -158,7 +158,9 @@ let ICS_CONTACT_EMAIL = "";
 let ICS_CONTACT_EMAILS = [];
 // 결재 요청의 1차 MC 후보. employee_search.xlsx 의 H열(Boss of Boss)에 등장하는
 // 사람만 모아 중복을 제거한 목록이다. 전 직원을 고르게 하면 목록이 길어 실수하기 쉽다.
-let ICS_MC_CANDIDATES = [];   // [{ email, name }]
+let ICS_MC_CANDIDATES = [];   // [{ name, email, dept, team }] — H열 기준 기본 후보
+// 전 임직원 명부. MC 가 휴가 등으로 부재일 때 다른 결재자를 직접 고를 수 있게 한다.
+let ICS_EMPLOYEE_DIR = [];    // [{ name, email, dept, team }]
 // 통제 항목 변경 3차(최종) 승인자. system_config_final.xlsx 의 ICS_APPROVER_FINAL 에서 채운다.
 let ICS_APPROVER_FINAL = "";
 // employee_search.xlsx 의 상사 관계 (이메일 → { boss, bossOfBoss } · 영문 이름 기준)
@@ -611,8 +613,9 @@ const STR = {
       reqLineTitle: "결재선",
       reqMcLabel: "1차 결재자 (MC)",
       reqMcPlaceholder: "결재자를 선택해 주세요",
-      reqMcEmpty: "선택 가능한 결재자가 없습니다. IT로 문의해 주세요.",
       reqMcSearch: "이름 · 이메일 · 부서 · 팀으로 검색",
+      reqMcDefault: "기본 결재자", reqMcAll: "전체 임직원",
+      reqMcTryAll: "해당하는 결재자가 없습니다. 「전체 임직원」에서 찾아보세요.",
       reqReasonLabel: "요청 사유",
       reqReasonPlaceholder: "무엇을 왜 수정하는지 적어 주세요. 결재자가 판단하는 데 사용됩니다.",
       reqCurrent: "현재 등록된 내용",
@@ -953,8 +956,9 @@ const STR = {
       reqLineTitle: "Approval line",
       reqMcLabel: "1st approver (MC)",
       reqMcPlaceholder: "Select an approver",
-      reqMcEmpty: "No approver is available. Please contact IT.",
       reqMcSearch: "Search by name, email, department, or team",
+      reqMcDefault: "Default approvers", reqMcAll: "All employees",
+      reqMcTryAll: "No match here. Try searching in All employees.",
       reqReasonLabel: "Reason for request",
       reqReasonPlaceholder: "Describe what you are changing and why. Approvers use this to decide.",
       reqCurrent: "Currently registered",
@@ -3303,7 +3307,9 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
   // 수정 요청을 올릴 수 있게 한다. 요청은 3단계 결재를 거쳐야 실제로 반영된다.
   const [reqForm, setReqForm] = useState(null);   // { control, name, desc, cat }
   const [reqSaving, setReqSaving] = useState(false);
-  const [mcQuery, setMcQuery] = useState("");   // MC 후보 검색어 (이름·이메일·부서·팀)
+  const [mcOpen, setMcOpen] = useState(false);   // 결재자 선택 목록 펼침 여부
+  const [mcQuery, setMcQuery] = useState("");    // 검색어 (이름·이메일·부서·팀)
+  const [mcAll, setMcAll] = useState(false);     // true 면 전 임직원에서 고른다
   const [changeReqs, setChangeReqs] = useState({});
   useEffect(() => {
     if (!usingSharePointData) return;
@@ -3331,11 +3337,14 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
 
   // 1차 MC 후보 — employee_search.xlsx 의 H열에 등장하는 사람만, 요청자 본인은 제외.
   const _mcQ = mcQuery.trim().toLowerCase();
-  const mcOptions = ICS_MC_CANDIDATES
+  // 기본은 H열 기준 MC 후보. MC 가 부재중이면 전 임직원에서 직접 고를 수 있다.
+  const mcPool = mcAll ? ICS_EMPLOYEE_DIR : ICS_MC_CANDIDATES;
+  const mcOptions = mcPool
     .filter((x) => x.email !== myEmail)
     .filter((x) => !_mcQ || [x.name, x.email, x.dept, x.team]
       .some((v) => String(v || "").toLowerCase().includes(_mcQ)))
     .sort((a, b) => a.name.localeCompare(b.name));
+  const mcPicked = [...ICS_EMPLOYEE_DIR, ...ICS_MC_CANDIDATES].find((x) => x.email === reqForm?.mc) || null;
 
   // 결재선은 MC 선택에 따라 즉시 다시 계산한다. 중복이면 그 자리에서 안내가 뜬다.
   const reqSteps = reqForm ? buildApprovalSteps(currentUser.email, reqForm.mc) : [];
@@ -3371,7 +3380,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
       addLog(currentUser.email, "request_edit_control", c.code, name, name);
       setChangeReqs((prev) => ({ ...prev, [c.code]: { code: c.code, status: "pending" } }));
       setReqForm(null);
-      setMcQuery("");
+      setMcQuery(""); setMcOpen(false); setMcAll(false);
       showToast(lang === "en"
         ? "Change request submitted for approval."
         : "수정 요청이 결재로 상신되었습니다.");
@@ -3534,52 +3543,95 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
 
           <div className="mt-3">
             <Field label={t("self.reqMcLabel")}>
-              {mcOptions.length === 0 ? (
-                <p className="text-xs text-red-600">{t("self.reqMcEmpty")}</p>
-              ) : (
-                <>
-                  <div className="relative mb-1.5">
-                    <Search size={14} className="absolute left-3 top-2.5 text-slate-400" />
-                    <input
-                      value={mcQuery}
-                      onChange={(e) => setMcQuery(e.target.value)}
-                      placeholder={t("self.reqMcSearch")}
-                      className={`${inputCls} pl-8 py-2 text-[13px]`}
-                    />
-                  </div>
-                  <div className="border border-slate-200 rounded-lg overflow-y-auto divide-y divide-slate-100" style={{ maxHeight: 168 }}>
-                    {mcOptions.length === 0 ? (
-                      <p className="text-xs text-slate-400 px-3 py-3 text-center">{t("common.emptySearch")}</p>
-                    ) : mcOptions.map((u) => {
-                      const on = reqForm.mc === u.email;
-                      return (
-                        <button
-                          key={u.email}
-                          type="button"
-                          onClick={() => setReqForm({ ...reqForm, mc: on ? "" : u.email })}
-                          className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left transition-colors"
-                          style={{ backgroundColor: on ? "#E4F1F0" : "#fff" }}
-                          onMouseEnter={(e) => { if (!on) e.currentTarget.style.backgroundColor = "#F8FAFC"; }}
-                          onMouseLeave={(e) => { if (!on) e.currentTarget.style.backgroundColor = "#fff"; }}
-                        >
-                          <span className="min-w-0">
-                            <span className="flex items-baseline gap-1.5">
-                              <span className="text-[13px] font-medium text-slate-800 whitespace-nowrap">{u.name}</span>
-                              <span className="text-[11px] text-slate-400 truncate">{u.email}</span>
-                            </span>
-                            {(u.dept || u.team) && (
-                              <span className="block text-[11px] text-slate-400 truncate">
-                                {[u.dept, u.team].filter(Boolean).join(" · ")}
+              <>
+                {/* 접힌 상태: 선택된 사람만 보여주고, 누르면 검색 목록이 펼쳐진다. */}
+                <button
+                  type="button"
+                  onClick={() => setMcOpen((v) => !v)}
+                  className={`${inputCls} flex items-center justify-between text-left`}
+                >
+                  {mcPicked ? (
+                    <span className="min-w-0 flex items-baseline gap-1.5">
+                      <span className="text-[14px] font-medium text-slate-800 whitespace-nowrap">{mcPicked.name}</span>
+                      <span className="text-[12px] text-slate-400 truncate">{mcPicked.email}</span>
+                    </span>
+                  ) : (
+                    <span className="text-slate-400">{t("self.reqMcPlaceholder")}</span>
+                  )}
+                  <ChevronDown size={15} className="text-slate-400 flex-shrink-0 transition-transform"
+                               style={{ transform: mcOpen ? "rotate(180deg)" : "none" }} />
+                </button>
+
+                {mcOpen && (
+                  <div className="border border-slate-200 rounded-lg mt-1.5 overflow-hidden">
+                    <div className="p-2 border-b border-slate-100 space-y-2">
+                      <div className="relative">
+                        <Search size={14} className="absolute left-3 top-2.5 text-slate-400" />
+                        <input
+                          autoFocus
+                          value={mcQuery}
+                          onChange={(e) => setMcQuery(e.target.value)}
+                          placeholder={t("self.reqMcSearch")}
+                          className={`${inputCls} pl-8 py-2 text-[13px]`}
+                        />
+                      </div>
+                      {/* MC 가 휴가 등으로 부재일 때 전 임직원에서 고를 수 있게 한다. */}
+                      <div className="flex gap-1">
+                        {[false, true].map((v) => (
+                          <button
+                            key={String(v)}
+                            type="button"
+                            onClick={() => setMcAll(v)}
+                            className="flex-1 text-[12px] py-1.5 rounded-md font-medium transition-colors"
+                            style={{
+                              backgroundColor: mcAll === v ? BRAND.accent : "#F1F5F9",
+                              color: mcAll === v ? "#fff" : "#64748B",
+                            }}
+                          >
+                            {v ? t("self.reqMcAll") : t("self.reqMcDefault")}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="overflow-y-auto divide-y divide-slate-100" style={{ maxHeight: 190 }}>
+                      {mcOptions.length === 0 ? (
+                        <p className="text-xs text-slate-400 px-3 py-4 text-center">
+                          {mcAll ? t("common.emptySearch") : t("self.reqMcTryAll")}
+                        </p>
+                      ) : mcOptions.map((u) => {
+                        const on = reqForm.mc === u.email;
+                        return (
+                          <button
+                            key={u.email}
+                            type="button"
+                            onClick={() => {
+                              setReqForm({ ...reqForm, mc: on ? "" : u.email });
+                              if (!on) { setMcOpen(false); setMcQuery(""); }
+                            }}
+                            className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left transition-colors"
+                            style={{ backgroundColor: on ? "#E4F1F0" : "#fff" }}
+                            onMouseEnter={(e) => { if (!on) e.currentTarget.style.backgroundColor = "#F8FAFC"; }}
+                            onMouseLeave={(e) => { if (!on) e.currentTarget.style.backgroundColor = "#fff"; }}
+                          >
+                            <span className="min-w-0">
+                              <span className="flex items-baseline gap-1.5">
+                                <span className="text-[13px] font-medium text-slate-800 whitespace-nowrap">{u.name}</span>
+                                <span className="text-[11px] text-slate-400 truncate">{u.email}</span>
                               </span>
-                            )}
-                          </span>
-                          {on && <Check size={15} className="flex-shrink-0" style={{ color: BRAND.accent }} />}
-                        </button>
-                      );
-                    })}
+                              {(u.dept || u.team) && (
+                                <span className="block text-[11px] text-slate-400 truncate">
+                                  {[u.dept, u.team].filter(Boolean).join(" · ")}
+                                </span>
+                              )}
+                            </span>
+                            {on && <Check size={15} className="flex-shrink-0" style={{ color: BRAND.accent }} />}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                </>
-              )}
+                )}
+              </>
             </Field>
           </div>
 
@@ -3593,6 +3645,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
             </Field>
           </div>
 
+          {reqForm.mc && (
           <div className="bg-slate-50 rounded-lg px-4 py-3 mt-3">
             <p className="text-xs font-semibold text-slate-500 mb-2">{t("self.reqLineTitle")}</p>
             {reqSteps.length === 0 ? (
@@ -3637,6 +3690,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
               </div>
             )}
           </div>
+          )}
 
           <div className="bg-slate-50 rounded-lg px-4 py-3 mt-2 text-xs text-slate-500">
             {t("self.reqNotice")}
@@ -7849,6 +7903,7 @@ async function loadIcsMasterConfig(token) {
     const eBoss2Idx = colIdx(eHeader, "Boss of Boss");
     const _mcNames = new Set();
     const _empInfo = {};
+    const _dir = [];
     empRows.slice(1).forEach((row) => {
       const email = eMailIdx >= 0 ? String(row[eMailIdx] || "").trim().toLowerCase() : "";
       if (!email) return;
@@ -7857,14 +7912,14 @@ async function loadIcsMasterConfig(token) {
         email, name: nm || email, nameEn: nm || email, role: "guest", dept: null,
         deptLabel: eDeptIdx >= 0 ? String(row[eDeptIdx] || "").trim() : "",
       };
+      const _dept = eDeptIdx >= 0 ? String(row[eDeptIdx] || "").trim() : "";
+      const _team = eTeamIdx >= 0 ? String(row[eTeamIdx] || "").trim() : "";
       if (nm) {
         ICS_NAME_TO_EMAIL[nm.toLowerCase()] = email;
         // MC 후보 화면에서 부서·팀으로 사람을 찾을 수 있게 함께 보관한다.
-        _empInfo[nm.toLowerCase()] = {
-          dept: eDeptIdx >= 0 ? String(row[eDeptIdx] || "").trim() : "",
-          team: eTeamIdx >= 0 ? String(row[eTeamIdx] || "").trim() : "",
-        };
+        _empInfo[nm.toLowerCase()] = { dept: _dept, team: _team };
       }
+      _dir.push({ name: nm || email, email, dept: _dept, team: _team });
       // "-" 는 상사 없음을 뜻한다 (CEO 등)
       const clean = (v) => { const t = String(v || "").trim(); return t && t !== "-" ? t : ""; };
       const _b1 = eBossIdx >= 0 ? clean(row[eBossIdx]) : "";
@@ -7883,6 +7938,7 @@ async function loadIcsMasterConfig(token) {
                  dept: info.dept || "", team: info.team || "" };
       })
       .filter((x) => x.email && !_seenMc.has(x.email) && _seenMc.add(x.email));
+    ICS_EMPLOYEE_DIR = _dir.sort((a, b) => a.name.localeCompare(b.name));
     console.log(`[ICS] employee_search.xlsx 사용자 ${Object.keys(byEmail).length}명 로드 · MC 후보 ${ICS_MC_CANDIDATES.length}명`);
   } else {
     console.warn("[ICS] employee_search.xlsx 를 읽지 못함 - Users 시트로 대체 시도");
