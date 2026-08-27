@@ -1488,26 +1488,26 @@ function Dashboard({ controls: allControls, goTo, isAdmin, allowedDepts }) {
             </div>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-xs">
+            <table className="w-full text-[13px]">
               <thead>
                 <tr>
-                  <th className="text-left text-slate-400 font-medium pb-2 pr-2 w-20">{t("list.colDept")}</th>
+                  <th className="text-left text-slate-400 font-medium pb-1.5 pr-2 whitespace-nowrap">{t("list.colDept")}</th>
                   {CATEGORIES.map((cat) => (
-                    <th key={cat.id} className="text-center text-slate-400 font-medium pb-2 px-1">{cat[lang]}</th>
+                    <th key={cat.id} className="text-center text-slate-400 font-medium pb-1.5 px-1 whitespace-nowrap">{cat[lang]}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {matrix.map((row) => (
                   <tr key={row.dept.id} className="border-t border-slate-50">
-                    <td className="py-2.5 pr-2 font-medium text-slate-600 whitespace-nowrap">{row.dept[lang]}</td>
+                    <td className="py-1 pr-2 font-medium text-slate-600 whitespace-nowrap">{row.dept[lang]}</td>
                     {row.cells.map((cell, i) => (
-                      <td key={i} className="text-center py-2.5 px-1">
+                      <td key={i} className="text-center py-1 px-1">
                         {cell.count > 0 ? (
                           <button
                             title={`${row.dept[lang]} · ${cell.cat[lang]} — ${t("dashboard.matrixTotal")} ${cell.count}${t("common.items")} · ${t("dashboard.matrixAssessed")} ${cell.assessed}${t("common.items")}`}
                             onClick={() => goTo("manage", { dept: row.dept.id, cat: cell.cat.id })}
-                            className="min-w-[38px] h-8 px-1.5 rounded-lg inline-flex items-center justify-center gap-1 hover:opacity-75 transition-opacity font-semibold"
+                            className="min-w-[38px] h-7 px-1.5 rounded-lg inline-flex items-center justify-center gap-1 hover:opacity-75 transition-opacity font-semibold"
                             style={{ backgroundColor: RISK_META[cell.risk].bg, color: RISK_META[cell.risk].text }}
                           >
                             <RiskDot risk={cell.risk} size={7} />
@@ -5116,21 +5116,21 @@ function FinalReportPage({ controls, currentUser, activeYear, yearConfirmation, 
           </div>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-xs">
+          <table className="w-full text-[13px]">
             <thead>
               <tr>
-                <th className="text-left text-slate-400 font-medium pb-2 pr-2 w-20">{t("list.colDept")}</th>
+                <th className="text-left text-slate-400 font-medium pb-1.5 pr-2 w-20">{t("list.colDept")}</th>
                 {CATEGORIES.map((cat) => (
-                  <th key={cat.id} className="text-center text-slate-400 font-medium pb-2 px-1">{cat[lang]}</th>
+                  <th key={cat.id} className="text-center text-slate-400 font-medium pb-1.5 px-1">{cat[lang]}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {matrix.map((row) => (
                 <tr key={row.dept.id} className="border-t border-slate-50">
-                  <td className="py-2.5 pr-2 font-medium text-slate-600 whitespace-nowrap">{row.dept[lang]}</td>
+                  <td className="py-1 pr-2 font-medium text-slate-600 whitespace-nowrap">{row.dept[lang]}</td>
                   {row.cells.map((cell, i) => (
-                    <td key={i} className="text-center py-2.5 px-1">
+                    <td key={i} className="text-center py-1 px-1">
                       {cell.count > 0 ? (
                         <span
                           title={`${row.dept[lang]} · ${cell.cat[lang]} — ${t("dashboard.matrixTotal")} ${cell.count}${t("common.items")} · ${t("dashboard.matrixAssessed")} ${cell.assessed}${t("common.items")}`}
