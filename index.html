@@ -482,6 +482,7 @@ const STR = {
     common: {
       save: "저장", cancel: "취소", submit: "제출", edit: "수정", delete: "삭제",
       add: "추가", search: "검색", resetFilter: "필터 초기화", allDept: "전체 부서",
+      allCat: "전체 통제영역", allRisk: "전체 신호등",
       assignedDeptAll: "배정 부서 전체", allCategory: "전체 통제영역", allRisk: "전체 신호등",
       confirm: "확인", close: "닫기", download: "다운로드", approve: "승인", reject: "반려",
       items: "건", cases: "건",
@@ -813,6 +814,7 @@ const STR = {
     common: {
       save: "Save", cancel: "Cancel", submit: "Submit", edit: "Edit", delete: "Delete",
       add: "Add", search: "Search", resetFilter: "Reset filters", allDept: "All departments",
+      allCat: "All components", allRisk: "All risk levels",
       assignedDeptAll: "All assigned depts.", allCategory: "All categories", allRisk: "All risk levels",
       confirm: "Confirm", close: "Close", download: "Download", approve: "Approve", reject: "Return",
       items: "items", cases: "cases",
@@ -1299,9 +1301,6 @@ const MENU_GROUPS = [
   ] },
   { key: "adminOnly", label: "adminOnly", items: [
     { key: "settings", icon: Settings },
-    // 부서별 통제 현황은 전 부서의 평가 진행 상태를 조회하는 화면이라 관리자 전용으로 둔다.
-    // (담당자는 자신이 배정된 항목을 평가 화면에서 확인한다)
-    { key: "list", icon: Building2, categoryKey: "controlMgmt" },
     { key: "manage", icon: ClipboardEdit, categoryKey: "adminOnly" },
     { key: "permissions", icon: KeyRound },
     { key: "categoryAccess", icon: KeyRound },
@@ -1451,7 +1450,7 @@ function Dashboard({ controls: allControls, goTo, isAdmin, allowedDepts }) {
         {["green", "orange", "red"].map((r) => (
           <button
             key={r}
-            onClick={() => goTo("list", { risk: r })}
+            onClick={() => goTo("manage", { risk: r })}
             className="relative text-left rounded-xl border p-4 overflow-hidden transition-transform hover:-translate-y-0.5"
             style={{ backgroundColor: RISK_META[r].bg, borderColor: RISK_META[r].color + "33" }}
           >
@@ -1495,7 +1494,7 @@ function Dashboard({ controls: allControls, goTo, isAdmin, allowedDepts }) {
                         {cell.count > 0 ? (
                           <button
                             title={`${row.dept[lang]} · ${cell.cat[lang]} — ${t("dashboard.matrixTotal")} ${cell.count}${t("common.items")} · ${t("dashboard.matrixAssessed")} ${cell.assessed}${t("common.items")}`}
-                            onClick={() => goTo("list", { dept: row.dept.id, cat: cell.cat.id })}
+                            onClick={() => goTo("manage", { dept: row.dept.id, cat: cell.cat.id })}
                             className="min-w-[38px] h-8 px-1.5 rounded-lg inline-flex items-center justify-center gap-1 hover:opacity-75 transition-opacity font-semibold"
                             style={{ backgroundColor: RISK_META[cell.risk].bg, color: RISK_META[cell.risk].text }}
                           >
@@ -2447,7 +2446,7 @@ function PersonAutocomplete({ value, onChange, users, lang, placeholder }) {
   );
 }
 
-function ControlManage({ controls: allControls, setControls, canEdit, addLog, isAdmin, allowedDepts, currentUser, isArchived, year, resetPassword, showToast, usingSharePointData }) {
+function ControlManage({ controls: allControls, setControls, canEdit, addLog, isAdmin, allowedDepts, currentUser, isArchived, year, resetPassword, showToast, usingSharePointData, initialFilter }) {
   const { lang, t } = useLang();
   const { departments, users } = useAppData();
   const [form, setForm] = useState(null);
@@ -2462,6 +2461,18 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
   // 통제 항목별 변경 요청 상태 (코드 → { status, step, steps, requester })
   // 결재가 진행 중이거나 이미 승인된 항목은 다시 수정·삭제할 수 없다.
   const [changeReqs, setChangeReqs] = useState({});
+  // 부서별 통제 현황을 통합하면서 가져온 조회 조건.
+  // 관리자만 쓰는 화면이라 조회와 편집을 한곳에서 처리한다.
+  const [search, setSearch] = useState("");
+  const [catFilter, setCatFilter] = useState(initialFilter?.cat || "");
+  const [riskFilter, setRiskFilter] = useState(initialFilter?.risk || "");
+  // 대시보드에서 신호등·매트릭스를 클릭해 들어온 경우 그 조건을 반영한다.
+  useEffect(() => {
+    if (!initialFilter) return;
+    setDeptFilter(initialFilter.dept || "");
+    setCatFilter(initialFilter.cat || "");
+    setRiskFilter(initialFilter.risk || "");
+  }, [initialFilter]);
   useEffect(() => {
     if (!usingSharePointData) return;
     loadIcsChangeRequests()
@@ -2491,12 +2502,20 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
   const scoped = isAdmin ? allControls : allControls.filter((c) => (c.accessor || "").toLowerCase() === myEmail || (c.reviewer || "").toLowerCase() === myEmail || (allowedDepts && allowedDepts.includes(c.dept)));
   const scopedDeptIds = [...new Set(scoped.map((c) => c.dept))];
   const visibleDeptOptions = isAdmin ? departments : departments.filter((d) => scopedDeptIds.includes(d.id));
-  const list = deptFilter ? scoped.filter((c) => c.dept === deptFilter) : scoped;
+  const q = search.trim().toLowerCase();
+  const list = scoped.filter((c) => {
+    if (deptFilter && c.dept !== deptFilter) return false;
+    if (catFilter && c.cat !== catFilter) return false;
+    if (riskFilter && finalRisk(c) !== riskFilter) return false;
+    if (q && !(cName(c, lang).toLowerCase().includes(q) || c.code.toLowerCase().includes(q))) return false;
+    return true;
+  });
+  const filterActive = !!(deptFilter || catFilter || riskFilter || q);
   const manageTotalPages = Math.max(1, Math.ceil(list.length / MANAGE_PAGE_SIZE));
   const clampedManagePage = Math.min(managePage, manageTotalPages - 1);
   const pagedList = list.slice(clampedManagePage * MANAGE_PAGE_SIZE, (clampedManagePage + 1) * MANAGE_PAGE_SIZE);
   // 부서 필터가 바뀌거나 항목 수가 줄면 첫 페이지로 되돌린다 (빈 화면 방지)
-  useEffect(() => { setManagePage(0); }, [deptFilter]);
+  useEffect(() => { setManagePage(0); }, [deptFilter, catFilter, riskFilter, search]);
 
   // 업로드 양식 다운로드.
   // 부서·COSO영역·점검빈도·중요도는 정해진 값만 허용되므로 드롭다운(데이터 유효성)을 넣는다.
@@ -2920,10 +2939,30 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
       )}
 
       <div className="mb-4">
+        <div className="relative flex-1 min-w-[200px] max-w-sm">
+          <Search size={15} className="absolute left-3 top-2.5 text-slate-400" />
+          <input value={search} onChange={(e) => setSearch(e.target.value)}
+                 placeholder={t("list.searchPlaceholder")} className={`${inputCls} pl-8`} />
+        </div>
         <select value={deptFilter} onChange={(e) => setDeptFilter(e.target.value)} className={`${inputCls} w-auto`}>
           <option value="">{isAdmin ? t("common.allDept") : t("common.assignedDeptAll")}</option>
           {visibleDeptOptions.map((d) => <option key={d.id} value={d.id}>{d[lang]}</option>)}
         </select>
+        <select value={catFilter} onChange={(e) => setCatFilter(e.target.value)} className={`${inputCls} w-auto`}>
+          <option value="">{t("common.allCat")}</option>
+          {CATEGORIES.map((c) => <option key={c.id} value={c.id}>{c[lang]}</option>)}
+        </select>
+        <select value={riskFilter} onChange={(e) => setRiskFilter(e.target.value)} className={`${inputCls} w-auto`}>
+          <option value="">{t("common.allRisk")}</option>
+          {["green", "orange", "red", "none"].map((r) => <option key={r} value={r}>{RISK_META[r][lang]}</option>)}
+        </select>
+        {filterActive && (
+          <button onClick={() => { setSearch(""); setDeptFilter(""); setCatFilter(""); setRiskFilter(""); }}
+                  className="text-xs text-slate-500 hover:text-slate-700 flex items-center gap-1 flex-shrink-0">
+            <X size={13} /> {t("common.resetFilter")}
+          </button>
+        )}
+        <span className="text-xs text-slate-400 flex-shrink-0">{list.length}{t("common.items")}</span>
       </div>
 
       <div className="bg-white rounded-xl border border-slate-100 overflow-x-auto">
@@ -2937,6 +2976,8 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
               <th className="text-left font-medium px-4 py-3 whitespace-nowrap">{t("list.colAccessor")}</th>
               <th className="text-left font-medium px-4 py-3 whitespace-nowrap">{t("list.colReviewer")}</th>
               <th className="text-left font-medium px-4 py-3 whitespace-nowrap">{t("manage.colSample")}</th>
+              <th className="text-left font-medium px-4 py-3 whitespace-nowrap">{t("list.colStatus")}</th>
+              <th className="text-left font-medium px-4 py-3 whitespace-nowrap">{t("list.colRisk")}</th>
               {canEdit && <th className="text-right font-medium px-4 py-3"> </th>}
             </tr>
           </thead>
@@ -2954,6 +2995,8 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
                 <td className="px-4 py-3 text-slate-600"><div className="max-w-[185px] truncate" title={personByEmail(c.accessor, lang, users)}>{personByEmail(c.accessor, lang, users)}</div></td>
                 <td className="px-4 py-3 text-slate-600"><div className="max-w-[185px] truncate" title={personByEmail(c.reviewer, lang, users)}>{personByEmail(c.reviewer, lang, users)}</div></td>
                 <td className="px-4 py-3 text-slate-600 text-xs whitespace-nowrap">{freqLabel(c.frequency, lang)} · {importanceLabel(c.importance, lang)} · {c.sampleSize}{t("common.items")}</td>
+                <td className="px-4 py-3"><StatusBadge status={c.status} kind="isa" /></td>
+                <td className="px-4 py-3"><RiskBadge risk={finalRisk(c)} /></td>
                 {canEdit && (
                   <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-end gap-2">
@@ -2964,7 +3007,7 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
                 )}
               </tr>
             ))}
-            {list.length === 0 && <tr><td colSpan={8}><EmptyState text={t("manage.emptyText")} /></td></tr>}
+            {list.length === 0 && <tr><td colSpan={canEdit ? 10 : 9}><EmptyState text={t("manage.emptyText")} /></td></tr>}
           </tbody>
         </table>
         {list.length > 0 && (
@@ -6705,6 +6748,7 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
                   resetPassword={resetPassword}
                   showToast={showToast}
                   usingSharePointData={usingSharePointData}
+                  initialFilter={listFilter}
                 />
               ) : (
                 <EmptyState text="Access denied" />
