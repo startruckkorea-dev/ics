@@ -790,9 +790,9 @@ const STR = {
       removeFromDept: "이 부서에서 제외",
       applyRole: "반영",
       roleLabel: "역할 (하나만 선택 가능)",
-      roleHint: "역할은 한 번에 하나만 가능합니다. 특정 부서에서만 추가로 Accessor/Reviewer/Admin 권한을 주려면(예: Admin이면서 HR팀 검토자도 겸임) 역할은 그대로 두고 아래 부서별 매트릭스에서 체크해 주세요.",
+      roleHint: "역할은 하나만 지정할 수 있지만, 겸직은 아래 부서별 매트릭스로 처리합니다. 예를 들어 Admin이 특정 부서의 담당자·검토자를 겸하려면 역할은 Admin으로 두고 그 부서의 Accessor 또는 Reviewer를 체크해 주세요. 역할과 부서 권한은 별개로 동작하므로, 겸직하려고 역할을 바꾸실 필요가 없습니다.",
       matrixHint: "Admin은 역할만으로 전체 부서에 항상 접근되므로, 아래 매트릭스에 별도로 체크하지 않아도 됩니다.",
-      selfDemoteWarning: "본인의 역할을 Admin에서 변경하려고 합니다 — 반영하면 이 화면 접근 권한을 잃을 수 있습니다.",
+      selfDemoteWarning: "본인의 역할을 Admin에서 변경하려고 합니다 — 반영하면 이 화면 접근 권한을 잃을 수 있습니다. 담당자·검토자를 겸하시려면 역할은 Admin으로 두고 아래 부서별 매트릭스에서 체크해 주세요.",
       noDeptUsers: "이 부서에 접근 권한을 가진 사용자가 없습니다.",
       selectUserHint: "왼쪽 목록에서 사용자를 선택하면 부서별 접근 권한이 여기 표시됩니다.",
       adminAllDeptsNote: "Admin은 역할상 항상 전체 부서에 접근합니다 (아래는 참고용 표시).",
@@ -1134,9 +1134,9 @@ const STR = {
       removeFromDept: "Remove from this department",
       applyRole: "Apply",
       roleLabel: "Role (choose one)",
-      roleHint: "Only one Role can be active at a time. To grant Accessor/Reviewer/Admin capacity for specific departments only (e.g. staying Admin while also reviewing for HR), leave Role as-is and check the department matrix below instead.",
+      roleHint: "Only one Role can be active at a time, but you can hold multiple capacities through the department matrix below. For example, to stay Admin while also acting as Accessor or Reviewer for a department, keep the Admin role and tick that department. Roles and department permissions work independently, so there is no need to change your Role.",
       matrixHint: "Admins already have access to every department by role, so no matrix checkboxes are needed here.",
-      selfDemoteWarning: "You're about to change your own Role away from Admin — applying this may remove your access to this screen.",
+      selfDemoteWarning: "You're about to change your own Role away from Admin — applying this may remove your access to this screen. To also act as an Accessor or Reviewer, keep the Admin role and tick the department in the matrix below.",
       noDeptUsers: "No users have access to this department.",
       selectUserHint: "Select a user from the list on the left to see their department access here.",
       adminAllDeptsNote: "Admins always have access to all departments by role (shown below for reference).",
@@ -6233,8 +6233,14 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
     if (selectedUser.email === currentUser.email && currentUser.role === "admin" && draft.role !== "admin") {
       const ok = window.confirm(
         lang === "en"
-          ? "You're about to remove your own Admin role. You may lose access to this screen. Continue?"
-          : "본인의 Admin 권한을 지금 없애려고 합니다. 이 화면 접근 자체를 잃을 수 있습니다. 계속할까요?"
+          ? "You are about to remove your own Admin role, and may lose access to this screen.\n\n"
+            + "To also act as an Accessor or Reviewer, keep the Admin role and tick the department "
+            + "in the matrix below instead — roles and department permissions work independently.\n\n"
+            + "Continue anyway?"
+          : "본인의 Admin 권한을 없애려고 합니다. 이 화면에 접근하지 못하게 될 수 있습니다.\n\n"
+            + "담당자·검토자를 겸하시려면 역할은 Admin으로 두고, 아래 부서별 매트릭스에서 해당 부서를 "
+            + "체크하시면 됩니다. 역할과 부서 권한은 별개로 동작합니다.\n\n"
+            + "그래도 변경하시겠습니까?"
       );
       if (!ok) return;
     }
