@@ -602,13 +602,15 @@ const STR = {
       reqTitle: "통제 항목 수정 요청", reqSubmit: "결재 상신",
       reqHint: "통제명·통제영역·설명 수정을 요청합니다.",
       reqLineTitle: "결재선",
+      reqMcLabel: "1차 결재자 (MC)",
+      reqMcPlaceholder: "결재자를 선택해 주세요",
       reqCurrent: "현재 등록된 내용",
       reqSkipped: "생략",
-      reqSkipDup: "님이 상위 결재자로도 지정되어 있어, 마지막 단계에서 한 번만 승인합니다.",
+      reqSkipDup: "님은 이미 뒤 단계 결재자로 포함되어 있어, MC 단계에서 제외했습니다. 한 번만 승인하시면 됩니다.",
       reqSkipSelf: "님은 요청자 본인이라 이 단계는 건너뜁니다.",
       reqChanged: "변경됨",
       reqNoLine: "결재선을 확인할 수 없습니다. IT로 문의해 주세요.",
-      reqNotice: "수정 요청은 아래 결재선을 모두 거쳐야 실제로 반영됩니다. 통제 코드와 담당자는 이 화면에서 변경할 수 없습니다.",
+      reqNotice: "수정 요청은 1차 MC · 2차 ICS Admin · 3차 CFO 결재를 모두 거쳐야 실제로 반영됩니다. 통제 코드와 담당자는 이 화면에서 변경할 수 없습니다.",
       noNeedsAction: "현재 평가가 필요한 항목이 없습니다.", noSubmitted: "제출된 평가가 없습니다.",
       recommendedShort: "권장",
     },
@@ -670,7 +672,7 @@ const STR = {
       deleteNotice: "최종 승인되면 이 통제 항목이 삭제됩니다. 이미 등록된 평가 내용도 함께 조회할 수 없게 됩니다.",
       commentPlaceholder: "의견을 입력하세요. (반려 시 사유를 남겨 주세요)",
       approve: "승인", reject: "반려",
-      stepLm1: "Line Manager", stepLm2: "Line Manager", stepContact: "ICS 검토", stepFinal: "최종 승인",
+      stepLm1: "1차 MC", stepLm2: "1차 MC", stepContact: "2차 ICS Admin", stepFinal: "3차 CFO",
       inProgress: "진행 중", done: "승인 완료", rejected: "반려",
       rejectReason: "반려 사유",
       cancelBtn: "요청 취소", cancelled: "취소됨",
@@ -935,9 +937,11 @@ const STR = {
       reqTitle: "Control item change request", reqSubmit: "Submit for approval",
       reqHint: "Request changes to the control name, component, or description.",
       reqLineTitle: "Approval line",
+      reqMcLabel: "1st approver (MC)",
+      reqMcPlaceholder: "Select an approver",
       reqCurrent: "Currently registered",
       reqSkipped: "skipped",
-      reqSkipDup: "is also assigned to a higher step, so they approve once at the final stage.",
+      reqSkipDup: "is already included in a later step, so the MC step was removed. They approve only once.",
       reqSkipSelf: "is the requester, so this step is skipped.",
       reqChanged: "Changed",
       reqNoLine: "Approval line could not be determined. Please contact IT.",
@@ -1003,7 +1007,7 @@ const STR = {
       deleteNotice: "Once fully approved, this control item will be deleted along with access to its recorded assessments.",
       commentPlaceholder: "Add a comment. (Please give a reason when rejecting)",
       approve: "Approve", reject: "Reject",
-      stepLm1: "Line Manager", stepLm2: "Line Manager", stepContact: "ICS Review", stepFinal: "Final Approval",
+      stepLm1: "1st MC", stepLm2: "1st MC", stepContact: "2nd ICS Admin", stepFinal: "3rd CFO",
       inProgress: "In progress", done: "Approved", rejected: "Rejected",
       rejectReason: "Reason",
       cancelBtn: "Withdraw request", cancelled: "Withdrawn",
@@ -2323,11 +2327,35 @@ function injectDataValidations(arrayBuffer, colMap) {
 //   3차 최종 승인    : system_config_final.xlsx 의 ICS_APPROVER_FINAL
 //
 // G열이 "-" 이면 최상위 임원(RD 대표)이라 Line Manager 단계를 생략한다.
-function buildApprovalSteps(requesterEmail) {
+// 통제 항목 변경 요청의 결재선을 만든다.
+//   1차 MC        : 요청자가 직접 지정 (employee_search.xlsx 의 임직원 중 선택)
+//   2차 ICS Admin : system_config_final.xlsx 의 ICS_CONTACT
+//   3차 CFO       : system_config_final.xlsx 의 ICS_APPROVER_FINAL
+//
+// 지정한 MC 가 ICS Admin 이나 CFO 와 같으면 그 단계를 생략하고, 뒤 단계에서 한 번만 승인한다.
+// 요청자 본인도 승인자가 될 수 없다.
+// 관리자 화면에서 1차 MC 를 지정받는다. 이름 또는 이메일로 입력하면 사용자 목록에서 찾는다.
+// 취소하면 null 을 돌려주어 호출부가 요청 생성을 중단한다.
+function pickMcApprover(users, requesterEmail, lang) {
+  const raw = window.prompt(lang === "en"
+    ? "Enter the 1st approver (MC) — name or email:"
+    : "1차 결재자(MC)를 입력해 주세요 — 이름 또는 이메일:");
+  if (raw === null) return null;
+  const v = String(raw).trim().toLowerCase();
+  if (!v) return "";
+  const hit = users.find((u) => (u.email || "").toLowerCase() === v)
+    || users.find((u) => (u.name || "").toLowerCase() === v)
+    || users.find((u) => (u.nameEn || "").toLowerCase() === v);
+  if (!hit) {
+    alert(lang === "en" ? `No user found for "${raw}".` : `"${raw}" 에 해당하는 사용자를 찾지 못했습니다.`);
+    return null;
+  }
+  return (hit.email || "").toLowerCase();
+}
+
+function buildApprovalSteps(requesterEmail, mcEmail) {
   const me = String(requesterEmail || "").toLowerCase();
-  const rel = ICS_BOSS_MAP[me] || {};
-  const toEmail = (name) => (name ? (ICS_NAME_TO_EMAIL[String(name).toLowerCase()] || "") : "");
-  const lm1 = toEmail(rel.boss);
+  const mc = String(mcEmail || "").toLowerCase();
 
   const steps = [];
   const skipped = [];           // 생략된 단계와 사유 (화면 안내용)
@@ -2341,11 +2369,12 @@ function buildApprovalSteps(requesterEmail) {
     seen.add(email);
     steps.push({ role, approver: email, status: "pending" });
   };
-  // 상위 단계(최종 → ICS → Line Manager) 순으로 확정한 뒤 다시 뒤집어 순서를 맞춘다.
+  // 상위 단계(CFO → ICS Admin → MC) 순으로 확정한 뒤 다시 뒤집어 순서를 맞춘다.
+  // 이렇게 하면 중복된 사람이 항상 상위 단계에 남는다.
   const contact = (ICS_CONTACT_EMAILS[0] || ICS_CONTACT_EMAIL || "").toLowerCase();
   add("FINAL", ICS_APPROVER_FINAL);
   add("ICS_CONTACT", contact);
-  add("LM1", lm1);
+  add("MC", mc);
   steps.reverse();
   // 생략 사유는 결재선과 함께 화면에 안내한다. steps 자체에는 담지 않는다
   // (SharePoint 에 저장되는 값은 실제 결재 단계만 유지해야 하기 때문).
@@ -2784,7 +2813,9 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
         // 기존 항목 수정은 곧바로 반영하지 않고 3단계 결재 요청을 생성한다.
         // (신규 등록은 결재 없이 바로 생성된다)
         if (usingSharePointData && target) {
-          const steps = buildApprovalSteps(currentUser.email);
+          const mcEmail = pickMcApprover(users, currentUser.email, lang);
+          if (mcEmail === null) return;   // 취소
+          const steps = buildApprovalSteps(currentUser.email, mcEmail);
           if (!steps.length) {
             alert(lang === "en"
               ? "Approval line could not be determined. Please contact IT."
@@ -2839,7 +2870,9 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
     try {
       // 삭제도 3단계 결재를 거친다.
       if (usingSharePointData) {
-        const steps = buildApprovalSteps(currentUser.email);
+        const mcEmail = pickMcApprover(users, currentUser.email, lang);
+        if (mcEmail === null) return;   // 취소
+        const steps = buildApprovalSteps(currentUser.email, mcEmail);
         if (!steps.length) {
           alert(lang === "en"
             ? "Approval line could not be determined. Please contact IT."
@@ -3253,16 +3286,19 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
     if (r && r.status === "pending") { alert(t("manage.lockedPending")); return; }
     setReqForm({
       control: c, name: cName(c, lang), desc: cDesc(c, lang), cat: c.cat,
-      steps: buildApprovalSteps(currentUser.email),   // 신청 전에 결재선을 미리 보여준다
+      mc: "",   // 1차 MC 는 요청자가 직접 지정한다
     });
   }
+
+  // 결재선은 MC 선택에 따라 즉시 다시 계산한다. 중복이면 그 자리에서 안내가 뜬다.
+  const reqSteps = reqForm ? buildApprovalSteps(currentUser.email, reqForm.mc) : [];
 
   async function submitRequest() {
     if (!reqForm) return;
     const c = reqForm.control;
     const name = (reqForm.name || "").trim();
     if (!name) return;
-    const steps = buildApprovalSteps(currentUser.email);
+    const steps = reqSteps;
     if (!steps.length) {
       alert(lang === "en"
         ? "Approval line could not be determined. Please contact IT."
@@ -3445,13 +3481,33 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
             </Field>
           </div>
 
+          <div className="mt-3">
+            <Field label={t("self.reqMcLabel")}>
+              <select
+                className={inputCls}
+                value={reqForm.mc}
+                onChange={(e) => setReqForm({ ...reqForm, mc: e.target.value })}
+              >
+                <option value="">{t("self.reqMcPlaceholder")}</option>
+                {[...users]
+                  .filter((u) => (u.email || "").toLowerCase() !== myEmail)
+                  .sort((a, b) => pName(a.name, lang, users).localeCompare(pName(b.name, lang, users)))
+                  .map((u) => (
+                    <option key={u.email} value={(u.email || "").toLowerCase()}>
+                      {pName(u.name, lang, users)} · {u.email}
+                    </option>
+                  ))}
+              </select>
+            </Field>
+          </div>
+
           <div className="bg-slate-50 rounded-lg px-4 py-3 mt-3">
             <p className="text-xs font-semibold text-slate-500 mb-2">{t("self.reqLineTitle")}</p>
-            {reqForm.steps.length === 0 ? (
+            {reqSteps.length === 0 ? (
               <p className="text-xs text-red-600">{t("self.reqNoLine")}</p>
             ) : (
               <div className="flex flex-wrap items-center gap-x-1.5 gap-y-2">
-                {reqForm.steps.map((st, i) => (
+                {reqSteps.map((st, i) => (
                   <React.Fragment key={i}>
                     {i > 0 && <ChevronRight size={13} className="text-slate-300 flex-shrink-0" />}
                     <span className="inline-flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5">
@@ -3471,9 +3527,9 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
                 ))}
               </div>
             )}
-            {(reqForm.steps.skipped || []).length > 0 && (
+            {(reqSteps.skipped || []).length > 0 && (
               <div className="mt-2.5 pt-2.5 border-t border-slate-200 space-y-1">
-                {reqForm.steps.skipped.map((sk, i) => (
+                {reqSteps.skipped.map((sk, i) => (
                   <p key={i} className="text-xs text-slate-400 flex items-start gap-1.5">
                     <Info size={12} className="flex-shrink-0 mt-0.5" />
                     <span>
@@ -3497,7 +3553,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
             <button onClick={() => setReqForm(null)} className="px-4 py-2 text-sm text-slate-500 rounded-lg hover:bg-slate-50">
               {t("common.cancel")}
             </button>
-            <button onClick={submitRequest} disabled={reqSaving || !(reqForm.name || "").trim()}
+            <button onClick={submitRequest} disabled={reqSaving || !(reqForm.name || "").trim() || !reqForm.mc}
                     className="px-4 py-2 text-sm text-white rounded-lg disabled:opacity-40 flex items-center gap-1.5"
                     style={{ backgroundColor: BRAND.accent }}>
               {reqSaving && <Loader2 size={14} className="animate-spin" />}{t("self.reqSubmit")}
