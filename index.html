@@ -6361,9 +6361,12 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
   }
 
   function capacitiesForDept(user, deptId) {
-    if (user.role === "admin") return ["deptsAdmin"];
     const p = permissions[user.email] || {};
-    return DEPT_CAPACITY_KEYS.filter((k) => (p[k] || []).includes(deptId));
+    const caps = DEPT_CAPACITY_KEYS.filter((k) => (p[k] || []).includes(deptId));
+    // Admin 은 역할만으로 전 부서 관리자다. 다만 담당자·검토자를 겸할 수 있으므로
+    // Admin 배지만 돌려주고 끝내면 겸직이 화면에서 사라진다. 두 가지를 함께 보여준다.
+    if (user.role === "admin" && !caps.includes("deptsAdmin")) caps.push("deptsAdmin");
+    return caps;
   }
   function usersForDept(deptId) {
     return users.filter((u) => u.role === "admin" || capacitiesForDept(u, deptId).length > 0);
@@ -6572,14 +6575,32 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
                 style={{ backgroundColor: selectedEmail === u.email ? BRAND.accentSoft : "transparent" }}
               >
                 <span className="text-slate-600 truncate">{u.email}</span>
-                <span
-                  className="text-xs font-medium px-2 py-0.5 rounded-full flex-shrink-0"
-                  style={{
-                    backgroundColor: u.role === "admin" ? "#EDE9FE" : u.role === "reviewer" ? BRAND.accentSoft : "#F1F5F9",
-                    color: u.role === "admin" ? "#6D28D9" : u.role === "reviewer" ? BRAND.accent : "#475569",
-                  }}
-                >
-                  {t(`roles.${u.role}`)}
+                <span className="flex items-center gap-1 flex-shrink-0">
+                  <span
+                    className="text-xs font-medium px-2 py-0.5 rounded-full"
+                    style={{
+                      backgroundColor: u.role === "admin" ? "#EDE9FE" : u.role === "reviewer" ? BRAND.accentSoft : "#F1F5F9",
+                      color: u.role === "admin" ? "#6D28D9" : u.role === "reviewer" ? BRAND.accent : "#475569",
+                    }}
+                  >
+                    {t(`roles.${u.role}`)}
+                  </span>
+                  {/* 역할 외에 담당자·검토자를 겸하는 경우 함께 보여준다.
+                      역할 배지 하나만 보이면 겸직 여부를 알 수 없다. */}
+                  {(() => {
+                    const p = permissions[u.email] || {};
+                    const extra = [];
+                    if ((p.deptsAccessor || []).length && u.role !== "accessor") extra.push("deptsAccessor");
+                    if ((p.deptsReviewer || []).length && u.role !== "reviewer") extra.push("deptsReviewer");
+                    return extra.map((k) => (
+                      <span key={k} className="text-[11px] font-medium px-1.5 py-0.5 rounded-full"
+                            style={{ backgroundColor: k === "deptsReviewer" ? BRAND.accentSoft : "#F1F5F9",
+                                     color: k === "deptsReviewer" ? BRAND.accent : "#475569" }}
+                            title={(p[k] || []).join(", ")}>
+                        {t(CAPACITY_LABEL[k])}
+                      </span>
+                    ));
+                  })()}
                 </span>
               </button>
             ))}
