@@ -99,6 +99,7 @@ import {
   Paperclip,
   KeyRound,
   Loader2,
+  Lock,
   Mail,
   ArrowUpRight,
   UploadCloud,
@@ -802,7 +803,8 @@ const STR = {
       roleLabel: "역할 (하나만 선택 가능)",
       roleHint: "역할은 하나만 지정할 수 있지만, 겸직은 아래 부서별 매트릭스로 처리합니다. 예를 들어 Admin이 특정 부서의 담당자·검토자를 겸하려면 역할은 Admin으로 두고 그 부서의 Accessor 또는 Reviewer를 체크해 주세요. 역할과 부서 권한은 별개로 동작하므로, 겸직하려고 역할을 바꾸실 필요가 없습니다.",
       matrixHint: "Admin은 조회 범위가 이미 전체 부서이므로 Admin 열은 체크할 필요가 없습니다. 다만 담당자·검토자를 겸한다면 해당 부서의 Accessor·Reviewer는 체크해 주세요.",
-      selfDemoteWarning: "본인의 역할을 Admin에서 변경하려고 합니다 — 반영하면 이 화면 접근 권한을 잃을 수 있습니다. 담당자·검토자를 겸하시려면 역할은 Admin으로 두고 아래 부서별 매트릭스에서 체크해 주세요.",
+      selfDemoteBlocked: "본인의 Admin 역할은 스스로 변경할 수 없습니다.\n\n변경하면 이 화면에 접근하지 못하게 되어 되돌릴 수도 없습니다.\n\n담당자·검토자를 겸하시려면 역할은 Admin으로 두고 아래 부서별 매트릭스에서 해당 부서를 체크해 주세요. 역할 변경이 꼭 필요하면 다른 관리자에게 요청해 주세요.",
+      selfRoleLocked: "본인 계정입니다 — Admin 역할은 스스로 변경할 수 없습니다. 겸직은 아래 매트릭스에서 지정해 주세요.",
       noDeptUsers: "이 부서에 접근 권한을 가진 사용자가 없습니다.",
       selectUserHint: "왼쪽 목록에서 사용자를 선택하면 부서별 접근 권한이 여기 표시됩니다.",
       adminAllDeptsNote: "Admin은 조회 범위가 전체 부서입니다 (아래 Admin 열은 참고용 표시).",
@@ -1153,7 +1155,8 @@ const STR = {
       roleLabel: "Role (choose one)",
       roleHint: "Only one Role can be active at a time, but you can hold multiple capacities through the department matrix below. For example, to stay Admin while also acting as Accessor or Reviewer for a department, keep the Admin role and tick that department. Roles and department permissions work independently, so there is no need to change your Role.",
       matrixHint: "Admins already cover every department, so the Admin column needs no ticks. If they also act as an Accessor or Reviewer, tick that department in those columns.",
-      selfDemoteWarning: "You're about to change your own Role away from Admin — applying this may remove your access to this screen. To also act as an Accessor or Reviewer, keep the Admin role and tick the department in the matrix below.",
+      selfDemoteBlocked: "You cannot change your own Admin role.\n\nDoing so would lock you out of this screen with no way back.\n\nTo also act as an Accessor or Reviewer, keep the Admin role and tick that department in the matrix below. If the role really must change, ask another admin.",
+      selfRoleLocked: "This is your own account — the Admin role cannot be changed by yourself. Set additional capacities in the matrix below.",
       noDeptUsers: "No users have access to this department.",
       selectUserHint: "Select a user from the list on the left to see their department access here.",
       adminAllDeptsNote: "Admins cover every department (the Admin column below is shown for reference).",
@@ -6337,21 +6340,20 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
       !sameSet(draft.deptsReviewer, permissions[selectedUser.email]?.deptsReviewer || []) ||
       !sameSet(draft.deptsAdmin, permissions[selectedUser.email]?.deptsAdmin || []));
 
+  // 본인 계정의 Admin 역할은 스스로 바꿀 수 없다(잠금 사고 방지).
+  const selfRoleLocked = !!selectedUser
+    && selectedUser.email === currentUser.email
+    && currentUser.role === "admin";
+
   async function applyChanges() {
     if (!isAdmin || !selectedUser || !draft || !isDirty) return;
+    // 본인의 Admin 역할은 스스로 내릴 수 없다. 내리는 순간 이 화면에 접근하지 못하게 되고,
+    // 되돌릴 화면조차 잃어 SharePoint 목록을 직접 고쳐야 복구된다.
+    // 겸직은 아래 부서별 매트릭스로 처리하므로 역할을 바꿀 이유가 없다.
     if (selectedUser.email === currentUser.email && currentUser.role === "admin" && draft.role !== "admin") {
-      const ok = window.confirm(
-        lang === "en"
-          ? "You are about to remove your own Admin role, and may lose access to this screen.\n\n"
-            + "To also act as an Accessor or Reviewer, keep the Admin role and tick the department "
-            + "in the matrix below instead — roles and department permissions work independently.\n\n"
-            + "Continue anyway?"
-          : "본인의 Admin 권한을 없애려고 합니다. 이 화면에 접근하지 못하게 될 수 있습니다.\n\n"
-            + "담당자·검토자를 겸하시려면 역할은 Admin으로 두고, 아래 부서별 매트릭스에서 해당 부서를 "
-            + "체크하시면 됩니다. 역할과 부서 권한은 별개로 동작합니다.\n\n"
-            + "그래도 변경하시겠습니까?"
-      );
-      if (!ok) return;
+      alert(t("permissions.selfDemoteBlocked"));
+      setDraft({ ...draft, role: "admin" });
+      return;
     }
     const email = selectedUser.email.toLowerCase();
     const prevRole = selectedUser.role;
@@ -6741,12 +6743,14 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
                   <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">{t("permissions.roleLabel")}</p>
                   <div className="flex flex-wrap gap-3 mb-2">
                     {ROLE_OPTIONS.map((r) => (
-                      <label key={r} className="flex items-center gap-1.5 text-xs font-medium text-slate-600 cursor-pointer">
+                      <label key={r}
+                             className={`flex items-center gap-1.5 text-xs font-medium ${selfRoleLocked ? "text-slate-400 cursor-not-allowed" : "text-slate-600 cursor-pointer"}`}
+                             title={selfRoleLocked ? t("permissions.selfRoleLocked") : ""}>
                         <input
                           type="radio"
                           name="role-select"
                           checked={draft?.role === r}
-                          disabled={saving}
+                          disabled={saving || selfRoleLocked}
                           onChange={() => setDraft((prev) => ({ ...prev, role: r }))}
                           className="w-4 h-4 cursor-pointer disabled:cursor-not-allowed"
                           style={{ accentColor: BRAND.accent }}
@@ -6763,9 +6767,10 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
               {draft?.role === "admin" && (
                 <p className="text-[11px] text-slate-400 mb-3">{t("permissions.matrixHint")}</p>
               )}
-              {selectedUser.email === currentUser.email && draft?.role !== "admin" && currentUser.role === "admin" && (
-                <p className="text-xs px-2.5 py-1.5 rounded-lg mb-3 flex items-center gap-1.5" style={{ backgroundColor: "#FEF3C7", color: "#92400E" }}>
-                  <AlertTriangle size={13} className="flex-shrink-0" /> {t("permissions.selfDemoteWarning")}
+              {selfRoleLocked && (
+                // 역할 라디오가 잠겨 있는 이유를 화면에 밝힌다. 이유 없이 비활성이면 고장으로 오해한다.
+                <p className="text-xs px-2.5 py-1.5 rounded-lg mb-3 flex items-start gap-1.5" style={{ backgroundColor: "#F1F5F9", color: "#475569" }}>
+                  <Lock size={13} className="flex-shrink-0 mt-0.5" /> {t("permissions.selfRoleLocked")}
                 </p>
               )}
               {draft?.role === "admin" ? (
