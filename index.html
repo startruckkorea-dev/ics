@@ -112,6 +112,7 @@ import {
   Clock,
   CheckCircle2,
   FileCheck2,
+  FileSpreadsheet,
 } from "lucide-react";
 import {
   BarChart,
@@ -566,6 +567,8 @@ const STR = {
       pendingBadge: "승인 대기중",
       pendingNotice: "Accessor의 수정 요청은 검토자(또는 관리자)의 승인 후 실제 내용에 반영됩니다. 승인 전까지는 기존 내용이 그대로 표시됩니다.",
       uploadTemplateBtn: "엑셀 템플릿 다운로드",
+      exportBtn: "엑셀 내보내기",
+      exportHint: "현재 검색·필터가 적용된 목록을 엑셀로 저장합니다.",
       uploadBtn: "엑셀로 일괄 업로드",
       uploadAdminOnly: "엑셀 일괄 업로드는 관리자(권한 담당자)만 사용할 수 있습니다.",
       uploadNameHint: "1차 담당자·2차 검토자는 이름(한글 또는 영문) 또는 이메일 일부만 입력하면 등록된 계정이 자동완성으로 떠서 바로 선택할 수 있습니다. 엑셀 일괄 업로드도 이메일 대신 이름으로 입력 가능합니다. 단, 해당 이름의 사용자가 권한 관리 > 사용자 및 권한에 먼저 등록되어 있어야 매칭됩니다.",
@@ -899,6 +902,8 @@ const STR = {
       pendingBadge: "Awaiting approval",
       pendingNotice: "An accessor's edit request only takes effect after a reviewer (or admin) approves it. The existing content is shown until then.",
       uploadTemplateBtn: "Download Excel template",
+      exportBtn: "Export to Excel",
+      exportHint: "Exports the list with the current search and filters applied.",
       uploadBtn: "Bulk upload from Excel",
       uploadAdminOnly: "Only admins (permission managers) can bulk-upload from Excel.",
       uploadNameHint: "For 1st Accessor / 2nd Reviewer, just type part of a name or email and pick from the autocomplete suggestions of registered accounts. Bulk Excel upload also accepts names instead of emails. The person must already be registered under Access Control > Users & Permissions for matching to work.",
@@ -2912,6 +2917,14 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
         subtitle={isAdmin ? t("manage.subtitleAdmin") : `${t("manage.subtitleScoped")} (${visibleDeptOptions.map((d) => d[lang]).join(", ") || t("dashboard.noAssigned")})`}
         action={
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => exportControlsToExcel(list, lang, departments, users)}
+              disabled={list.length === 0}
+              className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg border border-slate-200 text-slate-600 hover:border-teal-400 hover:text-teal-600 disabled:opacity-40 disabled:cursor-not-allowed"
+              title={t("manage.exportHint")}
+            >
+              <FileSpreadsheet size={14} /> {t("manage.exportBtn")}
+            </button>
             {isAdmin && (
               <>
                 <button onClick={downloadTemplate} className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg border border-slate-200 text-slate-600 hover:border-teal-400 hover:text-teal-600">
