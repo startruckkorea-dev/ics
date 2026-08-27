@@ -581,6 +581,8 @@ const STR = {
       deleteBody: "항목을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.",
       codePlaceholder: "예: FIN-CA-03", namePlaceholder: "통제 항목 이름",
       codeLockedHint: "통제 코드는 수정할 수 없습니다. 이미 등록된 평가 내용과 연결되어 있어 코드를 바꾸면 연결이 끊어집니다.",
+      lockedPending: "결재가 진행 중인 통제 항목입니다. 결재가 끝난 뒤에 다시 시도해 주세요.",
+      lockedApproved: "이미 결재가 완료된 변경 요청이 있는 통제 항목입니다. 추가 변경이 필요하면 IT로 문의해 주세요.",
       descPlaceholder: "통제 활동에 대한 상세 설명", namePersonPlaceholder: "이름",
       emailPlaceholder: "이메일 주소 (예: hong.gildong@startruckkorea.com)",
     },
@@ -657,6 +659,10 @@ const STR = {
       stepMc: "1차 MC", stepContact: "2차 ICS", stepFinal: "3차 최종",
       inProgress: "진행 중", done: "승인 완료", rejected: "반려",
       rejectReason: "반려 사유",
+      historyTitle: "변경 이력",
+      noHistory: "완료된 변경 요청이 없습니다.",
+      hRequester: "요청자", hRequestedAt: "요청 시간", hApprovers: "승인자",
+      hReason: "사유", hDecidedAt: "최종 결재",
     },
     finalReport: {
       title: "최종 결과 보고",
@@ -893,6 +899,8 @@ const STR = {
       deleteBody: "Are you sure you want to delete this item? This action cannot be undone.",
       codePlaceholder: "e.g. FIN-CA-03", namePlaceholder: "Control item name",
       codeLockedHint: "The control code cannot be changed. It links this item to its recorded assessments.",
+      lockedPending: "This control item has a change request in progress. Please try again once approval is complete.",
+      lockedApproved: "This control item already has an approved change request. Please contact IT if further changes are needed.",
       descPlaceholder: "Detailed description of the control activity", namePersonPlaceholder: "Name",
       emailPlaceholder: "Email address (e.g. jane.doe@startruckkorea.com)",
       uploading: "Uploading...",
@@ -971,6 +979,10 @@ const STR = {
       stepMc: "1st MC", stepContact: "2nd ICS", stepFinal: "3rd Final",
       inProgress: "In progress", done: "Approved", rejected: "Rejected",
       rejectReason: "Reason",
+      historyTitle: "Change history",
+      noHistory: "No completed change requests.",
+      hRequester: "Requested by", hRequestedAt: "Requested at", hApprovers: "Approvers",
+      hReason: "Comments", hDecidedAt: "Decided at",
     },
     finalReport: {
       title: "Final Report",
@@ -2399,6 +2411,31 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
   const [uploading, setUploading] = useState(false);
   const [codeError, setCodeError] = useState("");
   const [managePage, setManagePage] = useState(0);
+  // 통제 항목별 변경 요청 상태 (코드 → { status, step, steps, requester })
+  // 결재가 진행 중이거나 이미 승인된 항목은 다시 수정·삭제할 수 없다.
+  const [changeReqs, setChangeReqs] = useState({});
+  useEffect(() => {
+    if (!usingSharePointData) return;
+    loadIcsChangeRequests()
+      .then((list) => {
+        const map = {};
+        list.forEach((r) => {
+          const prev = map[r.code];
+          // 같은 코드에 여러 건이 있으면 진행 중인 건을 우선한다.
+          if (!prev || (r.status === "pending" && prev.status !== "pending")) map[r.code] = r;
+        });
+        setChangeReqs(map);
+      })
+      .catch((e) => console.warn("[ICS] 변경 요청 로드 실패:", e.message));
+  }, []);
+  // 잠긴 사유를 돌려준다 (없으면 null)
+  function lockReason(c) {
+    const r = changeReqs[c.code];
+    if (!r) return null;
+    if (r.status === "pending") return t("manage.lockedPending");
+    if (r.status === "approved") return t("manage.lockedApproved");
+    return null;
+  }
   const MANAGE_PAGE_SIZE = 20;
   const fileInputRef = useRef(null);
 
@@ -2631,6 +2668,8 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
     setCodeError("");
   }
   function openEdit(c) {
+    const reason = lockReason(c);
+    if (reason) { alert(reason); return; }
     // pendingEdit(수정 요청 → 승인 대기) 흐름은 2026-07-30(895c3f6)에 제거되어 항상 null 이다.
     const src = c;
     setForm({ code: src.code, dept: src.dept, cat: src.cat, name: src.name, desc: src.desc, accessor: src.accessor, reviewer: src.reviewer, frequency: src.frequency, importance: src.importance });
@@ -2721,6 +2760,8 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
   }
   async function remove(c) {
     setConfirmDelete(null);
+    const reason = lockReason(c);
+    if (reason) { alert(reason); return; }
     try {
       // 삭제도 3단계 결재를 거친다.
       if (usingSharePointData) {
@@ -3409,7 +3450,7 @@ function SelfAssessForm({ control, draft, setDraft, onCancel, onSubmit }) {
 
       <div className="flex justify-end gap-2 mt-4 pt-4 border-t border-slate-100">
         <button onClick={onCancel} className="px-4 py-2 text-sm text-slate-500 rounded-lg hover:bg-slate-50">{t("common.cancel")}</button>
-        <button onClick={onSubmit} disabled={!draft.risk} className="px-5 py-2 text-sm font-semibold text-white rounded-lg disabled:opacity-40 transition-opacity" style={{ backgroundColor: BRAND.accent }}>
+        <button onClick={onSubmit} className="px-5 py-2 text-sm font-semibold text-white rounded-lg transition-opacity" style={{ backgroundColor: BRAND.accent }}>
           {t("self.submitBtn")}
         </button>
       </div>
@@ -3513,7 +3554,7 @@ function FSAForm({ draft, setDraft, onCancel, onSubmit, control }) {
 
       <div className="flex justify-end gap-2 mt-4 pt-4 border-t border-slate-100">
         <button onClick={onCancel} className="px-4 py-2 text-sm text-slate-500 rounded-lg hover:bg-slate-50">{t("common.cancel")}</button>
-        <button onClick={onSubmit} disabled={!draft.risk} className="px-5 py-2 text-sm font-semibold text-white rounded-lg disabled:opacity-40" style={{ backgroundColor: BRAND.accent }}>
+        <button onClick={onSubmit} className="px-5 py-2 text-sm font-semibold text-white rounded-lg" style={{ backgroundColor: BRAND.accent }}>
           {t("fsa.submitBtn")}
         </button>
       </div>
@@ -4177,6 +4218,10 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
   });
   // 내가 올린 요청
   const mine = requests.filter((r) => r.requester === myEmail);
+  // 결재가 끝난 요청 전부 (승인·반려). 최근 처리 순으로 정렬.
+  const done = requests
+    .filter((r) => r.status === "approved" || r.status === "rejected")
+    .sort((a, b) => new Date(b.created || 0) - new Date(a.created || 0));
 
   function labelOf(r) {
     const c = controls.find((x) => x.code === r.code && x.year === r.year);
@@ -4351,7 +4396,7 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
             )}
           </div>
 
-          <div>
+          <div className="mb-6">
             <h3 className="text-sm font-semibold text-slate-700 mb-3">{t("approval.myRequests")} ({mine.length})</h3>
             {mine.length === 0 ? (
               <EmptyState text={t("approval.noRequests")} />
@@ -4378,6 +4423,82 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
                     ))}
                   </div>
                 ))}
+              </div>
+            )}
+          </div>
+
+          <div>
+            <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
+              <History size={15} /> {t("approval.historyTitle")} ({done.length})
+            </h3>
+            {done.length === 0 ? (
+              <EmptyState text={t("approval.noHistory")} />
+            ) : (
+              <div className="bg-white rounded-xl border border-slate-100 divide-y divide-slate-50">
+                {done.map((r) => {
+                  const last = [...r.steps].reverse().find((st) => st.status !== "pending");
+                  const decided = r.steps.filter((st) => st.status !== "pending");
+                  return (
+                    <div key={r.spId} className="p-4">
+                      <div className="flex items-start justify-between gap-3 flex-wrap mb-2">
+                        <div className="min-w-0">
+                          <p className="text-xs text-slate-400 font-mono">{r.code} · {r.year}</p>
+                          <p className="text-sm font-medium text-slate-800 mt-0.5">{labelOf(r)}</p>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <span className="text-xs px-2.5 py-1 rounded-full font-medium whitespace-nowrap"
+                                style={{ backgroundColor: r.reqType === "delete" ? "#FEE2E2" : "#E4F1F0",
+                                         color: r.reqType === "delete" ? "#B91C1C" : BRAND.accent }}>
+                            {r.reqType === "delete" ? t("approval.typeDelete") : t("approval.typeEdit")}
+                          </span>
+                          <span className="text-xs px-2.5 py-1 rounded-full font-medium whitespace-nowrap"
+                                style={{ backgroundColor: r.status === "approved" ? "#DCFCE7" : "#FEE2E2",
+                                         color: r.status === "approved" ? "#15803D" : "#B91C1C" }}>
+                            {r.status === "approved" ? t("approval.done") : t("approval.rejected")}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="bg-slate-50 rounded-lg px-3 py-2.5 text-xs text-slate-600 space-y-1">
+                        <div className="flex gap-2">
+                          <span className="text-slate-400 w-[86px] flex-shrink-0">{t("approval.hRequester")}</span>
+                          <span>{personByEmail(r.requester, lang, users)}</span>
+                        </div>
+                        <div className="flex gap-2">
+                          <span className="text-slate-400 w-[86px] flex-shrink-0">{t("approval.hRequestedAt")}</span>
+                          <span>{formatDateTime(r.created, lang)}</span>
+                        </div>
+                        <div className="flex gap-2">
+                          <span className="text-slate-400 w-[86px] flex-shrink-0">{t("approval.hApprovers")}</span>
+                          <span className="min-w-0">
+                            {decided.map((st, i) => (
+                              <span key={i} className="inline-block mr-2">
+                                {stepLabel(st)} {personByEmail(st.approver, lang, users)}
+                                <span style={{ color: st.status === "approved" ? "#15803D" : "#B91C1C" }}>
+                                  {st.status === "approved" ? " 승인" : " 반려"}
+                                </span>
+                              </span>
+                            ))}
+                          </span>
+                        </div>
+                        {decided.some((st) => st.comment) && (
+                          <div className="flex gap-2">
+                            <span className="text-slate-400 w-[86px] flex-shrink-0">{t("approval.hReason")}</span>
+                            <span className="whitespace-pre-wrap min-w-0">
+                              {decided.filter((st) => st.comment)
+                                .map((st) => `${personByEmail(st.approver, lang, users)}: ${st.comment}`)
+                                .join("\n")}
+                            </span>
+                          </div>
+                        )}
+                        <div className="flex gap-2">
+                          <span className="text-slate-400 w-[86px] flex-shrink-0">{t("approval.hDecidedAt")}</span>
+                          <span>{last?.date ? formatDateTime(last.date, lang) : "-"}</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
