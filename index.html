@@ -1495,18 +1495,18 @@ function Dashboard({ controls: allControls, goTo, isAdmin, allowedDepts }) {
             <table className="w-full text-[13px]">
               <thead>
                 <tr>
-                  <th className="text-left text-slate-400 font-medium pb-1.5 pr-2 whitespace-nowrap">{t("list.colDept")}</th>
+                  <th className="text-left text-slate-500 font-semibold pb-2 pr-3 whitespace-nowrap border-b-2 border-slate-200">{t("list.colDept")}</th>
                   {CATEGORIES.map((cat) => (
-                    <th key={cat.id} className="text-center text-slate-400 font-medium pb-1.5 px-1 whitespace-nowrap">{cat[lang]}</th>
+                    <th key={cat.id} className="text-center text-slate-500 font-semibold pb-2 px-2 whitespace-nowrap border-b-2 border-slate-200 border-l border-l-slate-100">{cat[lang]}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {matrix.map((row) => (
-                  <tr key={row.dept.id} className="border-t border-slate-50">
-                    <td className="py-1 pr-2 font-medium text-slate-600 whitespace-nowrap">{row.dept[lang]}</td>
+                  <tr key={row.dept.id} className="border-t border-slate-100 hover:bg-slate-50/70 transition-colors">
+                    <td className="py-1 pr-3 font-medium text-slate-700 whitespace-nowrap">{row.dept[lang]}</td>
                     {row.cells.map((cell, i) => (
-                      <td key={i} className="text-center py-1 px-1">
+                      <td key={i} className="text-center py-1 px-2 border-l border-l-slate-100">
                         {cell.count > 0 ? (
                           <button
                             title={`${row.dept[lang]} · ${cell.cat[lang]} — ${t("dashboard.matrixTotal")} ${cell.count}${t("common.items")} · ${t("dashboard.matrixAssessed")} ${cell.assessed}${t("common.items")}`}
@@ -1518,7 +1518,7 @@ function Dashboard({ controls: allControls, goTo, isAdmin, allowedDepts }) {
                             {cell.count}
                           </button>
                         ) : (
-                          <span className="text-slate-200">–</span>
+                          <span className="text-slate-300">–</span>
                         )}
                       </td>
                     ))}
@@ -5175,18 +5175,18 @@ function FinalReportPage({ controls, currentUser, activeYear, yearConfirmation, 
           <table className="w-full text-[13px]">
             <thead>
               <tr>
-                <th className="text-left text-slate-400 font-medium pb-1.5 pr-2 w-20">{t("list.colDept")}</th>
+                <th className="text-left text-slate-500 font-semibold pb-2 pr-3 border-b-2 border-slate-200 w-20">{t("list.colDept")}</th>
                 {CATEGORIES.map((cat) => (
-                  <th key={cat.id} className="text-center text-slate-400 font-medium pb-1.5 px-1">{cat[lang]}</th>
+                  <th key={cat.id} className="text-center text-slate-500 font-semibold pb-2 px-2 border-b-2 border-slate-200 border-l border-l-slate-100">{cat[lang]}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {matrix.map((row) => (
-                <tr key={row.dept.id} className="border-t border-slate-50">
-                  <td className="py-1 pr-2 font-medium text-slate-600 whitespace-nowrap">{row.dept[lang]}</td>
+                <tr key={row.dept.id} className="border-t border-slate-100">
+                  <td className="py-1 pr-3 font-medium text-slate-700 whitespace-nowrap">{row.dept[lang]}</td>
                   {row.cells.map((cell, i) => (
-                    <td key={i} className="text-center py-1 px-1">
+                    <td key={i} className="text-center py-1 px-2 border-l border-l-slate-100">
                       {cell.count > 0 ? (
                         <span
                           title={`${row.dept[lang]} · ${cell.cat[lang]} — ${t("dashboard.matrixTotal")} ${cell.count}${t("common.items")} · ${t("dashboard.matrixAssessed")} ${cell.assessed}${t("common.items")}`}
@@ -5196,7 +5196,7 @@ function FinalReportPage({ controls, currentUser, activeYear, yearConfirmation, 
                           <RiskDot risk={cell.risk} size={9} />
                         </span>
                       ) : (
-                        <span className="text-slate-200">–</span>
+                        <span className="text-slate-300">–</span>
                       )}
                     </td>
                   ))}
