@@ -602,7 +602,7 @@ const STR = {
       reqCurrent: "현재 등록된 내용",
       reqChanged: "변경됨",
       reqNoLine: "결재선을 확인할 수 없습니다. IT로 문의해 주세요.",
-      reqNotice: "수정 요청은 1차 MC · 2차 ICS · 3차 최종 결재를 모두 거쳐야 실제로 반영됩니다. 통제 코드와 담당자는 이 화면에서 변경할 수 없습니다.",
+      reqNotice: "수정 요청은 아래 결재선을 모두 거쳐야 실제로 반영됩니다. 통제 코드와 담당자는 이 화면에서 변경할 수 없습니다.",
       noNeedsAction: "현재 평가가 필요한 항목이 없습니다.", noSubmitted: "제출된 평가가 없습니다.",
       recommendedShort: "권장",
     },
@@ -664,7 +664,7 @@ const STR = {
       deleteNotice: "최종 승인되면 이 통제 항목이 삭제됩니다. 이미 등록된 평가 내용도 함께 조회할 수 없게 됩니다.",
       commentPlaceholder: "의견을 입력하세요. (반려 시 사유를 남겨 주세요)",
       approve: "승인", reject: "반려",
-      stepMc: "1차 MC", stepContact: "2차 ICS", stepFinal: "3차 최종",
+      stepLm1: "1차 Line Manager", stepLm2: "2차 Line Manager", stepContact: "ICS 검토", stepFinal: "최종 승인",
       inProgress: "진행 중", done: "승인 완료", rejected: "반려",
       rejectReason: "반려 사유",
       historyTitle: "변경 이력",
@@ -930,7 +930,7 @@ const STR = {
       reqCurrent: "Currently registered",
       reqChanged: "Changed",
       reqNoLine: "Approval line could not be determined. Please contact IT.",
-      reqNotice: "A change request takes effect only after all three approvals (MC, ICS, Final). The control code and assignees cannot be changed here.",
+      reqNotice: "A change request takes effect only after every step in the approval line below. The control code and assignees cannot be changed here.",
       noNeedsAction: "No items currently need assessment.", noSubmitted: "No assessments submitted yet.",
       recommendedShort: "recommended",
     },
@@ -992,7 +992,7 @@ const STR = {
       deleteNotice: "Once fully approved, this control item will be deleted along with access to its recorded assessments.",
       commentPlaceholder: "Add a comment. (Please give a reason when rejecting)",
       approve: "Approve", reject: "Reject",
-      stepMc: "1st MC", stepContact: "2nd ICS", stepFinal: "3rd Final",
+      stepLm1: "1st Line Manager", stepLm2: "2nd Line Manager", stepContact: "ICS Review", stepFinal: "Final Approval",
       inProgress: "In progress", done: "Approved", rejected: "Rejected",
       rejectReason: "Reason",
       historyTitle: "Change history",
@@ -2300,22 +2300,37 @@ function injectDataValidations(arrayBuffer, colMap) {
 }
 
 // 통제 항목 변경 요청의 결재선을 만든다.
-//   1차 MC   : 요청자의 Boss of Boss (없으면 Boss). 둘 다 없으면(CEO) 이 단계를 건너뛴다.
-//   2차      : system_config_final.xlsx 의 ICS_CONTACT
-//   3차 최종 : system_config_final.xlsx 의 ICS_APPROVER_FINAL
+//   1차 Line Manager  : employee_search.xlsx 의 Boss (G열)
+//   2차 Line Manager  : employee_search.xlsx 의 Boss of Boss (H열)
+//   3차 ICS           : system_config_final.xlsx 의 ICS_CONTACT
+//   4차 최종          : system_config_final.xlsx 의 ICS_APPROVER_FINAL
+//
+// G열이 "-" 이면 최상위 임원(RD 대표)이므로 1·2차를 모두 생략한다.
+// H열만 "-" 이면 1차(G)만 거친다.
 function buildApprovalSteps(requesterEmail) {
   const me = String(requesterEmail || "").toLowerCase();
   const rel = ICS_BOSS_MAP[me] || {};
-  const mcName = rel.bossOfBoss || rel.boss || "";
-  const mcEmail = mcName ? (ICS_NAME_TO_EMAIL[mcName.toLowerCase()] || "") : "";
+  const toEmail = (name) => (name ? (ICS_NAME_TO_EMAIL[String(name).toLowerCase()] || "") : "");
+  const lm1 = toEmail(rel.boss);
+  const lm2 = toEmail(rel.bossOfBoss);
 
   const steps = [];
-  // CEO 처럼 상사가 없는 경우 1차를 건너뛴다.
-  if (mcEmail && mcEmail !== me) steps.push({ role: "MC", approver: mcEmail, status: "pending" });
+  const seen = new Set([me]);   // 요청자 본인은 승인자가 될 수 없다
+  // 같은 사람이 두 단계에 걸치면(예: 직속 상사가 최종 승인자와 동일) 뒤 단계만 남긴다.
+  // 한 사람이 같은 건을 두 번 승인하는 것은 결재의 의미가 없기 때문이다.
+  const add = (role, email) => {
+    if (!email || seen.has(email)) return;
+    seen.add(email);
+    steps.push({ role, approver: email, status: "pending" });
+  };
+  // 뒤 단계(최종 → ICS → 2차 → 1차) 순으로 확정한 뒤 다시 뒤집어 순서를 맞춘다.
   const contact = (ICS_CONTACT_EMAILS[0] || ICS_CONTACT_EMAIL || "").toLowerCase();
-  if (contact) steps.push({ role: "ICS_CONTACT", approver: contact, status: "pending" });
-  if (ICS_APPROVER_FINAL) steps.push({ role: "FINAL", approver: ICS_APPROVER_FINAL, status: "pending" });
-  return steps;
+  add("FINAL", ICS_APPROVER_FINAL);
+  add("ICS_CONTACT", contact);
+  // 1차가 없으면(G열 "-") 2차도 거치지 않는다.
+  if (lm1) add("LM2", lm2);
+  add("LM1", lm1);
+  return steps.reverse();
 }
 
 // ICS_ChangeRequests 목록에서 변경 요청을 읽어온다.
@@ -3382,7 +3397,10 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
                       </span>
                       <span className="text-xs text-slate-700">{personByEmail(st.approver, lang, users)}</span>
                       <span className="text-[11px] text-slate-400">
-                        {st.role === "MC" ? t("approval.stepMc") : st.role === "ICS_CONTACT" ? t("approval.stepContact") : t("approval.stepFinal")}
+                        {(st.role === "LM1" || st.role === "MC") ? t("approval.stepLm1")
+                          : st.role === "LM2" ? t("approval.stepLm2")
+                          : st.role === "ICS_CONTACT" ? t("approval.stepContact")
+                          : t("approval.stepFinal")}
                       </span>
                     </span>
                   </React.Fragment>
@@ -4489,7 +4507,8 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
   }
 
   const stepLabel = (st) => {
-    if (st.role === "MC") return t("approval.stepMc");
+    if (st.role === "LM1" || st.role === "MC") return t("approval.stepLm1");
+    if (st.role === "LM2") return t("approval.stepLm2");
     if (st.role === "ICS_CONTACT") return t("approval.stepContact");
     return t("approval.stepFinal");
   };
