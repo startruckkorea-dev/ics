@@ -4768,27 +4768,70 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, sh
 /* ------------------------------------------------------------------ */
 
 function exportControlsToExcel(controls, lang, departments = INITIAL_DEPARTMENTS, users = INITIAL_USERS) {
+  const en = lang === "en";
+  const L = (ko, eng) => (en ? eng : ko);
+  const risk = (r) => (r ? RISK_META[r][lang] : RISK_META.none[lang]);
+  // 첨부는 이름만 모아 한 칸에 담는다. 줄바꿈으로 구분해 엑셀에서 셀 안에서 읽힌다.
+  const attNames = (list) => (list || []).map((a) => a.name).filter(Boolean).join("\n");
+
   const rows = controls.map((c) => ({
-    [lang === "en" ? "Code" : "코드"]: c.code,
-    [lang === "en" ? "Control name" : "통제명"]: cName(c, lang),
-    [lang === "en" ? "Department" : "부서"]: deptName(c.dept, lang, departments),
-    [lang === "en" ? "Component" : "통제영역"]: catName(c.cat, lang),
-    [lang === "en" ? "1st Accessor" : "1차 담당자"]: personByEmail(c.accessor, lang, users),
-    [lang === "en" ? "2nd Reviewer" : "2차 검토자"]: personByEmail(c.reviewer, lang, users),
-    [lang === "en" ? "Frequency" : "점검빈도"]: freqLabel(c.frequency, lang),
-    [lang === "en" ? "Importance" : "중요도"]: importanceLabel(c.importance, lang),
-    [lang === "en" ? "Recommended sample" : "권장 샘플링(건)"]: recommendedSample(c.importance, c.frequency),
-    [lang === "en" ? "Actual sample" : "실제 샘플링(건)"]: c.actualSample ?? "",
-    [lang === "en" ? "Attachments" : "첨부파일 수"]: (c.attachments || []).length,
-    [lang === "en" ? "1st result" : "1차평가"]: c.selfRisk ? RISK_META[c.selfRisk][lang] : RISK_META.none[lang],
-    [lang === "en" ? "2nd result" : "2차평가"]: c.reviewRisk ? RISK_META[c.reviewRisk][lang] : RISK_META.none[lang],
-    [lang === "en" ? "Status" : "상태"]: STATUS_META[c.status][lang],
+    [L("코드", "Code")]: c.code,
+    [L("통제명", "Control name")]: cName(c, lang),
+    [L("통제 설명", "Description")]: cDesc(c, lang) || "",
+    [L("부서", "Department")]: deptName(c.dept, lang, departments),
+    [L("통제영역", "Component")]: catName(c.cat, lang),
+    [L("1차 담당자", "1st Accessor")]: personByEmail(c.accessor, lang, users),
+    [L("2차 검토자", "2nd Reviewer")]: personByEmail(c.reviewer, lang, users),
+    [L("점검빈도", "Frequency")]: freqLabel(c.frequency, lang),
+    [L("중요도", "Importance")]: importanceLabel(c.importance, lang),
+    [L("권장 샘플링(건)", "Recommended sample")]: recommendedSample(c.importance, c.frequency),
+    [L("실제 샘플링(건)", "Actual sample")]: c.actualSample ?? "",
+    [L("상태", "Status")]: STATUS_META[c.status][lang],
+    [L("최종 신호등", "Final result")]: risk(finalRisk(c) === "none" ? null : finalRisk(c)),
+
+    // ── ISA 1차 자가평가 ──
+    [L("1차 신호등", "ISA 1st result")]: risk(c.selfRisk),
+    [L("1차 평가 근거", "ISA 1st rationale")]: (en ? c.selfCommentEn || c.selfComment : c.selfComment) || "",
+    [L("1차 제출일시", "ISA 1st submitted")]: formatDateTime(c.selfDate, lang),
+    [L("1차 첨부 수", "ISA 1st attachments")]: (c.attachments || []).length,
+    [L("1차 첨부 파일명", "ISA 1st file names")]: attNames(c.attachments),
+
+    // ── ISA 2차 검토 ──
+    [L("2차 신호등", "ISA 2nd result")]: risk(c.reviewRisk),
+    [L("2차 검토 의견", "ISA 2nd comment")]: (en ? c.reviewCommentEn || c.reviewComment : c.reviewComment) || "",
+    [L("2차 검토일시", "ISA 2nd reviewed")]: formatDateTime(c.reviewDate, lang),
+
+    // ── FSA 최종 자가평가 ──
+    [L("FSA 상태", "FSA status")]: STATUS_META[c.fsaStatus || "not_started"][lang],
+    [L("FSA 신호등", "FSA result")]: risk(c.fsaRisk),
+    [L("FSA 평가 근거", "FSA rationale")]: (en ? c.fsaCommentEn || c.fsaComment : c.fsaComment) || "",
+    [L("FSA 제출일시", "FSA submitted")]: formatDateTime(c.fsaDate, lang),
+    [L("FSA 첨부 수", "FSA attachments")]: (c.fsaAttachments || []).length,
+    [L("FSA 첨부 파일명", "FSA file names")]: attNames(c.fsaAttachments),
+
+    // ── FSA 2차 검토 ──
+    [L("FSA 2차 신호등", "FSA 2nd result")]: risk(c.fsaReviewRisk),
+    [L("FSA 2차 의견", "FSA 2nd comment")]: (en ? c.fsaReviewCommentEn || c.fsaReviewComment : c.fsaReviewComment) || "",
+    [L("FSA 2차 검토일시", "FSA 2nd reviewed")]: formatDateTime(c.fsaReviewDate, lang),
   }));
+
   const ws = XLSX.utils.json_to_sheet(rows);
-  ws["!cols"] = Object.keys(rows[0] || {}).map(() => ({ wch: 16 }));
+  const keys = Object.keys(rows[0] || {});
+  // 긴 글이 들어가는 열은 넓게, 나머지는 기본 폭으로 잡는다.
+  const WIDE = new Set([
+    L("통제명", "Control name"), L("통제 설명", "Description"),
+    L("1차 평가 근거", "ISA 1st rationale"), L("2차 검토 의견", "ISA 2nd comment"),
+    L("FSA 평가 근거", "FSA rationale"), L("FSA 2차 의견", "FSA 2nd comment"),
+    L("1차 첨부 파일명", "ISA 1st file names"), L("FSA 첨부 파일명", "FSA file names"),
+  ]);
+  ws["!cols"] = keys.map((k) => ({ wch: WIDE.has(k) ? 42 : 16 }));
+  // 첫 행 고정 + 자동 필터로 248건을 다루기 쉽게 한다.
+  ws["!freeze"] = { xSplit: 0, ySplit: 1 };
+  if (rows.length) ws["!autofilter"] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: rows.length, c: keys.length - 1 } }) };
+
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, lang === "en" ? "Internal Control Status" : "내부통제 현황");
-  XLSX.writeFile(wb, `internal_control_status_${new Date(new Date().getTime()+9*3600*1000).toISOString().slice(0, 10)}.xlsx`);
+  XLSX.utils.book_append_sheet(wb, ws, en ? "Internal Control Status" : "내부통제 현황");
+  XLSX.writeFile(wb, `internal_control_status_${new Date(new Date().getTime() + 9 * 3600 * 1000).toISOString().slice(0, 10)}.xlsx`);
 }
 
 // 통제 항목 변경(수정·삭제) 결재 승인 화면.
