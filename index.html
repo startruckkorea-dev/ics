@@ -3140,7 +3140,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
   const [saving, setSaving] = useState(null);
 
   async function submit(c) {
-    if (!draft.risk) return;
+    // 리스크 수준은 선택 사항이다. 비워두면 대시보드에 「미평가」로 집계된다.
     const today = new Date().toISOString();  // SharePoint 저장값과 동일한 ISO — 표시 시점에 formatDateTime 이 KST 로 변환
     setSaving(c.id);
     setEditing(null);
@@ -3590,7 +3590,7 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
     });
   }
   async function submit(c) {
-    if (!draft.risk) return;
+    // 리스크 수준은 선택 사항이다. 비워두면 대시보드에 「미평가」로 집계된다.
     const today = new Date().toISOString();  // SharePoint 저장값과 동일한 ISO — 표시 시점에 formatDateTime 이 KST 로 변환
     setEditing(null);
     try {
