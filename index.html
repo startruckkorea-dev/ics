@@ -604,8 +604,8 @@ const STR = {
       reqLineTitle: "결재선",
       reqCurrent: "현재 등록된 내용",
       reqSkipped: "생략",
-      reqSkipDup: "님이 뒤 단계 결재자와 동일하여 한 번만 승인합니다.",
-      reqSkipSelf: "님은 요청자 본인이라 승인 단계에서 제외됩니다.",
+      reqSkipDup: "님이 상위 결재자로도 지정되어 있어, 마지막 단계에서 한 번만 승인합니다.",
+      reqSkipSelf: "님은 요청자 본인이라 이 단계는 건너뜁니다.",
       reqChanged: "변경됨",
       reqNoLine: "결재선을 확인할 수 없습니다. IT로 문의해 주세요.",
       reqNotice: "수정 요청은 아래 결재선을 모두 거쳐야 실제로 반영됩니다. 통제 코드와 담당자는 이 화면에서 변경할 수 없습니다.",
@@ -670,7 +670,7 @@ const STR = {
       deleteNotice: "최종 승인되면 이 통제 항목이 삭제됩니다. 이미 등록된 평가 내용도 함께 조회할 수 없게 됩니다.",
       commentPlaceholder: "의견을 입력하세요. (반려 시 사유를 남겨 주세요)",
       approve: "승인", reject: "반려",
-      stepLm1: "1차 Line Manager", stepLm2: "2차 Line Manager", stepContact: "ICS 검토", stepFinal: "최종 승인",
+      stepLm1: "Line Manager", stepLm2: "Line Manager", stepContact: "ICS 검토", stepFinal: "최종 승인",
       inProgress: "진행 중", done: "승인 완료", rejected: "반려",
       rejectReason: "반려 사유",
       cancelBtn: "요청 취소", cancelled: "취소됨",
@@ -937,8 +937,8 @@ const STR = {
       reqLineTitle: "Approval line",
       reqCurrent: "Currently registered",
       reqSkipped: "skipped",
-      reqSkipDup: "also appears at a later step, so they approve only once.",
-      reqSkipSelf: "is the requester and cannot approve their own request.",
+      reqSkipDup: "is also assigned to a higher step, so they approve once at the final stage.",
+      reqSkipSelf: "is the requester, so this step is skipped.",
       reqChanged: "Changed",
       reqNoLine: "Approval line could not be determined. Please contact IT.",
       reqNotice: "A change request takes effect only after every step in the approval line below. The control code and assignees cannot be changed here.",
@@ -1003,7 +1003,7 @@ const STR = {
       deleteNotice: "Once fully approved, this control item will be deleted along with access to its recorded assessments.",
       commentPlaceholder: "Add a comment. (Please give a reason when rejecting)",
       approve: "Approve", reject: "Reject",
-      stepLm1: "1st Line Manager", stepLm2: "2nd Line Manager", stepContact: "ICS Review", stepFinal: "Final Approval",
+      stepLm1: "Line Manager", stepLm2: "Line Manager", stepContact: "ICS Review", stepFinal: "Final Approval",
       inProgress: "In progress", done: "Approved", rejected: "Rejected",
       rejectReason: "Reason",
       cancelBtn: "Withdraw request", cancelled: "Withdrawn",
@@ -2318,19 +2318,16 @@ function injectDataValidations(arrayBuffer, colMap) {
 }
 
 // 통제 항목 변경 요청의 결재선을 만든다.
-//   1차 Line Manager  : employee_search.xlsx 의 Boss (G열)
-//   2차 Line Manager  : employee_search.xlsx 의 Boss of Boss (H열)
-//   3차 ICS           : system_config_final.xlsx 의 ICS_CONTACT
-//   4차 최종          : system_config_final.xlsx 의 ICS_APPROVER_FINAL
+//   1차 Line Manager : employee_search.xlsx 의 Boss (G열)
+//   2차 ICS 검토     : system_config_final.xlsx 의 ICS_CONTACT
+//   3차 최종 승인    : system_config_final.xlsx 의 ICS_APPROVER_FINAL
 //
-// G열이 "-" 이면 최상위 임원(RD 대표)이므로 1·2차를 모두 생략한다.
-// H열만 "-" 이면 1차(G)만 거친다.
+// G열이 "-" 이면 최상위 임원(RD 대표)이라 Line Manager 단계를 생략한다.
 function buildApprovalSteps(requesterEmail) {
   const me = String(requesterEmail || "").toLowerCase();
   const rel = ICS_BOSS_MAP[me] || {};
   const toEmail = (name) => (name ? (ICS_NAME_TO_EMAIL[String(name).toLowerCase()] || "") : "");
   const lm1 = toEmail(rel.boss);
-  const lm2 = toEmail(rel.bossOfBoss);
 
   const steps = [];
   const skipped = [];           // 생략된 단계와 사유 (화면 안내용)
@@ -2344,12 +2341,10 @@ function buildApprovalSteps(requesterEmail) {
     seen.add(email);
     steps.push({ role, approver: email, status: "pending" });
   };
-  // 뒤 단계(최종 → ICS → 2차 → 1차) 순으로 확정한 뒤 다시 뒤집어 순서를 맞춘다.
+  // 상위 단계(최종 → ICS → Line Manager) 순으로 확정한 뒤 다시 뒤집어 순서를 맞춘다.
   const contact = (ICS_CONTACT_EMAILS[0] || ICS_CONTACT_EMAIL || "").toLowerCase();
   add("FINAL", ICS_APPROVER_FINAL);
   add("ICS_CONTACT", contact);
-  // 1차가 없으면(G열 "-") 2차도 거치지 않는다.
-  if (lm1) add("LM2", lm2);
   add("LM1", lm1);
   steps.reverse();
   // 생략 사유는 결재선과 함께 화면에 안내한다. steps 자체에는 담지 않는다
