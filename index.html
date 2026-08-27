@@ -156,6 +156,9 @@ const BRAND = {
 let ICS_CONTACT_EMAIL = "";
 // 접근 권한 없음 화면에 표시할 담당자 목록 (system_config_final.xlsx 의 ICS_CONTACT)
 let ICS_CONTACT_EMAILS = [];
+// 결재 요청의 1차 MC 후보. employee_search.xlsx 의 H열(Boss of Boss)에 등장하는
+// 사람만 모아 중복을 제거한 목록이다. 전 직원을 고르게 하면 목록이 길어 실수하기 쉽다.
+let ICS_MC_CANDIDATES = [];
 // 통제 항목 변경 3차(최종) 승인자. system_config_final.xlsx 의 ICS_APPROVER_FINAL 에서 채운다.
 let ICS_APPROVER_FINAL = "";
 // employee_search.xlsx 의 상사 관계 (이메일 → { boss, bossOfBoss } · 영문 이름 기준)
@@ -608,6 +611,7 @@ const STR = {
       reqLineTitle: "결재선",
       reqMcLabel: "1차 결재자 (MC)",
       reqMcPlaceholder: "결재자를 선택해 주세요",
+      reqMcEmpty: "선택 가능한 결재자가 없습니다. IT로 문의해 주세요.",
       reqCurrent: "현재 등록된 내용",
       reqSkipped: "생략",
       reqSkipDup: "님은 이미 뒤 단계 결재자로 포함되어 있어, MC 단계에서 제외했습니다. 한 번만 승인하시면 됩니다.",
@@ -946,6 +950,7 @@ const STR = {
       reqLineTitle: "Approval line",
       reqMcLabel: "1st approver (MC)",
       reqMcPlaceholder: "Select an approver",
+      reqMcEmpty: "No approver is available. Please contact IT.",
       reqCurrent: "Currently registered",
       reqSkipped: "skipped",
       reqSkipDup: "is already included in a later step, so the MC step was removed. They approve only once.",
@@ -2348,20 +2353,25 @@ function injectDataValidations(arrayBuffer, colMap) {
 // 관리자 화면에서 1차 MC 를 지정받는다. 이름 또는 이메일로 입력하면 사용자 목록에서 찾는다.
 // 취소하면 null 을 돌려주어 호출부가 요청 생성을 중단한다.
 function pickMcApprover(users, requesterEmail, lang) {
-  const raw = window.prompt(lang === "en"
-    ? "Enter the 1st approver (MC) — name or email:"
-    : "1차 결재자(MC)를 입력해 주세요 — 이름 또는 이메일:");
-  if (raw === null) return null;
-  const v = String(raw).trim().toLowerCase();
-  if (!v) return "";
-  const hit = users.find((u) => (u.email || "").toLowerCase() === v)
-    || users.find((u) => (u.name || "").toLowerCase() === v)
-    || users.find((u) => (u.nameEn || "").toLowerCase() === v);
-  if (!hit) {
-    alert(lang === "en" ? `No user found for "${raw}".` : `"${raw}" 에 해당하는 사용자를 찾지 못했습니다.`);
+  const me = String(requesterEmail || "").toLowerCase();
+  const cands = ICS_MC_CANDIDATES.filter((e) => e !== me);
+  if (!cands.length) {
+    alert(lang === "en" ? "No approver is available. Please contact IT."
+                        : "선택 가능한 결재자가 없습니다. IT로 문의해 주세요.");
     return null;
   }
-  return (hit.email || "").toLowerCase();
+  // 후보가 소수(H열 기준)라 번호로 고르게 한다.
+  const menu = cands.map((e, i) => `${i + 1}. ${personByEmail(e, lang, users)} (${e})`).join("\n");
+  const raw = window.prompt(
+    (lang === "en" ? "Select the 1st approver (MC) — enter a number:\n\n"
+                   : "1차 결재자(MC)를 선택해 주세요 — 번호를 입력하세요:\n\n") + menu);
+  if (raw === null) return null;
+  const n = parseInt(String(raw).trim(), 10);
+  if (!(n >= 1 && n <= cands.length)) {
+    alert(lang === "en" ? "Please enter a valid number." : "목록에 있는 번호를 입력해 주세요.");
+    return null;
+  }
+  return cands[n - 1];
 }
 
 function buildApprovalSteps(requesterEmail, mcEmail) {
@@ -3309,6 +3319,11 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
     });
   }
 
+  // 1차 MC 후보 — employee_search.xlsx 의 H열에 등장하는 사람만, 요청자 본인은 제외.
+  const mcOptions = ICS_MC_CANDIDATES
+    .filter((e) => e !== myEmail)
+    .sort((a, b) => personByEmail(a, lang, users).localeCompare(personByEmail(b, lang, users)));
+
   // 결재선은 MC 선택에 따라 즉시 다시 계산한다. 중복이면 그 자리에서 안내가 뜬다.
   const reqSteps = reqForm ? buildApprovalSteps(currentUser.email, reqForm.mc) : [];
 
@@ -3502,21 +3517,40 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
 
           <div className="mt-3">
             <Field label={t("self.reqMcLabel")}>
-              <select
-                className={inputCls}
-                value={reqForm.mc}
-                onChange={(e) => setReqForm({ ...reqForm, mc: e.target.value })}
-              >
-                <option value="">{t("self.reqMcPlaceholder")}</option>
-                {[...users]
-                  .filter((u) => (u.email || "").toLowerCase() !== myEmail)
-                  .sort((a, b) => pName(a.name, lang, users).localeCompare(pName(b.name, lang, users)))
-                  .map((u) => (
-                    <option key={u.email} value={(u.email || "").toLowerCase()}>
-                      {pName(u.name, lang, users)} · {u.email}
-                    </option>
-                  ))}
-              </select>
+              {mcOptions.length === 0 ? (
+                <p className="text-xs text-red-600">{t("self.reqMcEmpty")}</p>
+              ) : (
+                <div className="grid grid-cols-2 gap-2">
+                  {mcOptions.map((email) => {
+                    const on = reqForm.mc === email;
+                    return (
+                      <button
+                        key={email}
+                        type="button"
+                        onClick={() => setReqForm({ ...reqForm, mc: on ? "" : email })}
+                        className="flex items-center gap-2 px-3 py-2.5 rounded-xl border-2 text-left transition-all"
+                        style={{
+                          borderColor: on ? BRAND.accent : "#E5E9EF",
+                          backgroundColor: on ? "#E4F1F0" : "#fff",
+                        }}
+                      >
+                        <span
+                          className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold flex-shrink-0"
+                          style={{ backgroundColor: on ? BRAND.accent : "#F1F5F9", color: on ? "#fff" : "#64748B" }}
+                        >
+                          {(personByEmail(email, lang, users) || "?").trim().charAt(0)}
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block text-[13px] font-medium text-slate-800 truncate">
+                            {personByEmail(email, lang, users)}
+                          </span>
+                          <span className="block text-[11px] text-slate-400 truncate">{email}</span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </Field>
           </div>
 
@@ -7755,6 +7789,7 @@ async function loadIcsMasterConfig(token) {
     const eDeptIdx = colIdx(eHeader, "Department");
     const eBossIdx = colIdx(eHeader, "Boss");
     const eBoss2Idx = colIdx(eHeader, "Boss of Boss");
+    const _mcNames = new Set();
     empRows.slice(1).forEach((row) => {
       const email = eMailIdx >= 0 ? String(row[eMailIdx] || "").trim().toLowerCase() : "";
       if (!email) return;
@@ -7766,12 +7801,17 @@ async function loadIcsMasterConfig(token) {
       if (nm) ICS_NAME_TO_EMAIL[nm.toLowerCase()] = email;
       // "-" 는 상사 없음을 뜻한다 (CEO 등)
       const clean = (v) => { const t = String(v || "").trim(); return t && t !== "-" ? t : ""; };
-      ICS_BOSS_MAP[email] = {
-        boss: eBossIdx >= 0 ? clean(row[eBossIdx]) : "",
-        bossOfBoss: eBoss2Idx >= 0 ? clean(row[eBoss2Idx]) : "",
-      };
+      const _b1 = eBossIdx >= 0 ? clean(row[eBossIdx]) : "";
+      const _b2 = eBoss2Idx >= 0 ? clean(row[eBoss2Idx]) : "";
+      ICS_BOSS_MAP[email] = { boss: _b1, bossOfBoss: _b2 };
+      // H열에 이름이 있으면 MC 후보로 모은다 (이메일 변환은 명부를 다 읽은 뒤에 한다)
+      if (_b2) _mcNames.add(_b2);
     });
-    console.log(`[ICS] employee_search.xlsx 사용자 ${Object.keys(byEmail).length}명 로드`);
+    // 이름 → 이메일 변환은 명부를 모두 읽은 뒤에 해야 누락이 없다.
+    ICS_MC_CANDIDATES = [...new Set(
+      [..._mcNames].map((n) => ICS_NAME_TO_EMAIL[n.toLowerCase()] || "").filter(Boolean)
+    )];
+    console.log(`[ICS] employee_search.xlsx 사용자 ${Object.keys(byEmail).length}명 로드 · MC 후보 ${ICS_MC_CANDIDATES.length}명`);
   } else {
     console.warn("[ICS] employee_search.xlsx 를 읽지 못함 - Users 시트로 대체 시도");
   }
