@@ -463,6 +463,11 @@ function buildArchiveYearControls(sourceControls, sourceYear, newYear) {
 /* 언어(다국어) 컨텍스트                                                 */
 /* ------------------------------------------------------------------ */
 
+// 자가평가 제출 요건. 평가 근거 최소 글자 수와 첨부 파일 1개당 상한.
+const COMMENT_MIN = 20;
+const ATTACH_MAX_MB = 40;
+const ATTACH_MAX_BYTES = ATTACH_MAX_MB * 1024 * 1024;
+
 const STR = {
   ko: {
     tagline: "내부통제관리시스템",
@@ -614,6 +619,12 @@ const STR = {
       reqMcLabel: "1차 결재자 (1st Approver · MC)",
       reqMcPlaceholder: "결재자를 선택해 주세요",
       reqMcSearch: "이름 · 이메일 · 부서 · 팀으로 검색",
+      charsMin: "자 이상",
+      attachHint: `필수 · 파일당 최대 ${ATTACH_MAX_MB}MB`,
+      attachTooBig: `파일당 최대 ${ATTACH_MAX_MB}MB까지 첨부할 수 있습니다. 아래 파일은 제외되었습니다.`,
+      needTitle: "제출하려면 다음이 필요합니다 —",
+      needRisk: "리스크 수준 선택", needComment: `평가 근거 ${COMMENT_MIN}자 이상`,
+      needSample: "샘플링 건수 입력", needAttach: "샘플링 자료 첨부",
       reqMcDefault: "기본 결재자 (Default)", reqMcAll: "전체 임직원 (All)",
       reqMcTryAll: "해당하는 결재자가 없습니다. 「전체 임직원」에서 찾아보세요.",
       reqReasonLabel: "요청 사유 (Reason)",
@@ -958,6 +969,12 @@ const STR = {
       reqMcLabel: "1st approver (MC)",
       reqMcPlaceholder: "Select an approver",
       reqMcSearch: "Search by name, email, department, or team",
+      charsMin: " chars min.",
+      attachHint: `Required · up to ${ATTACH_MAX_MB}MB per file`,
+      attachTooBig: `Each file must be ${ATTACH_MAX_MB}MB or less. The following were skipped.`,
+      needTitle: "To submit, you still need —",
+      needRisk: "a risk level", needComment: `at least ${COMMENT_MIN} characters of rationale`,
+      needSample: "a sample count", needAttach: "sampling evidence",
       reqMcDefault: "Default approvers", reqMcAll: "All employees",
       reqMcTryAll: "No match here. Try searching in All employees.",
       reqReasonLabel: "Reason for request",
@@ -3869,9 +3886,26 @@ function SelfAssessForm({ control, draft, setDraft, onCancel, onSubmit }) {
     setDraft(next);
   }
 
+  // 제출 전 확인 항목. 하나라도 비면 제출 버튼이 잠기고 사유가 표시된다.
+  const commentLen = (draft.comment || "").trim().length;
+  const sampleNum = Number(draft.sampleSize);
+  const hasAttach = (draft.attachments || []).length > 0;
+  const missing = [];
+  if (!draft.risk) missing.push(t("self.needRisk"));
+  if (commentLen < COMMENT_MIN) missing.push(t("self.needComment"));
+  if (!(sampleNum > 0)) missing.push(t("self.needSample"));
+  if (!hasAttach) missing.push(t("self.needAttach"));
+
   function handleFiles(e) {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
+    // 상한을 넘는 파일은 받지 않는다. SharePoint 업로드 실패를 미리 막는다.
+    const tooBig = files.filter((f) => f.size > ATTACH_MAX_BYTES);
+    if (tooBig.length) {
+      alert(`${t("self.attachTooBig")}\n\n` + tooBig.map((f) => `· ${f.name} (${formatBytes(f.size)})`).join("\n"));
+      e.target.value = "";
+      return;
+    }
     // file 원본은 실제 업로드(icsUploadAttachment) 시 필요, 이미 업로드된 기존 첨부(webUrl 있음)와 구분하는 용도
     const newAttachments = files.map((f) => ({ name: f.name, size: formatBytes(f.size), file: f }));
     setDraft({ ...draft, attachments: [...(draft.attachments || []), ...newAttachments] });
@@ -3908,7 +3942,7 @@ function SelfAssessForm({ control, draft, setDraft, onCancel, onSubmit }) {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 items-end">
+        <div className="grid grid-cols-2 gap-3 items-end xl:pl-6 xl:border-l xl:border-slate-100">
         <div>
           <p className="text-[13px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5">{t("manage.fieldFreq")}</p>
           <select
@@ -3953,12 +3987,20 @@ function SelfAssessForm({ control, draft, setDraft, onCancel, onSubmit }) {
           >
             <UploadCloud size={15} /> {t("self.attachBtn")}
           </button>
+          <p className="text-[11px] text-slate-400 mt-1">{t("self.attachHint")}</p>
           <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFiles} />
         </div>
         </div>
       </div>
 
-      <p className="text-[13px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5 mt-4">{t("self.commentPlaceholder")}</p>
+      <div className="border-t border-slate-100 mt-5 pt-4">
+      <p className="text-[13px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
+        {t("self.commentPlaceholder")}
+        <span className="ml-1.5 font-normal normal-case"
+              style={{ color: commentLen >= COMMENT_MIN ? "#94A3B8" : BRAND.accent }}>
+          ({commentLen} / {COMMENT_MIN}{t("self.charsMin")})
+        </span>
+      </p>
       <textarea
         className="w-full border border-slate-200 rounded-xl px-3.5 py-3 text-[15px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-100 focus:border-teal-400 resize-none"
         rows={3}
@@ -3966,6 +4008,7 @@ function SelfAssessForm({ control, draft, setDraft, onCancel, onSubmit }) {
         value={draft.comment}
         onChange={(e) => setDraft({ ...draft, comment: e.target.value })}
       />
+      </div>
 
       {(draft.attachments || []).length > 0 && (
         <ul className="mt-3 space-y-1.5">
@@ -3980,9 +4023,16 @@ function SelfAssessForm({ control, draft, setDraft, onCancel, onSubmit }) {
         </ul>
       )}
 
+      {missing.length > 0 && (
+        <p className="text-xs mb-2 text-right" style={{ color: BRAND.accent }}>
+          {t("self.needTitle")} {missing.join(" · ")}
+        </p>
+      )}
       <div className="flex justify-end gap-2 mt-4 pt-4 border-t border-slate-100">
         <button onClick={onCancel} className="px-4 py-2 text-sm text-slate-500 rounded-lg hover:bg-slate-50">{t("common.cancel")}</button>
-        <button onClick={onSubmit} className="px-5 py-2 text-sm font-semibold text-white rounded-lg transition-opacity" style={{ backgroundColor: BRAND.accent }}>
+        <button onClick={onSubmit} disabled={missing.length > 0}
+                title={missing.length ? `${t("self.needTitle")}\n${missing.map((m) => "· " + m).join("\n")}` : ""}
+                className="px-5 py-2 text-sm font-semibold text-white rounded-lg transition-opacity disabled:opacity-40 disabled:cursor-not-allowed" style={{ backgroundColor: BRAND.accent }}>
           {t("self.submitBtn")}
         </button>
       </div>
