@@ -294,6 +294,7 @@ const ACTION_LABELS = {
   request_delete_control: { ko: "통제 항목 삭제 요청", en: "Control item deletion requested" },
   approve_change: { ko: "변경 요청 승인", en: "Change request approved" },
   reject_change: { ko: "변경 요청 반려", en: "Change request rejected" },
+  cancel_change: { ko: "변경 요청 취소", en: "Change request withdrawn" },
   edit_learn_content: { ko: "학습 콘텐츠 수정", en: "Learning content edited" },
   withdraw_self: { ko: "자가평가 제출 철회", en: "Self-assessment submission withdrawn" },
   withdraw_fsa: { ko: "최종 자가평가 제출 철회", en: "Final self-assessment submission withdrawn" },
@@ -672,6 +673,7 @@ const STR = {
       stepLm1: "1차 Line Manager", stepLm2: "2차 Line Manager", stepContact: "ICS 검토", stepFinal: "최종 승인",
       inProgress: "진행 중", done: "승인 완료", rejected: "반려",
       rejectReason: "반려 사유",
+      cancelBtn: "요청 취소", cancelled: "취소됨",
       historyTitle: "변경 이력",
       noHistory: "완료된 변경 요청이 없습니다.",
       hRequester: "요청자", hRequestedAt: "요청 시간", hApprovers: "승인자",
@@ -1004,6 +1006,7 @@ const STR = {
       stepLm1: "1st Line Manager", stepLm2: "2nd Line Manager", stepContact: "ICS Review", stepFinal: "Final Approval",
       inProgress: "In progress", done: "Approved", rejected: "Rejected",
       rejectReason: "Reason",
+      cancelBtn: "Withdraw request", cancelled: "Withdrawn",
       historyTitle: "Change history",
       noHistory: "No completed change requests.",
       hRequester: "Requested by", hRequestedAt: "Requested at", hApprovers: "Approvers",
@@ -1310,7 +1313,7 @@ const MENU_GROUPS = [
   ] },
 ];
 
-function Sidebar({ page, setPage, currentUser }) {
+function Sidebar({ page, setPage, currentUser, approvalCount = 0 }) {
   const { lang, t } = useLang();
   const { users, departments } = useAppData();
   return (
@@ -1373,7 +1376,16 @@ function Sidebar({ page, setPage, currentUser }) {
                     onMouseLeave={(e) => { if (!active) e.currentTarget.style.backgroundColor = "transparent"; }}
                   >
                     <Icon size={17} className="flex-shrink-0 mt-0.5" />
-                    <span className="leading-snug">{t(`nav.${item.key}`)}</span>
+                    <span className="leading-snug flex-1">{t(`nav.${item.key}`)}</span>
+                    {item.key === "approval" && approvalCount > 0 && (
+                      <span
+                        className="flex-shrink-0 text-[11px] font-semibold rounded-full px-1.5 min-w-[18px] text-center leading-[18px] mt-0.5"
+                        style={{ backgroundColor: "#DC2626", color: "#fff" }}
+                        title={t("approval.myTurn")}
+                      >
+                        {approvalCount > 99 ? "99+" : approvalCount}
+                      </span>
+                    )}
                   </button>
                 );
               })}
@@ -4511,10 +4523,10 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
     return cur && (cur.approver || "").toLowerCase() === myEmail && cur.status === "pending";
   });
   // 내가 올린 요청
-  const mine = requests.filter((r) => r.requester === myEmail);
+  const mine = requests.filter((r) => r.requester === myEmail && r.status !== "cancelled");
   // 결재가 끝난 요청 전부 (승인·반려). 최근 처리 순으로 정렬.
   const done = requests
-    .filter((r) => r.status === "approved" || r.status === "rejected")
+    .filter((r) => r.status === "approved" || r.status === "rejected" || r.status === "cancelled")
     .sort((a, b) => new Date(b.created || 0) - new Date(a.created || 0));
 
   function labelOf(r) {
@@ -4522,10 +4534,42 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
     return c ? cName(c, lang) : r.code;
   }
 
+  // 요청자가 아직 진행 중인 자기 요청을 거둔다.
+  // 이미 한 단계라도 승인된 경우에도 취소할 수 있다 (원본은 아직 바뀌지 않았으므로).
+  async function cancelRequest(r) {
+    if (r.requester !== myEmail || r.status !== "pending") return;
+    const ok = window.confirm(lang === "en"
+      ? "Withdraw this change request? Approvers will no longer see it."
+      : "이 변경 요청을 취소하시겠습니까? 결재자 목록에서도 사라집니다.");
+    if (!ok) return;
+    setActing(r.spId);
+    try {
+      await icsUpdateItem(ICS_LISTS.changeRequests, r.spId, { Status: "cancelled" });
+      addLog(currentUser.email, "cancel_change", r.code, labelOf(r), labelOf(r));
+      showToast(lang === "en" ? "Request withdrawn." : "요청이 취소되었습니다.");
+      await reload();
+    } catch (e) {
+      console.warn("[ICS] 요청 취소 실패:", e.message);
+      alert(lang === "en" ? "Failed to withdraw the request." : "요청 취소에 실패했습니다.");
+    } finally {
+      setActing(null);
+    }
+  }
+
   async function act(r, approved) {
     if (isArchived) return;
     setActing(r.spId);
     try {
+      // 다른 결재자나 다른 탭에서 이미 처리했는지 확인한다.
+      // 확인 없이 진행하면 뒤 요청이 앞 결과를 덮어써 승인이 반려로 뒤집힐 수 있다.
+      const stillMyTurn = await icsCheckStillPending(ICS_LISTS.changeRequests, r.spId, "Step", r.step);
+      if (!stillMyTurn) {
+        alert(lang === "en"
+          ? "This request has already been processed by someone else. The list will be refreshed."
+          : "이미 다른 결재자가 처리한 요청입니다. 목록을 새로 불러옵니다.");
+        await reload();
+        return;
+      }
       const steps = r.steps.map((st, i) => (i === r.step - 1
         ? { ...st, status: approved ? "approved" : "rejected",
             comment: (comment[r.spId] || "").trim(), date: new Date().toISOString() }
@@ -4541,6 +4585,13 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
       // 최종 승인이면 실제 통제 항목에 반영한다.
       if (nextStatus === "approved") {
         const target = controls.find((x) => x.code === r.code && x.year === r.year);
+        if (!target) {
+          // 결재 진행 중에 대상 통제 항목이 사라진 경우(다른 삭제 요청이 먼저 승인되는 등).
+          // 예전에는 조용히 넘어가 승인자가 반영된 것으로 오해할 수 있었다.
+          alert(lang === "en"
+            ? `The control item (${r.code}) no longer exists, so the change could not be applied. The request has been closed as approved — please contact IT.`
+            : `대상 통제 항목(${r.code})이 존재하지 않아 변경 내용을 반영하지 못했습니다. 요청은 승인 상태로 종료되었습니다. IT로 문의해 주세요.`);
+        }
         if (target) {
           if (r.reqType === "delete") {
             if (target.spId) await icsDeleteItem(ICS_LISTS.controls, target.spId);
@@ -4716,6 +4767,17 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
                         {t("approval.rejectReason")}: {st.comment}
                       </p>
                     ))}
+                    {r.status === "pending" && !isArchived && (
+                      <div className="flex justify-end mt-2">
+                        <button
+                          onClick={() => cancelRequest(r)}
+                          disabled={acting === r.spId}
+                          className="text-xs text-slate-400 hover:text-red-500 flex items-center gap-1 disabled:opacity-40"
+                        >
+                          <Undo2 size={12} /> {t("approval.cancelBtn")}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -4747,9 +4809,11 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
                             {r.reqType === "delete" ? t("approval.typeDelete") : t("approval.typeEdit")}
                           </span>
                           <span className="text-xs px-2.5 py-1 rounded-full font-medium whitespace-nowrap"
-                                style={{ backgroundColor: r.status === "approved" ? "#DCFCE7" : "#FEE2E2",
-                                         color: r.status === "approved" ? "#15803D" : "#B91C1C" }}>
-                            {r.status === "approved" ? t("approval.done") : t("approval.rejected")}
+                                style={{ backgroundColor: r.status === "approved" ? "#DCFCE7" : r.status === "cancelled" ? "#F1F5F9" : "#FEE2E2",
+                                         color: r.status === "approved" ? "#15803D" : r.status === "cancelled" ? "#64748B" : "#B91C1C" }}>
+                            {r.status === "approved" ? t("approval.done")
+                              : r.status === "cancelled" ? t("approval.cancelled")
+                              : t("approval.rejected")}
                           </span>
                         </div>
                       </div>
@@ -6400,6 +6464,9 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
   const [listFilter, setListFilter] = useState({ dept: "", cat: "", risk: "", status: "" });
   // 새 회계연도 생성 진행률 ({done, total, failed}) - 진행 중에는 화면 조작을 막는다.
   const [yearProgress, setYearProgress] = useState(null);
+  // 사이드바에 표시할 내 결재 대기 건수.
+  // 결재 승인 화면에 들어가야만 대기 건을 알 수 있어 요청이 방치되던 문제를 막는다.
+  const [approvalCount, setApprovalCount] = useState(0);
   const [permissions, setPermissions] = useState(() => computeInitialPermissions(usingSharePointData ? initialControls : INITIAL_CONTROLS));
   const [learnContent, setLearnContent] = useState({
     ko: { intro: STR.ko.learn.intro, tips: [...STR.ko.learn.tips] },
@@ -6497,6 +6564,24 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
       });
     }
   }
+
+  // 결재 대기 건수 갱신. 로그인 직후와 화면 전환 시 다시 센다.
+  useEffect(() => {
+    if (!usingSharePointData || !currentUser?.email) return;
+    let alive = true;
+    const me = currentUser.email.toLowerCase();
+    loadIcsChangeRequests()
+      .then((list) => {
+        if (!alive) return;
+        setApprovalCount(list.filter((r) => {
+          if (r.status !== "pending") return false;
+          const cur = r.steps[r.step - 1];
+          return cur && (cur.approver || "").toLowerCase() === me && cur.status === "pending";
+        }).length);
+      })
+      .catch((e) => console.warn("[ICS] 결재 대기 건수 조회 실패:", e.message));
+    return () => { alive = false; };
+  }, [currentUser?.email, page]);
 
   function goTo(pageKey, filter) {
     if (filter) setListFilter({ dept: "", cat: "", risk: "", status: "", ...filter });
@@ -6641,7 +6726,7 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
             </div>
           </div>
         )}
-        <Sidebar page={page} setPage={setPage} currentUser={currentUser} />
+        <Sidebar page={page} setPage={setPage} currentUser={currentUser} approvalCount={approvalCount} />
 
         <div className="flex-1 flex flex-col min-w-0">
           <div className="h-14 flex-shrink-0 bg-white border-b border-slate-100 flex items-center justify-between px-6">
