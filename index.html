@@ -486,7 +486,7 @@ const STR = {
     },
     common: {
       save: "저장", cancel: "취소", submit: "제출", edit: "수정", delete: "삭제",
-      add: "추가", search: "검색", resetFilter: "필터 초기화", allDept: "전체 부서",
+      add: "추가", search: "검색", resetFilter: "필터 초기화", emptySearch: "검색 결과가 없습니다.", allDept: "전체 부서",
       allCat: "전체 통제영역", allRisk: "전체 신호등",
       assignedDeptAll: "배정 부서 전체", allCategory: "전체 통제영역", allRisk: "전체 신호등",
       confirm: "확인", close: "닫기", download: "다운로드", approve: "승인", reject: "반려",
@@ -612,6 +612,9 @@ const STR = {
       reqMcLabel: "1차 결재자 (MC)",
       reqMcPlaceholder: "결재자를 선택해 주세요",
       reqMcEmpty: "선택 가능한 결재자가 없습니다. IT로 문의해 주세요.",
+      reqMcSearch: "이름 · 이메일 · 부서 · 팀으로 검색",
+      reqReasonLabel: "요청 사유",
+      reqReasonPlaceholder: "무엇을 왜 수정하는지 적어 주세요. 결재자가 판단하는 데 사용됩니다.",
       reqCurrent: "현재 등록된 내용",
       reqSkipped: "생략",
       reqSkipDup: "님은 이미 뒤 단계 결재자로 포함되어 있어, MC 단계에서 제외했습니다. 한 번만 승인하시면 됩니다.",
@@ -825,7 +828,7 @@ const STR = {
     },
     common: {
       save: "Save", cancel: "Cancel", submit: "Submit", edit: "Edit", delete: "Delete",
-      add: "Add", search: "Search", resetFilter: "Reset filters", allDept: "All departments",
+      add: "Add", search: "Search", resetFilter: "Reset filters", emptySearch: "No matching results.", allDept: "All departments",
       allCat: "All components", allRisk: "All risk levels",
       assignedDeptAll: "All assigned depts.", allCategory: "All categories", allRisk: "All risk levels",
       confirm: "Confirm", close: "Close", download: "Download", approve: "Approve", reject: "Return",
@@ -951,6 +954,9 @@ const STR = {
       reqMcLabel: "1st approver (MC)",
       reqMcPlaceholder: "Select an approver",
       reqMcEmpty: "No approver is available. Please contact IT.",
+      reqMcSearch: "Search by name, email, department, or team",
+      reqReasonLabel: "Reason for request",
+      reqReasonPlaceholder: "Describe what you are changing and why. Approvers use this to decide.",
       reqCurrent: "Currently registered",
       reqSkipped: "skipped",
       reqSkipDup: "is already included in a later step, so the MC step was removed. They approve only once.",
@@ -1296,6 +1302,8 @@ function ResetConfirmModal({ title, description, resetPassword, onConfirm, onClo
 
 // 통제 설명 입력 상한. SharePoint 여러 줄 텍스트 컬럼이 넉넉히 수용하는 길이로 잡았다.
 const DESC_MAX = 1000;
+// 변경 요청 사유 입력 상한.
+const REASON_MAX = 500;
 
 const inputCls = "w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-100 focus:border-teal-400";
 
@@ -3295,6 +3303,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
   // 수정 요청을 올릴 수 있게 한다. 요청은 3단계 결재를 거쳐야 실제로 반영된다.
   const [reqForm, setReqForm] = useState(null);   // { control, name, desc, cat }
   const [reqSaving, setReqSaving] = useState(false);
+  const [mcQuery, setMcQuery] = useState("");   // MC 후보 검색어 (이름·이메일·부서·팀)
   const [changeReqs, setChangeReqs] = useState({});
   useEffect(() => {
     if (!usingSharePointData) return;
@@ -3315,13 +3324,17 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
     if (r && r.status === "pending") { alert(t("manage.lockedPending")); return; }
     setReqForm({
       control: c, name: cName(c, lang), desc: cDesc(c, lang), cat: c.cat,
-      mc: "",   // 1차 MC 는 요청자가 직접 지정한다
+      mc: "",       // 1차 MC 는 요청자가 직접 지정한다
+      reason: "",   // 요청 사유 — Steps JSON 에 함께 저장하므로 목록 컬럼 추가가 필요 없다
     });
   }
 
   // 1차 MC 후보 — employee_search.xlsx 의 H열에 등장하는 사람만, 요청자 본인은 제외.
+  const _mcQ = mcQuery.trim().toLowerCase();
   const mcOptions = ICS_MC_CANDIDATES
     .filter((x) => x.email !== myEmail)
+    .filter((x) => !_mcQ || [x.name, x.email, x.dept, x.team]
+      .some((v) => String(v || "").toLowerCase().includes(_mcQ)))
     .sort((a, b) => a.name.localeCompare(b.name));
 
   // 결재선은 MC 선택에 따라 즉시 다시 계산한다. 중복이면 그 자리에서 안내가 뜬다.
@@ -3342,6 +3355,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
     setReqSaving(true);
     try {
       // 변경하지 않은 필드도 함께 담아야 최종 승인 시 원래 값이 유지된다.
+      // 요청 사유는 결재선 JSON 첫머리에 담는다 (SharePoint 컬럼 추가 불필요)
       await icsCreateItem(ICS_LISTS.changeRequests, {
         Title: c.code, Year: c.year, ReqType: "edit",
         RequesterEmail: currentUser.email,
@@ -3349,12 +3363,15 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
           dept: c.dept, cat: reqForm.cat, name, desc: (reqForm.desc || "").trim(),
           accessor: c.accessor, reviewer: c.reviewer,
           frequency: c.frequency, importance: c.importance,
+          // 요청 사유. Payload 에 함께 담아 SharePoint 컬럼을 새로 만들지 않는다.
+          reason: (reqForm.reason || "").trim(),
         }),
         Steps: JSON.stringify(steps), Step: 1, Status: "pending",
       });
       addLog(currentUser.email, "request_edit_control", c.code, name, name);
       setChangeReqs((prev) => ({ ...prev, [c.code]: { code: c.code, status: "pending" } }));
       setReqForm(null);
+      setMcQuery("");
       showToast(lang === "en"
         ? "Change request submitted for approval."
         : "수정 요청이 결재로 상신되었습니다.");
@@ -3520,29 +3537,59 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
               {mcOptions.length === 0 ? (
                 <p className="text-xs text-red-600">{t("self.reqMcEmpty")}</p>
               ) : (
-                <div className="border border-slate-200 rounded-xl overflow-hidden divide-y divide-slate-100">
-                  {mcOptions.map((u) => {
-                    const on = reqForm.mc === u.email;
-                    return (
-                      <button
-                        key={u.email}
-                        type="button"
-                        onClick={() => setReqForm({ ...reqForm, mc: on ? "" : u.email })}
-                        className="w-full flex items-center justify-between gap-3 px-3.5 py-2.5 text-left transition-colors"
-                        style={{ backgroundColor: on ? "#E4F1F0" : "#fff" }}
-                        onMouseEnter={(e) => { if (!on) e.currentTarget.style.backgroundColor = "#F8FAFC"; }}
-                        onMouseLeave={(e) => { if (!on) e.currentTarget.style.backgroundColor = "#fff"; }}
-                      >
-                        <span className="min-w-0 flex items-baseline gap-2">
-                          <span className="text-[14px] font-medium text-slate-800 whitespace-nowrap">{u.name}</span>
-                          <span className="text-[12px] text-slate-400 truncate">{u.email}</span>
-                        </span>
-                        {on && <Check size={16} className="flex-shrink-0" style={{ color: BRAND.accent }} />}
-                      </button>
-                    );
-                  })}
-                </div>
+                <>
+                  <div className="relative mb-1.5">
+                    <Search size={14} className="absolute left-3 top-2.5 text-slate-400" />
+                    <input
+                      value={mcQuery}
+                      onChange={(e) => setMcQuery(e.target.value)}
+                      placeholder={t("self.reqMcSearch")}
+                      className={`${inputCls} pl-8 py-2 text-[13px]`}
+                    />
+                  </div>
+                  <div className="border border-slate-200 rounded-lg overflow-y-auto divide-y divide-slate-100" style={{ maxHeight: 168 }}>
+                    {mcOptions.length === 0 ? (
+                      <p className="text-xs text-slate-400 px-3 py-3 text-center">{t("common.emptySearch")}</p>
+                    ) : mcOptions.map((u) => {
+                      const on = reqForm.mc === u.email;
+                      return (
+                        <button
+                          key={u.email}
+                          type="button"
+                          onClick={() => setReqForm({ ...reqForm, mc: on ? "" : u.email })}
+                          className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left transition-colors"
+                          style={{ backgroundColor: on ? "#E4F1F0" : "#fff" }}
+                          onMouseEnter={(e) => { if (!on) e.currentTarget.style.backgroundColor = "#F8FAFC"; }}
+                          onMouseLeave={(e) => { if (!on) e.currentTarget.style.backgroundColor = "#fff"; }}
+                        >
+                          <span className="min-w-0">
+                            <span className="flex items-baseline gap-1.5">
+                              <span className="text-[13px] font-medium text-slate-800 whitespace-nowrap">{u.name}</span>
+                              <span className="text-[11px] text-slate-400 truncate">{u.email}</span>
+                            </span>
+                            {(u.dept || u.team) && (
+                              <span className="block text-[11px] text-slate-400 truncate">
+                                {[u.dept, u.team].filter(Boolean).join(" · ")}
+                              </span>
+                            )}
+                          </span>
+                          {on && <Check size={15} className="flex-shrink-0" style={{ color: BRAND.accent }} />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
               )}
+            </Field>
+          </div>
+
+          <div className="mt-3">
+            <Field label={t("self.reqReasonLabel")}>
+              <textarea className={inputCls} rows={2} maxLength={REASON_MAX}
+                        value={reqForm.reason}
+                        onChange={(e) => setReqForm({ ...reqForm, reason: e.target.value })}
+                        placeholder={t("self.reqReasonPlaceholder")} />
+              <p className="text-xs text-slate-400 mt-1.5 text-right">{(reqForm.reason || "").length} / {REASON_MAX}</p>
             </Field>
           </div>
 
@@ -4795,6 +4842,12 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
                       {t("approval.requestedBy")} {personByEmail(r.requester, lang, users)} · {formatDateTime(r.created, lang)}
                     </p>
 
+                    {r.payload?.reason && (
+                      <div className="rounded-lg p-3 mt-3 text-xs" style={{ backgroundColor: "#FEF9E7", color: "#7A5C10" }}>
+                        <p className="font-medium mb-1">{t("self.reqReasonLabel")}</p>
+                        <p className="whitespace-pre-wrap">{r.payload.reason}</p>
+                      </div>
+                    )}
                     {r.reqType === "edit" && (
                       <div className="bg-slate-50 rounded-lg p-3 mt-3 text-xs text-slate-600 space-y-1">
                         <p className="font-medium text-slate-500 mb-1">{t("approval.changeContent")}</p>
@@ -4942,6 +4995,12 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
                             ))}
                           </span>
                         </div>
+                        {r.payload?.reason && (
+                          <div className="flex gap-2">
+                            <span className="text-slate-400 w-[86px] flex-shrink-0">{t("self.reqReasonLabel")}</span>
+                            <span className="whitespace-pre-wrap min-w-0">{r.payload.reason}</span>
+                          </div>
+                        )}
                         {decided.some((st) => st.comment) && (
                           <div className="flex gap-2">
                             <span className="text-slate-400 w-[86px] flex-shrink-0">{t("approval.hReason")}</span>
@@ -7785,9 +7844,11 @@ async function loadIcsMasterConfig(token) {
     const eMailIdx = colIdx(eHeader, "EMail") >= 0 ? colIdx(eHeader, "EMail") : colIdx(eHeader, "Email");
     const eNameIdx = colIdx(eHeader, "EngName");
     const eDeptIdx = colIdx(eHeader, "Department");
+    const eTeamIdx = colIdx(eHeader, "Team");
     const eBossIdx = colIdx(eHeader, "Boss");
     const eBoss2Idx = colIdx(eHeader, "Boss of Boss");
     const _mcNames = new Set();
+    const _empInfo = {};
     empRows.slice(1).forEach((row) => {
       const email = eMailIdx >= 0 ? String(row[eMailIdx] || "").trim().toLowerCase() : "";
       if (!email) return;
@@ -7796,7 +7857,14 @@ async function loadIcsMasterConfig(token) {
         email, name: nm || email, nameEn: nm || email, role: "guest", dept: null,
         deptLabel: eDeptIdx >= 0 ? String(row[eDeptIdx] || "").trim() : "",
       };
-      if (nm) ICS_NAME_TO_EMAIL[nm.toLowerCase()] = email;
+      if (nm) {
+        ICS_NAME_TO_EMAIL[nm.toLowerCase()] = email;
+        // MC 후보 화면에서 부서·팀으로 사람을 찾을 수 있게 함께 보관한다.
+        _empInfo[nm.toLowerCase()] = {
+          dept: eDeptIdx >= 0 ? String(row[eDeptIdx] || "").trim() : "",
+          team: eTeamIdx >= 0 ? String(row[eTeamIdx] || "").trim() : "",
+        };
+      }
       // "-" 는 상사 없음을 뜻한다 (CEO 등)
       const clean = (v) => { const t = String(v || "").trim(); return t && t !== "-" ? t : ""; };
       const _b1 = eBossIdx >= 0 ? clean(row[eBossIdx]) : "";
@@ -7809,7 +7877,11 @@ async function loadIcsMasterConfig(token) {
     // 이름 → 이메일 변환. 이름도 함께 담아 화면에서 「이름 · 이메일」로 보여준다.
     const _seenMc = new Set();
     ICS_MC_CANDIDATES = [..._mcNames]
-      .map((n) => ({ name: n, email: ICS_NAME_TO_EMAIL[n.toLowerCase()] || "" }))
+      .map((n) => {
+        const info = _empInfo[n.toLowerCase()] || {};
+        return { name: n, email: ICS_NAME_TO_EMAIL[n.toLowerCase()] || "",
+                 dept: info.dept || "", team: info.team || "" };
+      })
       .filter((x) => x.email && !_seenMc.has(x.email) && _seenMc.add(x.email));
     console.log(`[ICS] employee_search.xlsx 사용자 ${Object.keys(byEmail).length}명 로드 · MC 후보 ${ICS_MC_CANDIDATES.length}명`);
   } else {
