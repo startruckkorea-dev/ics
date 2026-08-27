@@ -79,6 +79,7 @@ import {
   ClipboardEdit,
   ClipboardCheck,
   History,
+  Info,
   Settings,
   Search,
   Plus,
@@ -600,6 +601,9 @@ const STR = {
       reqHint: "통제명·통제영역·설명 수정을 요청합니다.",
       reqLineTitle: "결재선",
       reqCurrent: "현재 등록된 내용",
+      reqSkipped: "생략",
+      reqSkipDup: "님이 뒤 단계 결재자와 동일하여 한 번만 승인합니다.",
+      reqSkipSelf: "님은 요청자 본인이라 승인 단계에서 제외됩니다.",
       reqChanged: "변경됨",
       reqNoLine: "결재선을 확인할 수 없습니다. IT로 문의해 주세요.",
       reqNotice: "수정 요청은 아래 결재선을 모두 거쳐야 실제로 반영됩니다. 통제 코드와 담당자는 이 화면에서 변경할 수 없습니다.",
@@ -928,6 +932,9 @@ const STR = {
       reqHint: "Request changes to the control name, component, or description.",
       reqLineTitle: "Approval line",
       reqCurrent: "Currently registered",
+      reqSkipped: "skipped",
+      reqSkipDup: "also appears at a later step, so they approve only once.",
+      reqSkipSelf: "is the requester and cannot approve their own request.",
       reqChanged: "Changed",
       reqNoLine: "Approval line could not be determined. Please contact IT.",
       reqNotice: "A change request takes effect only after every step in the approval line below. The control code and assignees cannot be changed here.",
@@ -2315,11 +2322,14 @@ function buildApprovalSteps(requesterEmail) {
   const lm2 = toEmail(rel.bossOfBoss);
 
   const steps = [];
+  const skipped = [];           // 생략된 단계와 사유 (화면 안내용)
   const seen = new Set([me]);   // 요청자 본인은 승인자가 될 수 없다
   // 같은 사람이 두 단계에 걸치면(예: 직속 상사가 최종 승인자와 동일) 뒤 단계만 남긴다.
   // 한 사람이 같은 건을 두 번 승인하는 것은 결재의 의미가 없기 때문이다.
   const add = (role, email) => {
-    if (!email || seen.has(email)) return;
+    if (!email) return;
+    if (email === me) { skipped.push({ role, approver: email, reason: "self" }); return; }
+    if (seen.has(email)) { skipped.push({ role, approver: email, reason: "dup" }); return; }
     seen.add(email);
     steps.push({ role, approver: email, status: "pending" });
   };
@@ -2330,7 +2340,11 @@ function buildApprovalSteps(requesterEmail) {
   // 1차가 없으면(G열 "-") 2차도 거치지 않는다.
   if (lm1) add("LM2", lm2);
   add("LM1", lm1);
-  return steps.reverse();
+  steps.reverse();
+  // 생략 사유는 결재선과 함께 화면에 안내한다. steps 자체에는 담지 않는다
+  // (SharePoint 에 저장되는 값은 실제 결재 단계만 유지해야 하기 때문).
+  steps.skipped = skipped.reverse();
+  return steps;
 }
 
 // ICS_ChangeRequests 목록에서 변경 요청을 읽어온다.
@@ -3404,6 +3418,23 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
                       </span>
                     </span>
                   </React.Fragment>
+                ))}
+              </div>
+            )}
+            {(reqForm.steps.skipped || []).length > 0 && (
+              <div className="mt-2.5 pt-2.5 border-t border-slate-200 space-y-1">
+                {reqForm.steps.skipped.map((sk, i) => (
+                  <p key={i} className="text-xs text-slate-400 flex items-start gap-1.5">
+                    <Info size={12} className="flex-shrink-0 mt-0.5" />
+                    <span>
+                      {sk.role === "LM1" ? t("approval.stepLm1")
+                        : sk.role === "LM2" ? t("approval.stepLm2")
+                        : sk.role === "ICS_CONTACT" ? t("approval.stepContact")
+                        : t("approval.stepFinal")}
+                      {" "}{t("self.reqSkipped")} — {personByEmail(sk.approver, lang, users)}
+                      {" "}{sk.reason === "self" ? t("self.reqSkipSelf") : t("self.reqSkipDup")}
+                    </span>
+                  </p>
                 ))}
               </div>
             )}
