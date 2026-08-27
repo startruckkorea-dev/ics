@@ -595,6 +595,10 @@ const STR = {
       riskLevel: "리스크 수준 선택", commentPlaceholder: "평가 근거 및 특이사항을 입력하세요.",
       sampleCount: "샘플링 건수", recommendedNote: "권장", attachBtn: "샘플링 자료 첨부",
       submitBtn: "제출", editBtn: "수정", withdrawBtn: "제출 철회",
+      reqBtn: "항목 수정 요청", reqPending: "수정 결재 중",
+      reqTitle: "통제 항목 수정 요청", reqSubmit: "결재 상신",
+      reqHint: "통제명·통제영역·설명 수정을 요청합니다.",
+      reqNotice: "수정 요청은 1차 MC · 2차 ICS · 3차 최종 결재를 모두 거쳐야 실제로 반영됩니다. 통제 코드와 담당자는 이 화면에서 변경할 수 없습니다.",
       noNeedsAction: "현재 평가가 필요한 항목이 없습니다.", noSubmitted: "제출된 평가가 없습니다.",
       recommendedShort: "권장",
     },
@@ -915,6 +919,10 @@ const STR = {
       riskLevel: "Select risk level", commentPlaceholder: "Enter your rationale and any notable findings.",
       sampleCount: "Sample size", recommendedNote: "recommended", attachBtn: "Attach sampling evidence",
       submitBtn: "Submit", editBtn: "Edit", withdrawBtn: "Withdraw",
+      reqBtn: "Request change", reqPending: "Change in approval",
+      reqTitle: "Control item change request", reqSubmit: "Submit for approval",
+      reqHint: "Request changes to the control name, component, or description.",
+      reqNotice: "A change request takes effect only after all three approvals (MC, ICS, Final). The control code and assignees cannot be changed here.",
       noNeedsAction: "No items currently need assessment.", noSubmitted: "No assessments submitted yet.",
       recommendedShort: "recommended",
     },
@@ -3116,7 +3124,7 @@ function AssessmentFilterBar({ f, t, minItems }) {
   );
 }
 
-function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived, showToast, allowedDepts }) {
+function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived, showToast, allowedDepts, usingSharePointData }) {
   const { lang, t } = useLang();
   const { departments, users } = useAppData();
   const [editing, setEditing] = useState(null);
@@ -3129,6 +3137,74 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
   const myControls = controls.filter((c) => (c.accessor || "").toLowerCase() === myEmail);
 
   const f = useAssessmentFilter(myControls, lang, users, departments);
+
+  // ── 통제 항목 수정 요청 ──
+  // 통제명·설명 등은 담당자가 실제 내용을 가장 잘 알기 때문에, 자가평가 화면에서 바로
+  // 수정 요청을 올릴 수 있게 한다. 요청은 3단계 결재를 거쳐야 실제로 반영된다.
+  const [reqForm, setReqForm] = useState(null);   // { control, name, desc, cat }
+  const [reqSaving, setReqSaving] = useState(false);
+  const [changeReqs, setChangeReqs] = useState({});
+  useEffect(() => {
+    if (!usingSharePointData) return;
+    loadIcsChangeRequests()
+      .then((list) => {
+        const map = {};
+        list.forEach((r) => {
+          const prev = map[r.code];
+          if (!prev || (r.status === "pending" && prev.status !== "pending")) map[r.code] = r;
+        });
+        setChangeReqs(map);
+      })
+      .catch((e) => console.warn("[ICS] 변경 요청 로드 실패:", e.message));
+  }, []);
+
+  function openRequest(c) {
+    const r = changeReqs[c.code];
+    if (r && r.status === "pending") { alert(t("manage.lockedPending")); return; }
+    setReqForm({ control: c, name: cName(c, lang), desc: cDesc(c, lang), cat: c.cat });
+  }
+
+  async function submitRequest() {
+    if (!reqForm) return;
+    const c = reqForm.control;
+    const name = (reqForm.name || "").trim();
+    if (!name) return;
+    const steps = buildApprovalSteps(currentUser.email);
+    if (!steps.length) {
+      alert(lang === "en"
+        ? "Approval line could not be determined. Please contact IT."
+        : "결재선을 확인할 수 없습니다. IT로 문의해 주세요.");
+      return;
+    }
+    setReqSaving(true);
+    try {
+      // 변경하지 않은 필드도 함께 담아야 최종 승인 시 원래 값이 유지된다.
+      await icsCreateItem(ICS_LISTS.changeRequests, {
+        Title: c.code, Year: c.year, ReqType: "edit",
+        RequesterEmail: currentUser.email,
+        Payload: JSON.stringify({
+          dept: c.dept, cat: reqForm.cat, name, desc: (reqForm.desc || "").trim(),
+          accessor: c.accessor, reviewer: c.reviewer,
+          frequency: c.frequency, importance: c.importance,
+        }),
+        Steps: JSON.stringify(steps), Step: 1, Status: "pending",
+      });
+      addLog(currentUser.email, "request_edit_control", c.code, name, name);
+      setChangeReqs((prev) => ({ ...prev, [c.code]: { code: c.code, status: "pending" } }));
+      setReqForm(null);
+      showToast(lang === "en"
+        ? "Change request submitted for approval."
+        : "수정 요청이 결재로 상신되었습니다.");
+    } catch (e) {
+      console.warn("[ICS] 수정 요청 생성 실패:", e.message);
+      alert(lang === "en"
+        ? "Failed to submit the change request."
+        : "수정 요청 상신에 실패했습니다. 잠시 후 다시 시도해 주세요.");
+    } finally {
+      setReqSaving(false);
+    }
+  }
+
   const todo = f.apply(myControls.filter((c) => c.status === "not_started" || c.status === "returned"));
   const inProgress = f.apply(myControls.filter((c) => c.status === "submitted_self" || c.status === "completed"));
 
@@ -3236,6 +3312,41 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
 
   return (
     <div>
+      {reqForm && (
+        <Modal title={t("self.reqTitle")} onClose={() => setReqForm(null)}>
+          <p className="text-xs text-slate-400 font-mono mb-3">{reqForm.control.code}</p>
+          <div className="space-y-3">
+            <Field label={t("manage.fieldName")}>
+              <input className={inputCls} value={reqForm.name}
+                     onChange={(e) => setReqForm({ ...reqForm, name: e.target.value })} />
+            </Field>
+            <Field label={t("manage.fieldCat")}>
+              <select className={inputCls} value={reqForm.cat}
+                      onChange={(e) => setReqForm({ ...reqForm, cat: e.target.value })}>
+                {CATEGORIES.map((x) => <option key={x.id} value={x.id}>{x[lang]}</option>)}
+              </select>
+            </Field>
+            <Field label={t("manage.fieldDesc")}>
+              <textarea className={inputCls} rows={4} value={reqForm.desc}
+                        onChange={(e) => setReqForm({ ...reqForm, desc: e.target.value })} />
+            </Field>
+          </div>
+          <div className="bg-slate-50 rounded-lg px-3 py-2.5 mt-3 text-xs text-slate-500">
+            {t("self.reqNotice")}
+          </div>
+          <div className="flex justify-end gap-2 mt-5">
+            <button onClick={() => setReqForm(null)} className="px-4 py-2 text-sm text-slate-500 rounded-lg hover:bg-slate-50">
+              {t("common.cancel")}
+            </button>
+            <button onClick={submitRequest} disabled={reqSaving || !(reqForm.name || "").trim()}
+                    className="px-4 py-2 text-sm text-white rounded-lg disabled:opacity-40 flex items-center gap-1.5"
+                    style={{ backgroundColor: BRAND.accent }}>
+              {reqSaving && <Loader2 size={14} className="animate-spin" />}{t("self.reqSubmit")}
+            </button>
+          </div>
+        </Modal>
+      )}
+
       <SectionHeader
         icon={ClipboardList}
         title={t("self.title")}
@@ -3259,7 +3370,23 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
                     <p className="text-xs text-slate-400 font-mono mb-0.5">{c.code} · {deptName(c.dept, lang, departments)} · {catName(c.cat, lang)}</p>
                     <p className="font-medium text-slate-800">{cName(c, lang)}</p>
                   </div>
-                  <StatusBadge status={c.status} kind="isa" />
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {changeReqs[c.code]?.status === "pending" ? (
+                      <span className="text-xs px-2.5 py-1 rounded-full font-medium whitespace-nowrap"
+                            style={{ backgroundColor: "#FEF3C7", color: "#B45309" }}>
+                        {t("self.reqPending")}
+                      </span>
+                    ) : (!isArchived && (
+                      <button
+                        onClick={() => openRequest(c)}
+                        className="text-xs text-slate-500 hover:text-teal-600 flex items-center gap-1 whitespace-nowrap"
+                        title={t("self.reqHint")}
+                      >
+                        <ClipboardEdit size={12} /> {t("self.reqBtn")}
+                      </button>
+                    ))}
+                    <StatusBadge status={c.status} kind="isa" />
+                  </div>
                 </div>
                 <p className="text-sm text-slate-500 mb-3 whitespace-pre-wrap">{cDesc(c, lang)}</p>
 
@@ -6460,7 +6587,7 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
             )}
             {page === "self" && (
               hasCategoryAccess(currentUser, "self")
-                ? <SelfAssessment controls={controlsForYear} setControls={setControls} currentUser={currentUser} addLog={addLog} isArchived={isArchived} showToast={showToast} allowedDepts={accessorDepts} />
+                ? <SelfAssessment controls={controlsForYear} setControls={setControls} currentUser={currentUser} addLog={addLog} isArchived={isArchived} showToast={showToast} allowedDepts={accessorDepts} usingSharePointData={usingSharePointData} />
                 : <EmptyState text="Access denied" />
             )}
             {page === "review" && (
