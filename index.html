@@ -568,6 +568,7 @@ const STR = {
       pendingNotice: "Accessor의 수정 요청은 검토자(또는 관리자)의 승인 후 실제 내용에 반영됩니다. 승인 전까지는 기존 내용이 그대로 표시됩니다.",
       uploadTemplateBtn: "엑셀 템플릿 다운로드",
       exportBtn: "엑셀 내보내기",
+      colAction: "수정·삭제",
       exportHint: "현재 검색·필터가 적용된 목록을 엑셀로 저장합니다.",
       uploadBtn: "엑셀로 일괄 업로드",
       uploadAdminOnly: "엑셀 일괄 업로드는 관리자(권한 담당자)만 사용할 수 있습니다.",
@@ -903,6 +904,7 @@ const STR = {
       pendingNotice: "An accessor's edit request only takes effect after a reviewer (or admin) approves it. The existing content is shown until then.",
       uploadTemplateBtn: "Download Excel template",
       exportBtn: "Export to Excel",
+      colAction: "Edit · Delete",
       exportHint: "Exports the list with the current search and filters applied.",
       uploadBtn: "Bulk upload from Excel",
       uploadAdminOnly: "Only admins (permission managers) can bulk-upload from Excel.",
@@ -3035,7 +3037,7 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
               <th className="text-left font-medium px-4 py-3 whitespace-nowrap">{t("manage.colSample")}</th>
               <th className="text-left font-medium px-4 py-3 whitespace-nowrap">{t("list.colStatus")}</th>
               <th className="text-left font-medium px-4 py-3 whitespace-nowrap">{t("list.colRisk")}</th>
-              {canEdit && <th className="text-right font-medium px-4 py-3"> </th>}
+              {canEdit && <th className="text-right font-medium px-4 py-3 whitespace-nowrap">{t("manage.colAction")}</th>}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-50">
@@ -3044,13 +3046,13 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
                 <td className="px-4 py-3 text-slate-500 text-xs font-mono whitespace-nowrap">{c.code}</td>
                 <td className="px-4 py-3 text-slate-700 font-medium">
                   <div className="flex items-center gap-2">
-                    <span className="max-w-[340px] truncate" title={cName(c, lang)}>{cName(c, lang)}</span>
+                    <span className="max-w-[260px] truncate" title={cName(c, lang)}>{cName(c, lang)}</span>
                   </div>
                 </td>
-                <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{deptName(c.dept, lang, departments)}</td>
+                <td className="px-4 py-3 text-slate-600"><div className="max-w-[150px] truncate" title={deptName(c.dept, lang, departments)}>{deptName(c.dept, lang, departments)}</div></td>
                 <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{catName(c.cat, lang)}</td>
-                <td className="px-4 py-3 text-slate-600"><div className="max-w-[185px] truncate" title={personByEmail(c.accessor, lang, users)}>{personByEmail(c.accessor, lang, users)}</div></td>
-                <td className="px-4 py-3 text-slate-600"><div className="max-w-[185px] truncate" title={personByEmail(c.reviewer, lang, users)}>{personByEmail(c.reviewer, lang, users)}</div></td>
+                <td className="px-4 py-3 text-slate-600"><div className="max-w-[150px] truncate" title={personByEmail(c.accessor, lang, users)}>{personByEmail(c.accessor, lang, users)}</div></td>
+                <td className="px-4 py-3 text-slate-600"><div className="max-w-[150px] truncate" title={personByEmail(c.reviewer, lang, users)}>{personByEmail(c.reviewer, lang, users)}</div></td>
                 <td className="px-4 py-3 text-slate-600 text-xs whitespace-nowrap">{freqLabel(c.frequency, lang)} · {importanceLabel(c.importance, lang)} · {c.sampleSize}{t("common.items")}</td>
                 <td className="px-4 py-3"><StatusBadge status={c.status} kind="isa" /></td>
                 <td className="px-4 py-3"><RiskBadge risk={finalRisk(c)} /></td>
