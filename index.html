@@ -1543,11 +1543,11 @@ function Dashboard({ controls: allControls, goTo, isAdmin, allowedDepts }) {
                           <button
                             title={`${row.dept[lang]} · ${cell.cat[lang]} — ${t("dashboard.matrixTotal")} ${cell.count}${t("common.items")} · ${t("dashboard.matrixAssessed")} ${cell.assessed}${t("common.items")}`}
                             onClick={() => goTo("manage", { dept: row.dept.id, cat: cell.cat.id })}
-                            className="min-w-[38px] px-1.5 py-1 rounded-lg inline-flex flex-col items-center gap-0.5 hover:opacity-75 transition-opacity"
-                            style={{ backgroundColor: RISK_META[cell.risk].bg, color: RISK_META[cell.risk].text }}
+                            className="inline-flex flex-col items-center gap-1 hover:opacity-75 transition-opacity"
                           >
-                            <span className="inline-flex items-center gap-1 font-semibold leading-none">
-                              <RiskDot risk={cell.risk} size={7} />
+                            {/* 총계는 테두리만 있는 배지로, 신호등별 내역은 그 아래에 배경 없이 둔다. */}
+                            <span className="min-w-[34px] px-2 py-0.5 rounded-md border font-semibold leading-none text-[13px]"
+                                  style={{ borderColor: RISK_META[cell.risk].color, color: RISK_META[cell.risk].text }}>
                               {cell.count}
                             </span>
                             {/* 총계만으로는 88건이 전부 미평가인지 알 수 없어 신호등별 내역을 함께 보여준다.
@@ -5381,12 +5381,10 @@ function FinalReportPage({ controls, currentUser, activeYear, yearConfirmation, 
                       {cell.count > 0 ? (
                         <span
                           title={`${row.dept[lang]} · ${cell.cat[lang]} — ${t("dashboard.matrixTotal")} ${cell.count}${t("common.items")} · ${t("dashboard.matrixAssessed")} ${cell.assessed}${t("common.items")}`}
-                          className="px-1.5 py-1 rounded-md inline-flex flex-col items-center gap-0.5"
-                          style={{ backgroundColor: RISK_META[cell.risk].bg }}
+                          className="inline-flex flex-col items-center gap-1"
                         >
-                          <span className="inline-flex items-center gap-1 text-[12px] font-semibold leading-none"
-                                style={{ color: RISK_META[cell.risk].text }}>
-                            <RiskDot risk={cell.risk} size={7} />
+                          <span className="min-w-[34px] px-2 py-0.5 rounded-md border font-semibold leading-none text-[13px]"
+                                style={{ borderColor: RISK_META[cell.risk].color, color: RISK_META[cell.risk].text }}>
                             {cell.count}
                           </span>
                           <span className="inline-flex items-center gap-1.5 text-[10px] leading-none font-semibold">
