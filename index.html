@@ -599,6 +599,8 @@ const STR = {
       reqTitle: "통제 항목 수정 요청", reqSubmit: "결재 상신",
       reqHint: "통제명·통제영역·설명 수정을 요청합니다.",
       reqLineTitle: "결재선",
+      reqCurrent: "현재 등록된 내용",
+      reqChanged: "변경됨",
       reqNoLine: "결재선을 확인할 수 없습니다. IT로 문의해 주세요.",
       reqNotice: "수정 요청은 1차 MC · 2차 ICS · 3차 최종 결재를 모두 거쳐야 실제로 반영됩니다. 통제 코드와 담당자는 이 화면에서 변경할 수 없습니다.",
       noNeedsAction: "현재 평가가 필요한 항목이 없습니다.", noSubmitted: "제출된 평가가 없습니다.",
@@ -925,6 +927,8 @@ const STR = {
       reqTitle: "Control item change request", reqSubmit: "Submit for approval",
       reqHint: "Request changes to the control name, component, or description.",
       reqLineTitle: "Approval line",
+      reqCurrent: "Currently registered",
+      reqChanged: "Changed",
       reqNoLine: "Approval line could not be determined. Please contact IT.",
       reqNotice: "A change request takes effect only after all three approvals (MC, ICS, Final). The control code and assignees cannot be changed here.",
       noNeedsAction: "No items currently need assessment.", noSubmitted: "No assessments submitted yet.",
@@ -3324,17 +3328,29 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
     <div>
       {reqForm && (
         <Modal title={t("self.reqTitle")} onClose={() => setReqForm(null)}>
-          <p className="text-xs text-slate-400 font-mono mb-3">{reqForm.control.code}</p>
+          <div className="bg-slate-50 rounded-lg px-4 py-3 mb-4">
+            <p className="text-xs text-slate-400 font-mono mb-1.5">{reqForm.control.code}</p>
+            <p className="text-xs text-slate-500">{t("self.reqCurrent")}</p>
+            <p className="text-sm text-slate-700 mt-1">
+              {catName(reqForm.control.cat, lang)} · {cName(reqForm.control, lang)}
+            </p>
+          </div>
           <div className="space-y-3">
             <Field label={t("manage.fieldName")}>
               <input className={inputCls} value={reqForm.name}
                      onChange={(e) => setReqForm({ ...reqForm, name: e.target.value })} />
+              {reqForm.name !== cName(reqForm.control, lang) && (
+                <p className="text-xs mt-1.5" style={{ color: BRAND.accent }}>{t("self.reqChanged")}</p>
+              )}
             </Field>
             <Field label={t("manage.fieldCat")}>
               <select className={inputCls} value={reqForm.cat}
                       onChange={(e) => setReqForm({ ...reqForm, cat: e.target.value })}>
                 {CATEGORIES.map((x) => <option key={x.id} value={x.id}>{x[lang]}</option>)}
               </select>
+              {reqForm.cat !== reqForm.control.cat && (
+                <p className="text-xs mt-1.5" style={{ color: BRAND.accent }}>{t("self.reqChanged")}</p>
+              )}
             </Field>
             <Field label={t("manage.fieldDesc")}>
               <textarea
@@ -3409,30 +3425,46 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
           <div className="space-y-3">
             {todo.map((c) => (
               <div key={c.id} className="bg-white rounded-xl border border-slate-100 p-4">
-                <div className="flex items-start justify-between gap-3 mb-1">
-                  <div>
-                    <p className="text-xs text-slate-400 font-mono mb-0.5">{c.code} · {deptName(c.dept, lang, departments)} · {catName(c.cat, lang)}</p>
-                    <p className="font-medium text-slate-800">{cName(c, lang)}</p>
-                  </div>
+                <div className="flex items-start justify-between gap-3 mb-2">
+                  <p className="text-xs text-slate-400 font-mono">{c.code} · {deptName(c.dept, lang, departments)}</p>
                   <div className="flex items-center gap-2 flex-shrink-0">
                     {changeReqs[c.code]?.status === "pending" ? (
-                      <span className="text-xs px-2.5 py-1 rounded-full font-medium whitespace-nowrap"
+                      <span className="text-xs px-2.5 py-1 rounded-full font-medium whitespace-nowrap flex items-center gap-1"
                             style={{ backgroundColor: "#FEF3C7", color: "#B45309" }}>
-                        {t("self.reqPending")}
+                        <Clock size={11} /> {t("self.reqPending")}
                       </span>
                     ) : (!isArchived && (
                       <button
                         onClick={() => openRequest(c)}
-                        className="text-xs text-slate-500 hover:text-teal-600 flex items-center gap-1 whitespace-nowrap"
+                        className="text-xs font-medium px-3 py-1.5 rounded-lg border flex items-center gap-1.5 whitespace-nowrap transition-colors"
+                        style={{ borderColor: "#CBD5E1", color: "#475569" }}
+                        onMouseEnter={(e) => { e.currentTarget.style.borderColor = BRAND.accent; e.currentTarget.style.color = BRAND.accent; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#CBD5E1"; e.currentTarget.style.color = "#475569"; }}
                         title={t("self.reqHint")}
                       >
-                        <ClipboardEdit size={12} /> {t("self.reqBtn")}
+                        <ClipboardEdit size={13} /> {t("self.reqBtn")}
                       </button>
                     ))}
                     <StatusBadge status={c.status} kind="isa" />
                   </div>
                 </div>
-                <p className="text-sm text-slate-500 mb-3 whitespace-pre-wrap">{cDesc(c, lang)}</p>
+
+                {/* 수정 요청으로 바꿀 수 있는 값들을 라벨과 함께 보여준다.
+                    담당자가 무엇을 요청할 수 있는지 화면에서 바로 알 수 있게 하기 위함이다. */}
+                <div className="mb-3 space-y-1">
+                  <div className="flex gap-2 text-sm">
+                    <span className="text-slate-400 w-[68px] flex-shrink-0 text-xs pt-0.5">{t("list.colCat")}</span>
+                    <span className="text-slate-700">{catName(c.cat, lang)}</span>
+                  </div>
+                  <div className="flex gap-2 text-sm">
+                    <span className="text-slate-400 w-[68px] flex-shrink-0 text-xs pt-0.5">{t("list.colName")}</span>
+                    <span className="font-medium text-slate-800">{cName(c, lang)}</span>
+                  </div>
+                  <div className="flex gap-2 text-sm">
+                    <span className="text-slate-400 w-[68px] flex-shrink-0 text-xs pt-0.5">{t("manage.fieldDesc")}</span>
+                    <span className="text-slate-500 whitespace-pre-wrap min-w-0">{cDesc(c, lang) || "-"}</span>
+                  </div>
+                </div>
 
                 {c.status === "returned" && (
                   <div className="bg-red-50 rounded-lg p-3 mb-3 text-sm">
