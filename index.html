@@ -3066,31 +3066,35 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
         </div>
       )}
 
-      <div className="mb-4">
-        <div className="relative flex-1 min-w-[200px] max-w-sm">
-          <Search size={15} className="absolute left-3 top-2.5 text-slate-400" />
+      {/* 검색과 필터를 한 줄에 나란히 둔다. 바깥에 flex 가 없어 요소가 세로로 쌓여 있었다. */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-4 flex flex-wrap items-center gap-3">
+        <div className="relative flex-1 min-w-[220px] max-w-md">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input value={search} onChange={(e) => setSearch(e.target.value)}
-                 placeholder={t("list.searchPlaceholder")} className={`${inputCls} pl-8`} />
+                 placeholder={t("list.searchPlaceholder")} className={`${inputCls} pl-9`} />
         </div>
-        <select value={deptFilter} onChange={(e) => setDeptFilter(e.target.value)} className={`${inputCls} w-auto`}>
+        <select value={deptFilter} onChange={(e) => setDeptFilter(e.target.value)} className={`${inputCls} w-auto min-w-[150px]`}>
           <option value="">{isAdmin ? t("common.allDept") : t("common.assignedDeptAll")}</option>
           {visibleDeptOptions.map((d) => <option key={d.id} value={d.id}>{d[lang]}</option>)}
         </select>
-        <select value={catFilter} onChange={(e) => setCatFilter(e.target.value)} className={`${inputCls} w-auto`}>
+        <select value={catFilter} onChange={(e) => setCatFilter(e.target.value)} className={`${inputCls} w-auto min-w-[140px]`}>
           <option value="">{t("common.allCat")}</option>
           {CATEGORIES.map((c) => <option key={c.id} value={c.id}>{c[lang]}</option>)}
         </select>
-        <select value={riskFilter} onChange={(e) => setRiskFilter(e.target.value)} className={`${inputCls} w-auto`}>
+        <select value={riskFilter} onChange={(e) => setRiskFilter(e.target.value)} className={`${inputCls} w-auto min-w-[120px]`}>
           <option value="">{t("common.allRisk")}</option>
           {["green", "orange", "red", "none"].map((r) => <option key={r} value={r}>{RISK_META[r][lang]}</option>)}
         </select>
         {filterActive && (
           <button onClick={() => { setSearch(""); setDeptFilter(""); setCatFilter(""); setRiskFilter(""); }}
-                  className="text-xs text-slate-500 hover:text-slate-700 flex items-center gap-1 flex-shrink-0">
+                  className="text-xs font-medium px-2.5 py-2 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 flex items-center gap-1 flex-shrink-0 whitespace-nowrap">
             <X size={13} /> {t("common.resetFilter")}
           </button>
         )}
-        <span className="text-xs text-slate-400 flex-shrink-0">{list.length}{t("common.items")}</span>
+        {/* 결과 건수는 우측 끝에 고정해 필터와 구분한다. */}
+        <span className="ml-auto text-xs text-slate-500 flex-shrink-0 pr-1 whitespace-nowrap">
+          <span className="font-semibold text-slate-700">{list.length}</span>{t("common.items")}
+        </span>
       </div>
 
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto">
