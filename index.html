@@ -1368,20 +1368,12 @@ function Sidebar({ page, setPage, currentUser, approvalCount = 0 }) {
   const { users, departments } = useAppData();
   return (
     <div className="w-64 flex-shrink-0 flex flex-col h-full" style={{ backgroundColor: BRAND.navy }}>
-      <div className="px-4 pt-5 pb-4 border-b border-white/10">
+      {/* 헤더는 로고와 시스템명까지만. 문의처는 메뉴 아래로 내려 정보 위계를 나눈다. */}
+      <div className="px-4 pt-5 pb-4">
         <div className="bg-white rounded-lg px-3 py-2 flex items-center justify-center">
           <img src={LOGO_SRC} alt="Star Truck Korea" style={{ width: "100%", height: "auto", display: "block" }} />
         </div>
-        <p className="text-slate-400 text-xs leading-tight mt-2 text-center">{t("tagline")}</p>
-        {ICS_CONTACT_EMAIL && (
-          <p className="text-[10px] text-slate-500 text-center mt-2.5 leading-relaxed">
-            {lang === "en" ? "BU Admin contact" : "BU Admin 문의"}
-            <br />
-            <a href={`mailto:${ICS_CONTACT_EMAIL}`} className="text-slate-300 hover:text-white underline">
-              {ICS_CONTACT_EMAIL}
-            </a>
-          </p>
-        )}
+        <p className="text-[13px] font-medium text-slate-300 tracking-tight mt-3 text-center">{t("tagline")}</p>
       </div>
 
       <nav className="flex-1 px-3 py-4 overflow-y-auto">
@@ -1443,6 +1435,20 @@ function Sidebar({ page, setPage, currentUser, approvalCount = 0 }) {
           );
         })}
       </nav>
+
+      {/* 문의처는 항상 보이도록 하단에 고정한다. 헤더에 두면 로고·시스템명과 섞여 산만하다. */}
+      {ICS_CONTACT_EMAIL && (
+        <div className="px-4 py-3 border-t border-white/10">
+          <p className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1">
+            {lang === "en" ? "Support" : "문의"}
+          </p>
+          <a href={`mailto:${ICS_CONTACT_EMAIL}`}
+             className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white transition-colors">
+            <Mail size={12} className="flex-shrink-0" />
+            <span className="truncate">{ICS_CONTACT_EMAIL}</span>
+          </a>
+        </div>
+      )}
     </div>
   );
 }
