@@ -7372,8 +7372,68 @@ function showLoginErr(msg) {
   if (el) { el.textContent = msg; el.style.display = "block"; }
 }
 
+/* ── Graph 호출 재시도 ────────────────────────────────────────────────────
+ * ICS 는 다른 APS 시스템과 달리 공통 api() 래퍼 없이 fetch 를 직접 호출해 왔다.
+ * SharePoint 스로틀(429)·일시 장애(503/504)가 뜨면 그대로 실패해서,
+ * 자가평가 제출이 항목만 만들어진 채 끊기거나 목록 조회가 통째로 날아갔다.
+ * (LTR-PC 주석의 2026-08 ACC/GW 사례와 같은 유형)
+ *
+ * 대기 시간을 다른 시스템(3회·최대 5.6초)보다 짧게 잡은 이유:
+ *  - ICS 는 저장 중 표시가 없다. 자가평가 제출 버튼에 스피너가 없어 몇 초만 멈춰도
+ *    「눌리지 않았다」고 느끼고 다시 누른다. 그래서 누적 대기를 2초로 묶었다.
+ *  - SharePoint 의 Retry-After 는 수십~수백 초가 오기도 한다. 그대로 따르면
+ *    화면이 조용히 몇 분 멈춘다. 예산(4초)을 넘는 값이 오면 재시도하지 않고
+ *    바로 실패시킨다. 곧 돌아올 상황이 아니라는 뜻이라, 기다리게 하는 것보다 낫다.
+ *
+ * 메서드별 규칙 (다른 시스템과 동일):
+ *  - GET·PATCH·DELETE : 429·503·504 재시도. 다시 보내도 결과가 같다.
+ *  - PUT :/content    : 경로에 내용을 통째로 덮어쓰므로 위와 같이 취급한다.
+ *  - POST             : 429 만 재시도. 503/504 는 서버가 이미 처리하고 응답만
+ *                       유실된 경우일 수 있어, 다시 보내면 항목이 두 번 생긴다.
+ *  - 그 밖(401·403·404) : 다시 보내도 달라지지 않는다. 즉시 반환.
+ *
+ * 응답 판정은 호출부에 그대로 맡긴다. 각자의 !res.ok 처리와 오류 메시지를
+ * 건드리지 않기 위해서다. 이 함수는 재시도만 담당한다.
+ */
+const ICS_RETRY_MAX = 2;      // 최초 1회 + 재시도 2회 = 최대 3회 시도
+const ICS_RETRY_BUDGET = 4000; // 한 호출이 재시도로 쓸 수 있는 총 대기 시간(ms)
+
+async function icsFetch(url, options = {}) {
+  const method = String(options.method || "GET").toUpperCase();
+  const idem =
+    method === "GET" || method === "PATCH" || method === "DELETE" ||
+    (method === "PUT" && /:\/content(\?|$)/.test(String(url)));
+  let spent = 0;
+  for (let attempt = 0; ; attempt++) {
+    let res;
+    try {
+      res = await fetch(url, options);
+    } catch (netErr) {
+      // 네트워크가 끊긴 경우. 요청이 서버에 닿았는지 알 수 없어 멱등 호출만 다시 보낸다.
+      const wait = attempt === 0 ? 600 : 1400;
+      if (!idem || attempt >= ICS_RETRY_MAX || spent + wait > ICS_RETRY_BUDGET) throw netErr;
+      console.warn(`[ICS] 네트워크 오류 재시도 ${attempt + 1}/${ICS_RETRY_MAX} (${wait}ms 후) ${method} ${String(url).slice(0, 120)}`);
+      spent += wait;
+      await new Promise((r) => setTimeout(r, wait));
+      continue;
+    }
+    if (res.ok) return res;
+    const retriable = res.status === 429 || (idem && (res.status === 503 || res.status === 504));
+    if (!retriable || attempt >= ICS_RETRY_MAX) return res;
+    const ra = parseInt(res.headers.get("Retry-After") || "0", 10);
+    const wait = ra > 0 ? ra * 1000 : (attempt === 0 ? 600 : 1400);
+    if (spent + wait > ICS_RETRY_BUDGET) {
+      console.warn(`[ICS] ${res.status} — 대기 예산(${ICS_RETRY_BUDGET}ms)을 넘어 재시도하지 않습니다 (Retry-After ${ra || "없음"}) ${method} ${String(url).slice(0, 120)}`);
+      return res;
+    }
+    console.warn(`[ICS] ${res.status} 재시도 ${attempt + 1}/${ICS_RETRY_MAX} (${wait}ms 후) ${method} ${String(url).slice(0, 120)}`);
+    spent += wait;
+    await new Promise((r) => setTimeout(r, wait));
+  }
+}
+
 async function apiGet(path, token) {
-  const res = await fetch(GRAPH + path, { headers: { Authorization: "Bearer " + token } });
+  const res = await icsFetch(GRAPH + path, { headers: { Authorization: "Bearer " + token } });
   if (!res.ok) throw new Error(path + " → " + res.status);
   return res.json();
 }
@@ -7410,7 +7470,7 @@ async function icsListAll(listName, extraQuery = "") {
   let items = [];
   let url = `${GRAPH}/sites/${_siteId}/lists/${listId}/items?expand=fields&$top=200${extraQuery}`;
   while (url) {
-    const res = await fetch(url, {
+    const res = await icsFetch(url, {
       headers: { Authorization: "Bearer " + token, Prefer: "HonorNonIndexedQueriesWarningMayFailRandomly" },
     });
     if (!res.ok) throw new Error(`${listName} 조회 실패 (${res.status})`);
@@ -7445,7 +7505,7 @@ async function icsDownloadAttachment(requestItemId, fileName, subfolder = "") {
     const path = subfolder
       ? `ICS_Requests_AttachedFiles/${requestItemId}/${subfolder}/${encodeURIComponent(fileName)}`
       : `ICS_Requests_AttachedFiles/${requestItemId}/${encodeURIComponent(fileName)}`;
-    const res = await fetch(`${GRAPH}/drives/${driveId}/root:/${path}:/content`, {
+    const res = await icsFetch(`${GRAPH}/drives/${driveId}/root:/${path}:/content`, {
       headers: { Authorization: "Bearer " + token },
     });
     if (!res.ok) throw new Error(`파일을 찾을 수 없습니다 (${res.status})`);
@@ -7472,7 +7532,7 @@ async function icsUploadAttachment(requestItemId, file, subfolder = "") {
   const path = subfolder
     ? `ICS_Requests_AttachedFiles/${requestItemId}/${subfolder}/${encodeURIComponent(file.name)}`
     : `ICS_Requests_AttachedFiles/${requestItemId}/${encodeURIComponent(file.name)}`;
-  const res = await fetch(
+  const res = await icsFetch(
     `${GRAPH}/drives/${driveId}/root:/${path}:/content`,
     { method: "PUT", headers: { Authorization: "Bearer " + token, "Content-Type": file.type || "application/octet-stream" }, body: buf }
   );
@@ -7487,7 +7547,7 @@ async function icsUploadAttachment(requestItemId, file, subfolder = "") {
 async function loadIcsLearnContentFromMaster() {
   const token = await getGraphToken();
   const docDriveId = await getIcsDocDriveId(token);
-  const res = await fetch(`${GRAPH}/drives/${docDriveId}/root:/ics_category_access.xlsx:/content`, { headers: { Authorization: "Bearer " + token }, cache: "no-cache" });
+  const res = await icsFetch(`${GRAPH}/drives/${docDriveId}/root:/ics_category_access.xlsx:/content`, { headers: { Authorization: "Bearer " + token }, cache: "no-cache" });
   if (!res.ok) throw new Error(`ics_category_access.xlsx not found (${res.status})`);
   const buf = await res.arrayBuffer();
   const wb = XLSX.read(buf, { type: "array" });
@@ -7528,7 +7588,7 @@ async function loadIcsLearnContentFromMaster() {
 async function loadIcsMediaTitles() {
   const token = await getGraphToken();
   const driveId = await getIcsAttachedFilesDriveId();
-  const res = await fetch(`${GRAPH}/drives/${driveId}/root:/ICS_Media-Files/media_titles.json:/content`, {
+  const res = await icsFetch(`${GRAPH}/drives/${driveId}/root:/ICS_Media-Files/media_titles.json:/content`, {
     headers: { Authorization: "Bearer " + token },
   });
   if (!res.ok) throw new Error(`media_titles.json 조회 실패 (${res.status})`);
@@ -7538,7 +7598,7 @@ async function loadIcsMediaTitles() {
 async function saveIcsMediaTitles(titles) {
   const token = await getGraphToken();
   const driveId = await getIcsAttachedFilesDriveId();
-  const res = await fetch(`${GRAPH}/drives/${driveId}/root:/ICS_Media-Files/media_titles.json:/content`, {
+  const res = await icsFetch(`${GRAPH}/drives/${driveId}/root:/ICS_Media-Files/media_titles.json:/content`, {
     method: "PUT",
     headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
     body: JSON.stringify(titles),
@@ -7551,7 +7611,7 @@ async function saveIcsMediaTitles(titles) {
 async function loadIcsHiddenMedia() {
   const token = await getGraphToken();
   const driveId = await getIcsAttachedFilesDriveId();
-  const res = await fetch(`${GRAPH}/drives/${driveId}/root:/ICS_Media-Files/hidden_media.json:/content`, {
+  const res = await icsFetch(`${GRAPH}/drives/${driveId}/root:/ICS_Media-Files/hidden_media.json:/content`, {
     headers: { Authorization: "Bearer " + token },
   });
   if (!res.ok) return []; // 파일이 아직 없으면(첫 사용) 숨김 없음으로 처리
@@ -7566,7 +7626,7 @@ async function loadIcsHiddenMedia() {
 async function saveIcsHiddenMedia(idList) {
   const token = await getGraphToken();
   const driveId = await getIcsAttachedFilesDriveId();
-  const res = await fetch(`${GRAPH}/drives/${driveId}/root:/ICS_Media-Files/hidden_media.json:/content`, {
+  const res = await icsFetch(`${GRAPH}/drives/${driveId}/root:/ICS_Media-Files/hidden_media.json:/content`, {
     method: "PUT",
     headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
     body: JSON.stringify(idList),
@@ -7577,7 +7637,7 @@ async function saveIcsHiddenMedia(idList) {
 async function icsListMediaFiles() {
   const token = await getGraphToken();
   const driveId = await getIcsAttachedFilesDriveId();
-  const res = await fetch(
+  const res = await icsFetch(
     `${GRAPH}/drives/${driveId}/root:/ICS_Media-Files:/children?$select=id,name,size,file,webUrl,lastModifiedDateTime`,
     { headers: { Authorization: "Bearer " + token } }
   );
@@ -7594,6 +7654,9 @@ async function icsListMediaFiles() {
     rawItems.map(async (it) => {
       let url = it.webUrl;
       try {
+        // 여기만 icsFetch 를 쓰지 않는다. Promise.all 로 파일 수만큼 동시에 나가므로
+        // 스로틀이 걸리면 재시도가 파일 수만큼 겹쳐 오히려 더 오래 막힌다.
+        // 실패해도 아래 catch 에서 webUrl 로 폴백하므로 재시도할 실익도 없다.
         const detailRes = await fetch(
           `${GRAPH}/drives/${driveId}/items/${it.id}?$select=@microsoft.graph.downloadUrl`,
           { headers: { Authorization: "Bearer " + token } }
@@ -7628,7 +7691,7 @@ async function icsUploadMediaFile(file, onProgress) {
   const token = await getGraphToken();
   const driveId = await getIcsAttachedFilesDriveId();
   const path = `ICS_Media-Files/${file.name}`;
-  const sessionRes = await fetch(`${GRAPH}/drives/${driveId}/root:/${path}:/createUploadSession`, {
+  const sessionRes = await icsFetch(`${GRAPH}/drives/${driveId}/root:/${path}:/createUploadSession`, {
     method: "POST",
     headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
     body: JSON.stringify({ item: { "@microsoft.graph.conflictBehavior": "rename" } }),
@@ -7643,7 +7706,7 @@ async function icsUploadMediaFile(file, onProgress) {
   while (start < total) {
     const end = Math.min(start + CHUNK_SIZE, total);
     const chunk = file.slice(start, end);
-    const chunkRes = await fetch(uploadUrl, {
+    const chunkRes = await icsFetch(uploadUrl, {
       method: "PUT",
       headers: { "Content-Range": `bytes ${start}-${end - 1}/${total}`, "Content-Length": String(end - start) },
       body: chunk,
@@ -7664,7 +7727,7 @@ async function icsUploadMediaFile(file, onProgress) {
 async function icsCreateItem(listName, fields) {
   const token = await getGraphToken();
   const listId = await getIcsListId(listName);
-  const res = await fetch(`${GRAPH}/sites/${_siteId}/lists/${listId}/items`, {
+  const res = await icsFetch(`${GRAPH}/sites/${_siteId}/lists/${listId}/items`, {
     method: "POST",
     headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
     body: JSON.stringify({ fields }),
@@ -7679,7 +7742,7 @@ async function icsCreateItem(listName, fields) {
 async function icsUpdateItem(listName, itemId, fields) {
   const token = await getGraphToken();
   const listId = await getIcsListId(listName);
-  const res = await fetch(`${GRAPH}/sites/${_siteId}/lists/${listId}/items/${itemId}/fields`, {
+  const res = await icsFetch(`${GRAPH}/sites/${_siteId}/lists/${listId}/items/${itemId}/fields`, {
     method: "PATCH",
     headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
     body: JSON.stringify(fields),
@@ -7697,7 +7760,7 @@ async function icsUpdateItem(listName, itemId, fields) {
 async function icsCheckStillPending(listName, itemId, statusField, expectedValue) {
   const token = await getGraphToken();
   const listId = await getIcsListId(listName);
-  const res = await fetch(`${GRAPH}/sites/${_siteId}/lists/${listId}/items/${itemId}/fields?$select=${statusField}`, {
+  const res = await icsFetch(`${GRAPH}/sites/${_siteId}/lists/${listId}/items/${itemId}/fields?$select=${statusField}`, {
     headers: { Authorization: "Bearer " + token },
   });
   if (!res.ok) return true; // 재조회 자체가 실패하면(네트워크 등) 막지 않고 원래 흐름대로 진행
@@ -7708,7 +7771,7 @@ async function icsCheckStillPending(listName, itemId, statusField, expectedValue
 async function icsDeleteItem(listName, itemId) {
   const token = await getGraphToken();
   const listId = await getIcsListId(listName);
-  const res = await fetch(`${GRAPH}/sites/${_siteId}/lists/${listId}/items/${itemId}`, {
+  const res = await icsFetch(`${GRAPH}/sites/${_siteId}/lists/${listId}/items/${itemId}`, {
     method: "DELETE",
     headers: { Authorization: "Bearer " + token },
   });
@@ -7939,7 +8002,7 @@ async function getIcsDocDriveId(token) {
 // 파일이 없거나 일부 KEY만 있어도 문제없음 — 못 찾은 문구는 코드 내 기본 문구가 그대로 쓰인다 (실패해도 화면이 깨지지 않음).
 async function loadIcsUiStrings(token) {
   const docDriveId = await getIcsDocDriveId(token);
-  const res = await fetch(`${GRAPH}/drives/${docDriveId}/root:/ics_ui_strings.xlsx:/content`, { headers: { Authorization: "Bearer " + token }, cache: "no-cache" });
+  const res = await icsFetch(`${GRAPH}/drives/${docDriveId}/root:/ics_ui_strings.xlsx:/content`, { headers: { Authorization: "Bearer " + token }, cache: "no-cache" });
   if (!res.ok) throw new Error(`ics_ui_strings.xlsx not found (${res.status})`);
   const buf = await res.arrayBuffer();
   const wb = XLSX.read(buf, { type: "array" });
@@ -7964,7 +8027,7 @@ async function loadIcsUiStrings(token) {
 async function loadIcsEmployeeRows(token) {
   try {
     const docDriveId = await getIcsDocDriveId(token);
-    const res = await fetch(`${GRAPH}/drives/${docDriveId}/root:/employee_search.xlsx:/content`,
+    const res = await icsFetch(`${GRAPH}/drives/${docDriveId}/root:/employee_search.xlsx:/content`,
       { headers: { Authorization: "Bearer " + token }, cache: "no-cache" });
     if (!res.ok) throw new Error(`employee_search.xlsx not found (${res.status})`);
     const buf = await res.arrayBuffer();
@@ -7984,7 +8047,7 @@ async function loadIcsEmployeeRows(token) {
 async function loadIcsContactFromSystemConfig(token) {
   try {
     const docDriveId = await getIcsDocDriveId(token);
-    const res = await fetch(`${GRAPH}/drives/${docDriveId}/root:/system_config_final.xlsx:/content`,
+    const res = await icsFetch(`${GRAPH}/drives/${docDriveId}/root:/system_config_final.xlsx:/content`,
       { headers: { Authorization: "Bearer " + token }, cache: "no-cache" });
     if (!res.ok) throw new Error(`system_config_final.xlsx not found (${res.status})`);
     const buf = await res.arrayBuffer();
@@ -8023,7 +8086,7 @@ async function loadIcsContactFromSystemConfig(token) {
 
 async function loadIcsMasterConfig(token) {
   const docDriveId = await getIcsDocDriveId(token);
-  const res = await fetch(`${GRAPH}/drives/${docDriveId}/root:/ics_category_access.xlsx:/content`, { headers: { Authorization: "Bearer " + token }, cache: "no-cache" });
+  const res = await icsFetch(`${GRAPH}/drives/${docDriveId}/root:/ics_category_access.xlsx:/content`, { headers: { Authorization: "Bearer " + token }, cache: "no-cache" });
   if (!res.ok) throw new Error(`ics_category_access.xlsx not found (${res.status})`);
   const buf = await res.arrayBuffer();
   const wb = XLSX.read(buf, { type: "array" });
