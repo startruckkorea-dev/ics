@@ -496,6 +496,7 @@ const STR = {
       allCat: "전체 통제영역", allRisk: "전체 신호등",
       assignedDeptAll: "배정 부서 전체", allCategory: "전체 통제영역", allRisk: "전체 신호등",
       confirm: "확인", close: "닫기", download: "다운로드", approve: "승인", reject: "반려",
+      saving: "저장 중입니다...",
       items: "건", cases: "건",
       year: "연도", currentYear: "진행중", archivedYear: "아카이브",
     },
@@ -848,6 +849,7 @@ const STR = {
       allCat: "All components", allRisk: "All risk levels",
       assignedDeptAll: "All assigned depts.", allCategory: "All categories", allRisk: "All risk levels",
       confirm: "Confirm", close: "Close", download: "Download", approve: "Approve", reject: "Return",
+      saving: "Saving...",
       items: "items", cases: "cases",
       year: "Year", currentYear: "In progress", archivedYear: "Archived",
     },
@@ -3833,7 +3835,13 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
                   </div>
                 )}
 
-                {editing === c.id && !isArchived ? (
+                {/* 제출을 누르면 폼이 바로 닫혀서, 저장이 끝날 때까지 카드에 아무 변화가 없었다.
+                    스로틀이 걸려 몇 초 걸리면 「눌리지 않았다」고 보고 다시 누르게 된다. */}
+                {saving === c.id ? (
+                  <div className="flex justify-end items-center gap-2 text-sm text-slate-500">
+                    <Loader2 size={14} className="animate-spin" /> {t("common.saving")}
+                  </div>
+                ) : editing === c.id && !isArchived ? (
                   <SelfAssessForm control={c} draft={draft} setDraft={setDraft} onCancel={() => setEditing(null)} onSubmit={() => submit(c)} />
                 ) : (
                   // 작성 버튼은 카드 하단 우측에 둔다. 상단 배지와 붙으면 구분이 어렵다.
