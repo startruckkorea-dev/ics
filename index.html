@@ -4916,7 +4916,10 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
     try {
       // 다른 결재자나 다른 탭에서 이미 처리했는지 확인한다.
       // 확인 없이 진행하면 뒤 요청이 앞 결과를 덮어써 승인이 반려로 뒤집힐 수 있다.
-      const stillMyTurn = await icsCheckStillPending(ICS_LISTS.changeRequests, r.spId, "Step", r.step);
+      // Step 만 보면 안 된다 — 반려·취소는 Step 을 그대로 두고 Status 만 바꾸기 때문에,
+      // 목록을 열어둔 다른 결재자가 이미 반려된 건을 승인으로 뒤집고 통제 항목까지
+      // 실제로 반영해 버릴 수 있었다. Status 와 Step 을 함께 확인한다.
+      const stillMyTurn = await icsCheckChangeRequestTurn(r.spId, r.step);
       if (!stillMyTurn) {
         alert(lang === "en"
           ? "This request has already been processed by someone else. The list will be refreshed."
@@ -7766,6 +7769,21 @@ async function icsCheckStillPending(listName, itemId, statusField, expectedValue
   if (!res.ok) return true; // 재조회 자체가 실패하면(네트워크 등) 막지 않고 원래 흐름대로 진행
   const data = await res.json();
   return data[statusField] === expectedValue;
+}
+
+// 수정 요청 결재 전용 확인. 공용 icsCheckStillPending 은 필드 하나만 비교하는데,
+// 변경 요청은 「반려·취소되면 Status 만 바뀌고 Step 은 그대로」라서 Step 만으로는
+// 이미 끝난 건을 구분하지 못한다. 두 값을 함께 확인한다.
+// (다른 6곳은 Status 를 직접 비교하고 있어 공용 함수를 그대로 쓴다)
+async function icsCheckChangeRequestTurn(itemId, expectedStep) {
+  const token = await getGraphToken();
+  const listId = await getIcsListId(ICS_LISTS.changeRequests);
+  const res = await icsFetch(`${GRAPH}/sites/${_siteId}/lists/${listId}/items/${itemId}/fields?$select=Status,Step`, {
+    headers: { Authorization: "Bearer " + token },
+  });
+  if (!res.ok) return true; // 재조회 자체가 실패하면(네트워크 등) 막지 않고 원래 흐름대로 진행
+  const data = await res.json();
+  return String(data.Status || "pending") === "pending" && Number(data.Step || 1) === Number(expectedStep);
 }
 
 async function icsDeleteItem(listName, itemId) {
