@@ -7808,9 +7808,19 @@ function stripSpRichText(value) {
   if (!value) return value;
   const s = String(value);
   if (!s.includes("<") || !s.includes(">")) return s; // HTML 태그 자체가 없으면 그대로 반환
-  const div = document.createElement("div");
-  div.innerHTML = s;
-  return div.textContent || div.innerText || "";
+  // innerHTML 로 파싱하면 안 된다. 문서에 붙이지 않은 요소라도
+  // <img src=x onerror=...> 같은 값은 그 자리에서 실행된다.
+  // 이 함수를 거치는 값은 전부 사용자가 입력한 SharePoint 여러 줄 텍스트다
+  // (자가평가 근거·검토 의견·FSA 의견·수정 요청 사유·통제 설명). 담당자가 넣어 둔
+  // 문자열이 검토자·CFO·관리자 화면에서 그 사람의 세션으로 실행될 수 있었고,
+  // 그 세션은 Sites.ReadWrite.All 토큰을 들고 있다.
+  // DOMParser 가 만든 문서는 불활성이라 리소스를 불러오지도, 스크립트를 실행하지도 않는다.
+  try {
+    return new DOMParser().parseFromString(s, "text/html").body.textContent || "";
+  } catch (e) {
+    // 파싱이 실패해도 빈 값으로 만들지 않는다. 태그만 걷어내고 내용은 남긴다.
+    return s.replace(/<[^>]*>/g, "");
+  }
 }
 
 // 부서 체계를 25개 팀 단위로 새로 짜면서 예전 코드를 새 코드로 재배치.
