@@ -4935,11 +4935,14 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
       const nextStep = approved && !isLast ? r.step + 1 : r.step;
       const nextStatus = !approved ? "rejected" : (isLast ? "approved" : "pending");
 
-      await icsUpdateItem(ICS_LISTS.changeRequests, r.spId, {
-        Steps: JSON.stringify(steps), Step: nextStep, Status: nextStatus,
-      });
-
-      // 최종 승인이면 실제 통제 항목에 반영한다.
+      // 최종 승인이면 통제 항목을 먼저 반영하고, 성공한 뒤에 요청을 승인으로 닫는다.
+      // 순서를 반대로 하면(예전 코드) 반영이 실패했을 때 요청만 approved 로 남는다.
+      // 그러면 그 건은 결재 대기 목록에서 사라지는데 통제 항목은 바뀌지 않은 채라
+      // 되돌릴 방법도, 알아챌 방법도 없다. 지금 순서에서는 반영이 실패하면 요청이
+      // pending 으로 남아 결재자가 다시 시도할 수 있다. 반대로 반영은 됐는데 요청
+      // PATCH 가 실패하면 같은 건이 한 번 더 보이지만, 같은 값을 다시 쓰는 것이라
+      // 결과가 달라지지 않는다(삭제는 이미 사라진 항목이라 아래 「없음」 안내로 빠진다).
+      let applied = null;
       if (nextStatus === "approved") {
         const target = controls.find((x) => x.code === r.code && x.year === r.year);
         if (!target) {
@@ -4952,7 +4955,7 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
         if (target) {
           if (r.reqType === "delete") {
             if (target.spId) await icsDeleteItem(ICS_LISTS.controls, target.spId);
-            setControls((prev) => prev.filter((x) => x.id !== target.id));
+            applied = { kind: "delete", target };
           } else {
             const pl = r.payload || {};
             if (target.spId) {
@@ -4963,13 +4966,26 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
                 Frequency: pl.frequency, Importance: pl.importance,
               });
             }
-            setControls((prev) => prev.map((x) => (x.id === target.id
-              ? { ...x, dept: pl.dept, cat: pl.cat, name: pl.name, nameEn: pl.name,
-                  desc: pl.desc, descEn: pl.desc, accessor: pl.accessor, reviewer: pl.reviewer,
-                  frequency: pl.frequency, importance: pl.importance }
-              : x)));
+            applied = { kind: "edit", target, pl };
           }
         }
+      }
+
+      await icsUpdateItem(ICS_LISTS.changeRequests, r.spId, {
+        Steps: JSON.stringify(steps), Step: nextStep, Status: nextStatus,
+      });
+
+      // 화면 반영은 두 저장이 모두 끝난 뒤에 한다. 먼저 지워 버리면 요청 PATCH 가
+      // 실패했을 때 화면과 서버가 어긋난다.
+      if (applied && applied.kind === "delete") {
+        setControls((prev) => prev.filter((x) => x.id !== applied.target.id));
+      } else if (applied && applied.kind === "edit") {
+        const pl = applied.pl;
+        setControls((prev) => prev.map((x) => (x.id === applied.target.id
+          ? { ...x, dept: pl.dept, cat: pl.cat, name: pl.name, nameEn: pl.name,
+              desc: pl.desc, descEn: pl.desc, accessor: pl.accessor, reviewer: pl.reviewer,
+              frequency: pl.frequency, importance: pl.importance }
+          : x)));
       }
 
       addLog(currentUser.email, approved ? "approve_change" : "reject_change", r.code, labelOf(r), labelOf(r));
