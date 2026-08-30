@@ -613,7 +613,7 @@ const STR = {
       subtitleUser: "님이 담당하는 통제 항목을 자가평가합니다.",
       needsAction: "평가 필요", submitted: "제출 완료",
       writeBtn: "자가평가 작성", rejectReasonTitle: "검토자 반려 사유",
-      lockedByRequest: "수정 요청 결재 중 — 결재가 끝나면 작성할 수 있습니다",
+      lockedByRequest: "수정 요청이 결재 중입니다. 결재가 완료되거나 요청을 취소하면 자가평가를 작성할 수 있습니다.",
       riskLevel: "리스크 수준 선택", commentPlaceholder: "평가 근거 및 특이사항을 입력하세요.",
       sampleCount: "샘플링 건수", recommendedNote: "권장", attachBtn: "샘플링 자료 첨부",
       submitBtn: "제출", editBtn: "수정", withdrawBtn: "제출 철회",
@@ -977,7 +977,7 @@ const STR = {
       subtitleUser: ", here are the control items assigned to you.",
       needsAction: "Needs assessment", submitted: "Submitted",
       writeBtn: "Write assessment", rejectReasonTitle: "Reviewer's return reason",
-      lockedByRequest: "Change request under approval — available once it is decided",
+      lockedByRequest: "A change request is under approval. You can write the assessment once it is decided or the request is cancelled.",
       riskLevel: "Select risk level", commentPlaceholder: "Enter your rationale and any notable findings.",
       sampleCount: "Sample size", recommendedNote: "recommended", attachBtn: "Attach sampling evidence",
       submitBtn: "Submit", editBtn: "Edit", withdrawBtn: "Withdraw",
@@ -3617,20 +3617,29 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
             </p>
           </div>
           <div className="space-y-3">
-            <Field label={`${t("manage.fieldName")} (${t("common.ko")})`}>
-              <input className={inputCls} value={reqForm.name}
-                     onChange={(e) => setReqForm({ ...reqForm, name: e.target.value })} />
-              {reqForm.name !== (reqForm.control.name || "") && (
-                <p className="text-xs mt-1.5" style={{ color: BRAND.accent }}>{t("self.reqChanged")}</p>
-              )}
-            </Field>
-            <Field label={`${t("manage.fieldName")} (${t("common.en")})`}>
-              <input className={inputCls} value={reqForm.nameEn}
-                     onChange={(e) => setReqForm({ ...reqForm, nameEn: e.target.value })} />
-              {reqForm.nameEn !== (reqForm.control.nameEn || "") && (
-                <p className="text-xs mt-1.5" style={{ color: BRAND.accent }}>{t("self.reqChanged")}</p>
-              )}
-            </Field>
+            {/* 한글·영문을 좌우로 나란히 둔다. 위아래로 나열하면
+                어느 칸이 어느 언어인지 헷갈려 반대로 입력하기 쉽다. */}
+            <div>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                <p className="text-[11px] font-semibold text-slate-500">{t("manage.fieldName")} · {t("common.ko")}</p>
+                <p className="text-[11px] font-semibold" style={{ color: BRAND.accent }}>{t("manage.fieldName")} · {t("common.en")}</p>
+                <div>
+                  <input className={inputCls} value={reqForm.name}
+                         onChange={(e) => setReqForm({ ...reqForm, name: e.target.value })} />
+                  {reqForm.name !== (reqForm.control.name || "") && (
+                    <p className="text-xs mt-1" style={{ color: BRAND.accent }}>{t("self.reqChanged")}</p>
+                  )}
+                </div>
+                <div>
+                  <input className={inputCls} value={reqForm.nameEn}
+                         onChange={(e) => setReqForm({ ...reqForm, nameEn: e.target.value })} />
+                  {reqForm.nameEn !== (reqForm.control.nameEn || "") && (
+                    <p className="text-xs mt-1" style={{ color: BRAND.accent }}>{t("self.reqChanged")}</p>
+                  )}
+                </div>
+              </div>
+            </div>
+
             <Field label={t("manage.fieldCat")}>
               <select className={inputCls} value={reqForm.cat}
                       onChange={(e) => setReqForm({ ...reqForm, cat: e.target.value })}>
@@ -3640,22 +3649,25 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
                 <p className="text-xs mt-1.5" style={{ color: BRAND.accent }}>{t("self.reqChanged")}</p>
               )}
             </Field>
-            <Field label={`${t("manage.fieldDesc")} (${t("common.ko")})`}>
-              <textarea className={inputCls} rows={4} maxLength={DESC_MAX}
-                value={reqForm.desc}
-                onChange={(e) => setReqForm({ ...reqForm, desc: e.target.value })} />
-              <p className="text-xs text-slate-400 mt-1.5 text-right">
-                {(reqForm.desc || "").length} / {DESC_MAX}
-              </p>
-            </Field>
-            <Field label={`${t("manage.fieldDesc")} (${t("common.en")})`}>
-              <textarea className={inputCls} rows={4} maxLength={DESC_MAX}
-                value={reqForm.descEn}
-                onChange={(e) => setReqForm({ ...reqForm, descEn: e.target.value })} />
-              <p className="text-xs text-slate-400 mt-1.5 text-right">
-                {(reqForm.descEn || "").length} / {DESC_MAX}
-              </p>
-            </Field>
+
+            <div>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                <p className="text-[11px] font-semibold text-slate-500">{t("manage.fieldDesc")} · {t("common.ko")}</p>
+                <p className="text-[11px] font-semibold" style={{ color: BRAND.accent }}>{t("manage.fieldDesc")} · {t("common.en")}</p>
+                <div>
+                  <textarea className={inputCls} rows={7} maxLength={DESC_MAX}
+                    value={reqForm.desc}
+                    onChange={(e) => setReqForm({ ...reqForm, desc: e.target.value })} />
+                  <p className="text-xs text-slate-400 mt-1 text-right">{(reqForm.desc || "").length} / {DESC_MAX}</p>
+                </div>
+                <div>
+                  <textarea className={inputCls} rows={7} maxLength={DESC_MAX}
+                    value={reqForm.descEn}
+                    onChange={(e) => setReqForm({ ...reqForm, descEn: e.target.value })} />
+                  <p className="text-xs text-slate-400 mt-1 text-right">{(reqForm.descEn || "").length} / {DESC_MAX}</p>
+                </div>
+              </div>
+            </div>
           </div>
 
           <div className="mt-3">
@@ -3903,8 +3915,10 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
                   // 수정 요청이 결재 중이면 자가평가를 막는다.
                   // 결재가 끝나면 통제명·설명·통제영역이 바뀌므로,
                   // 그 전에 쓴 평가는 바뀐 항목에 대한 것이 아니게 된다.
-                  <div className="flex justify-end items-center gap-2 text-sm text-slate-400">
-                    <Lock size={13} /> {t("self.lockedByRequest")}
+                  <div className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-[13px]"
+                       style={{ backgroundColor: "#FFFBEB", border: "1px solid #FDE68A", color: "#92400E" }}>
+                    <Lock size={14} className="flex-shrink-0" />
+                    <span>{t("self.lockedByRequest")}</span>
                   </div>
                 ) : (
                   // 작성 버튼은 카드 하단 우측에 둔다. 상단 배지와 붙으면 구분이 어렵다.
