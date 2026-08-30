@@ -488,6 +488,7 @@ const STR = {
       settings: "부서 및 ISA · FSA사용자 권한",
       categoryAccess: "카테고리 접근 권한",
       permissions: "권한 관리",
+      changeHistory: "통제 항목 변경 이력",
       finalReport: "최종 결과 보고",
     },
     common: {
@@ -707,6 +708,10 @@ const STR = {
       hRequester: "요청자", hRequestedAt: "요청 시간", hApprovers: "승인자",
       hReason: "사유", hDecidedAt: "최종 결재",
     },
+    changeHistory: {
+      subtitle: "결재가 완료된 통제 항목 수정·삭제 요청의 기록입니다. 요청자·승인자·사유가 함께 남습니다.",
+      searchPh: "통제 코드 · 항목명 · 요청자로 검색",
+    },
     finalReport: {
       title: "최종 결과 보고",
       subtitle: "회계연도 최종 결과 요약 및 CFO/RD 컨펌",
@@ -841,6 +846,7 @@ const STR = {
       settings: "Dept. & ISA/FSA User Access",
       categoryAccess: "Category Access",
       permissions: "Access Control",
+      changeHistory: "Control change history",
       finalReport: "Final Report",
     },
     common: {
@@ -1059,6 +1065,10 @@ const STR = {
       noHistory: "No completed change requests.",
       hRequester: "Requested by", hRequestedAt: "Requested at", hApprovers: "Approvers",
       hReason: "Comments", hDecidedAt: "Decided at",
+    },
+    changeHistory: {
+      subtitle: "Completed change and delete requests for control items, with requester, approvers and reasons.",
+      searchPh: "Search by control code, name or requester",
     },
     finalReport: {
       title: "Final Report",
@@ -1359,6 +1369,10 @@ const MENU_GROUPS = [
     { key: "manage", icon: ClipboardEdit, categoryKey: "adminOnly" },
     { key: "permissions", icon: KeyRound },
     { key: "categoryAccess", icon: KeyRound },
+    // 통제 항목 변경 이력. 결재가 끝난 수정·삭제 요청의 기록이라
+    // 담당자 개인 화면이 아니라 관리자 메뉴에 둔다.
+    // categoryKey 를 executive 로 두어 Admin 외에 CFO·RD 도 볼 수 있게 한다.
+    { key: "changeHistory", icon: History, categoryKey: "executive" },
   ] },
   { key: "executive", label: "executive", items: [
     { key: "finalReport", icon: FileCheck2 },
@@ -4890,10 +4904,6 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
   });
   // 내가 올린 요청
   const mine = requests.filter((r) => r.requester === myEmail && r.status !== "cancelled");
-  // 결재가 끝난 요청 전부 (승인·반려). 최근 처리 순으로 정렬.
-  const done = requests
-    .filter((r) => r.status === "approved" || r.status === "rejected" || r.status === "cancelled")
-    .sort((a, b) => new Date(b.created || 0) - new Date(a.created || 0));
 
   function labelOf(r) {
     const c = controls.find((x) => x.code === r.code && x.year === r.year);
@@ -5175,90 +5185,146 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
             )}
           </div>
 
-          <div>
-            <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
-              <History size={15} /> {t("approval.historyTitle")} ({done.length})
-            </h3>
-            {done.length === 0 ? (
-              <EmptyState text={t("approval.noHistory")} />
-            ) : (
-              <div className="bg-white rounded-xl border border-slate-200 shadow-sm divide-y divide-slate-100">
-                {done.map((r) => {
-                  const last = [...r.steps].reverse().find((st) => st.status !== "pending");
-                  const decided = r.steps.filter((st) => st.status !== "pending");
-                  return (
-                    <div key={r.spId} className="p-4">
-                      <div className="flex items-start justify-between gap-3 flex-wrap mb-2">
-                        <div className="min-w-0">
-                          <p className="text-xs text-slate-400 font-mono">{r.code} · {r.year}</p>
-                          <p className="text-sm font-medium text-slate-800 mt-0.5">{labelOf(r)}</p>
-                        </div>
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                          <span className="text-xs px-2.5 py-1 rounded-full font-medium whitespace-nowrap"
-                                style={{ backgroundColor: r.reqType === "delete" ? "#FEE2E2" : "#E4F1F0",
-                                         color: r.reqType === "delete" ? "#B91C1C" : BRAND.accent }}>
-                            {r.reqType === "delete" ? t("approval.typeDelete") : t("approval.typeEdit")}
-                          </span>
-                          <span className="text-xs px-2.5 py-1 rounded-full font-medium whitespace-nowrap"
-                                style={{ backgroundColor: r.status === "approved" ? "#DCFCE7" : r.status === "cancelled" ? "#F1F5F9" : "#FEE2E2",
-                                         color: r.status === "approved" ? "#15803D" : r.status === "cancelled" ? "#64748B" : "#B91C1C" }}>
-                            {r.status === "approved" ? t("approval.done")
-                              : r.status === "cancelled" ? t("approval.cancelled")
-                              : t("approval.rejected")}
-                          </span>
-                        </div>
-                      </div>
+        </>
+      )}
+    </div>
+  );
+}
 
-                      <div className="bg-slate-50 rounded-lg px-3 py-2.5 text-xs text-slate-600 space-y-1">
-                        <div className="flex gap-2">
-                          <span className="text-slate-400 w-[86px] flex-shrink-0">{t("approval.hRequester")}</span>
-                          <span>{personByEmail(r.requester, lang, users)}</span>
-                        </div>
-                        <div className="flex gap-2">
-                          <span className="text-slate-400 w-[86px] flex-shrink-0">{t("approval.hRequestedAt")}</span>
-                          <span>{formatDateTime(r.created, lang)}</span>
-                        </div>
-                        <div className="flex gap-2">
-                          <span className="text-slate-400 w-[86px] flex-shrink-0">{t("approval.hApprovers")}</span>
-                          <span className="min-w-0">
-                            {decided.map((st, i) => (
-                              <span key={i} className="inline-block mr-2">
-                                {stepLabel(st)} {personByEmail(st.approver, lang, users)}
-                                <span style={{ color: st.status === "approved" ? "#15803D" : "#B91C1C" }}>
-                                  {st.status === "approved" ? " 승인" : " 반려"}
-                                </span>
-                              </span>
-                            ))}
-                          </span>
-                        </div>
-                        {r.payload?.reason && (
-                          <div className="flex gap-2">
-                            <span className="text-slate-400 w-[86px] flex-shrink-0">{t("self.reqReasonLabel")}</span>
-                            <span className="whitespace-pre-wrap min-w-0">{r.payload.reason}</span>
-                          </div>
-                        )}
-                        {decided.some((st) => st.comment) && (
-                          <div className="flex gap-2">
-                            <span className="text-slate-400 w-[86px] flex-shrink-0">{t("approval.hReason")}</span>
-                            <span className="whitespace-pre-wrap min-w-0">
-                              {decided.filter((st) => st.comment)
-                                .map((st) => `${personByEmail(st.approver, lang, users)}: ${st.comment}`)
-                                .join("\n")}
-                            </span>
-                          </div>
-                        )}
-                        <div className="flex gap-2">
-                          <span className="text-slate-400 w-[86px] flex-shrink-0">{t("approval.hDecidedAt")}</span>
-                          <span>{last?.date ? formatDateTime(last.date, lang) : "-"}</span>
-                        </div>
+function ChangeHistoryPage({ controls, currentUser }) {
+  const { lang, t } = useLang();
+  const { users } = useAppData();
+  const [requests, setRequests] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [q, setQ] = useState("");
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try { setRequests(await loadIcsChangeRequests()); }
+      catch (e) { console.warn("[ICS] 변경 요청 로드 실패:", e.message); setRequests([]); }
+      setLoading(false);
+    })();
+  }, []);
+
+  function labelOf(r) {
+    const c = controls.find((x) => x.code === r.code && x.year === r.year);
+    return c ? cName(c, lang) : r.code;
+  }
+  function stepLabel(st) {
+    const k = { lm1: "stepLm1", lm2: "stepLm2", contact: "stepContact", final: "stepFinal" }[st.role];
+    return k ? t(`approval.${k}`) : "";
+  }
+
+  // 결재가 끝난 요청만. 최근 처리 순.
+  const done = requests
+    .filter((r) => r.status === "approved" || r.status === "rejected" || r.status === "cancelled")
+    .sort((a, b) => new Date(b.created || 0) - new Date(a.created || 0));
+
+  // 통제 코드·항목명·요청자로 걸러 본다. 건수가 쌓이면 눈으로 찾기 어렵다.
+  const kw = q.trim().toLowerCase();
+  const rows = !kw ? done : done.filter((r) =>
+    (r.code || "").toLowerCase().includes(kw) ||
+    labelOf(r).toLowerCase().includes(kw) ||
+    personByEmail(r.requester, lang, users).toLowerCase().includes(kw));
+
+  return (
+    <div className="p-8">
+      <SectionHeader icon={History} title={t("nav.changeHistory")} subtitle={t("changeHistory.subtitle")} />
+      <div className="mb-4">
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder={t("changeHistory.searchPh")}
+          className="w-full max-w-md text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:border-slate-400"
+        />
+      </div>
+      {loading ? (
+        <EmptyState text="..." />
+      ) : (
+        <div>
+          <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
+            <History size={15} /> {t("approval.historyTitle")} ({done.length})
+          </h3>
+          {done.length === 0 ? (
+            <EmptyState text={t("approval.noHistory")} />
+          ) : (
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm divide-y divide-slate-100">
+              {done.map((r) => {
+                const last = [...r.steps].reverse().find((st) => st.status !== "pending");
+                const decided = r.steps.filter((st) => st.status !== "pending");
+                return (
+                  <div key={r.spId} className="p-4">
+                    <div className="flex items-start justify-between gap-3 flex-wrap mb-2">
+                      <div className="min-w-0">
+                        <p className="text-xs text-slate-400 font-mono">{r.code} · {r.year}</p>
+                        <p className="text-sm font-medium text-slate-800 mt-0.5">{labelOf(r)}</p>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <span className="text-xs px-2.5 py-1 rounded-full font-medium whitespace-nowrap"
+                              style={{ backgroundColor: r.reqType === "delete" ? "#FEE2E2" : "#E4F1F0",
+                                       color: r.reqType === "delete" ? "#B91C1C" : BRAND.accent }}>
+                          {r.reqType === "delete" ? t("approval.typeDelete") : t("approval.typeEdit")}
+                        </span>
+                        <span className="text-xs px-2.5 py-1 rounded-full font-medium whitespace-nowrap"
+                              style={{ backgroundColor: r.status === "approved" ? "#DCFCE7" : r.status === "cancelled" ? "#F1F5F9" : "#FEE2E2",
+                                       color: r.status === "approved" ? "#15803D" : r.status === "cancelled" ? "#64748B" : "#B91C1C" }}>
+                          {r.status === "approved" ? t("approval.done")
+                            : r.status === "cancelled" ? t("approval.cancelled")
+                            : t("approval.rejected")}
+                        </span>
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </>
+
+                    <div className="bg-slate-50 rounded-lg px-3 py-2.5 text-xs text-slate-600 space-y-1">
+                      <div className="flex gap-2">
+                        <span className="text-slate-400 w-[86px] flex-shrink-0">{t("approval.hRequester")}</span>
+                        <span>{personByEmail(r.requester, lang, users)}</span>
+                      </div>
+                      <div className="flex gap-2">
+                        <span className="text-slate-400 w-[86px] flex-shrink-0">{t("approval.hRequestedAt")}</span>
+                        <span>{formatDateTime(r.created, lang)}</span>
+                      </div>
+                      <div className="flex gap-2">
+                        <span className="text-slate-400 w-[86px] flex-shrink-0">{t("approval.hApprovers")}</span>
+                        <span className="min-w-0">
+                          {decided.map((st, i) => (
+                            <span key={i} className="inline-block mr-2">
+                              {stepLabel(st)} {personByEmail(st.approver, lang, users)}
+                              <span style={{ color: st.status === "approved" ? "#15803D" : "#B91C1C" }}>
+                                {st.status === "approved" ? " 승인" : " 반려"}
+                              </span>
+                            </span>
+                          ))}
+                        </span>
+                      </div>
+                      {r.payload?.reason && (
+                        <div className="flex gap-2">
+                          <span className="text-slate-400 w-[86px] flex-shrink-0">{t("self.reqReasonLabel")}</span>
+                          <span className="whitespace-pre-wrap min-w-0">{r.payload.reason}</span>
+                        </div>
+                      )}
+                      {decided.some((st) => st.comment) && (
+                        <div className="flex gap-2">
+                          <span className="text-slate-400 w-[86px] flex-shrink-0">{t("approval.hReason")}</span>
+                          <span className="whitespace-pre-wrap min-w-0">
+                            {decided.filter((st) => st.comment)
+                              .map((st) => `${personByEmail(st.approver, lang, users)}: ${st.comment}`)
+                              .join("\n")}
+                          </span>
+                        </div>
+                      )}
+                      <div className="flex gap-2">
+                        <span className="text-slate-400 w-[86px] flex-shrink-0">{t("approval.hDecidedAt")}</span>
+                        <span>{last?.date ? formatDateTime(last.date, lang) : "-"}</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
@@ -7369,6 +7435,9 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
             )}
             {page === "categoryAccess" && (hasCategoryAccess(currentUser, "adminOnly") ? <CategoryAccessPage currentUser={currentUser} addLog={addLog} showToast={showToast} /> : <EmptyState text="Access denied" />)}
             {page === "permissions" && (hasCategoryAccess(currentUser, "adminOnly") ? <PermissionsPage permissions={permissions} setPermissions={setPermissions} currentUser={currentUser} addLog={addLog} showToast={showToast} /> : <EmptyState text="Access denied" />)}
+            {page === "changeHistory" && (hasCategoryAccess(currentUser, "executive")
+              ? <ChangeHistoryPage controls={controlsForYear} currentUser={currentUser} />
+              : <EmptyState text="Access denied" />)}
             {page === "finalReport" && (
               <FinalReportPage
                 controls={controlsForActiveYear}
