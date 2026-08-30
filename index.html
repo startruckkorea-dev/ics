@@ -492,6 +492,7 @@ const STR = {
       settings: "부서 및 ISA · FSA사용자 권한",
       categoryAccess: "카테고리 접근 권한",
       permissions: "권한 관리",
+      approvalHistory: "결재 승인 이력",
       changeHistory: "통제 항목 변경 이력",
       finalReport: "최종 결과 보고",
     },
@@ -726,6 +727,17 @@ const STR = {
       searchPh: "통제 코드 · 항목명 · 요청자로 검색",
       refresh: "새로고침",
     },
+    approvalHistory: {
+      subtitle: "진행 중인 건을 포함한 모든 결재 요청을 요청일 순으로 봅니다.",
+      searchPh: "통제 코드 · 항목명 · 요청자 · 결재자로 검색",
+      colNo: "번호", colCode: "통제 코드", colName: "통제명", colType: "구분",
+      colRequester: "요청자", colRequestedAt: "요청일", colStage: "현재 단계",
+      colStatus: "상태", colDecidedAt: "처리일",
+      total: "총", unit: "건",
+      fAll: "전체 상태", fPending: "진행 중", fApproved: "승인완료",
+      fRejected: "반려", fCancelled: "취소됨",
+      stageDone: "완료", none: "표시할 결재 요청이 없습니다.",
+    },
     finalReport: {
       title: "최종 결과 보고",
       subtitle: "회계연도 최종 결과 요약 및 CFO/RD 컨펌",
@@ -860,6 +872,7 @@ const STR = {
       settings: "Dept. & ISA/FSA User Access",
       categoryAccess: "Category Access",
       permissions: "Access Control",
+      approvalHistory: "Approval history",
       changeHistory: "Control change history",
       finalReport: "Final Report",
     },
@@ -1093,6 +1106,17 @@ const STR = {
       subtitle: "Completed change and delete requests for control items, with requester, approvers and reasons.",
       searchPh: "Search by control code, name or requester",
       refresh: "Refresh",
+    },
+    approvalHistory: {
+      subtitle: "All approval requests, including those in progress, listed by request date.",
+      searchPh: "Search by control code, name, requester, or approver",
+      colNo: "No.", colCode: "Control code", colName: "Control name", colType: "Type",
+      colRequester: "Requester", colRequestedAt: "Requested", colStage: "Current stage",
+      colStatus: "Status", colDecidedAt: "Decided",
+      total: "Total", unit: "",
+      fAll: "All statuses", fPending: "In progress", fApproved: "Approved",
+      fRejected: "Rejected", fCancelled: "Withdrawn",
+      stageDone: "Completed", none: "No approval requests to show.",
     },
     finalReport: {
       title: "Final Report",
@@ -1404,6 +1428,9 @@ const MENU_GROUPS = [
     // 통제 항목 변경 이력. 결재가 끝난 수정·삭제 요청의 기록이라
     // 담당자 개인 화면이 아니라 관리자 메뉴에 둔다.
     // categoryKey 를 executive 로 두어 Admin 외에 CFO·RD 도 볼 수 있게 한다.
+    // 결재 승인 이력. 진행 중인 건까지 포함해 전 요청을 한 표로 본다.
+    // 변경 이력은 결재가 끝난 건만 다루므로 그 위에 둔다.
+    { key: "approvalHistory", icon: ClipboardCheck, categoryKey: "executive" },
     { key: "changeHistory", icon: History, categoryKey: "executive" },
   ] },
   { key: "executive", label: "executive", items: [
@@ -5405,6 +5432,163 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
   );
 }
 
+
+// ── 결재 승인 이력 ────────────────────────────────────────────────────
+// 통제 항목 변경 이력은 결재가 끝난 건만 카드로 보여 준다.
+// 여기서는 진행 중인 건까지 포함해 전 요청을 한 표에 놓는다.
+// 「지금 몇 건이 돌고 있고, 어느 단계에서 누가 잡고 있는가」 를 한눈에 보기 위함이다.
+function ApprovalHistoryPage({ controls }) {
+  const { lang, t } = useLang();
+  const { users } = useAppData();
+  const [requests, setRequests] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [q, setQ] = useState("");
+  const [filter, setFilter] = useState("all");
+
+  async function reload() {
+    setLoading(true);
+    try { setRequests(await loadIcsChangeRequests()); }
+    catch (e) { console.warn("[ICS] 결재 요청 로드 실패:", e.message); setRequests([]); }
+    setLoading(false);
+  }
+  useEffect(() => { reload(); }, []);
+
+  function labelOf(r) {
+    const c = controls.find((x) => x.code === r.code && x.year === r.year);
+    return c ? cName(c, lang) : r.code;
+  }
+  // 결재선의 role 은 LM1 · MC · LM2 · ICS_CONTACT · CFO 로 저장된다(buildApprovalSteps).
+  // 소문자 키(lm1·contact…)로 찾으면 언제나 빈 문자열이 나와 차수 이름이 표시되지 않는다.
+  // 결재 화면(ApprovalPage)의 stepLabel 과 같은 기준으로 맞춘다.
+  function stepLabel(st) {
+    if (st.role === "LM1" || st.role === "MC") return t("approval.stepLm1");
+    if (st.role === "LM2") return t("approval.stepLm2");
+    if (st.role === "ICS_CONTACT") return t("approval.stepContact");
+    return t("approval.stepFinal");
+  }
+  // 현재 단계 — 진행 중이면 지금 차례인 결재자, 끝났으면 「완료」.
+  function stageOf(r) {
+    if (r.status !== "pending") return { text: t("approvalHistory.stageDone"), who: "" };
+    const st = r.steps[r.step - 1];
+    if (!st) return { text: "-", who: "" };
+    return { text: `${r.step}/${r.steps.length} ${stepLabel(st)}`, who: personByEmail(st.approver, lang, users) };
+  }
+  // 마지막으로 처리된 단계의 시각. 진행 중이면 아직 없다.
+  function decidedAt(r) {
+    const last = [...r.steps].reverse().find((st) => st.status !== "pending" && st.date);
+    return last ? formatDateTime(last.date, lang) : "-";
+  }
+
+  const STATUS = {
+    pending:   { label: t("approvalHistory.fPending"),   bg: "#FEF3C7", fg: "#B45309" },
+    approved:  { label: t("approval.done"),              bg: "#DCFCE7", fg: "#15803D" },
+    rejected:  { label: t("approval.rejected"),          bg: "#FEE2E2", fg: "#B91C1C" },
+    cancelled: { label: t("approval.cancelled"),         bg: "#F1F5F9", fg: "#64748B" },
+  };
+
+  // 요청일 최신순. 요청일이 없는 옛 자료는 맨 뒤로 보낸다.
+  const sorted = [...requests].sort((a, b) => new Date(b.created || 0) - new Date(a.created || 0));
+  const byStatus = filter === "all" ? sorted : sorted.filter((r) => r.status === filter);
+  const kw = q.trim().toLowerCase();
+  const rows = !kw ? byStatus : byStatus.filter((r) =>
+    (r.code || "").toLowerCase().includes(kw) ||
+    labelOf(r).toLowerCase().includes(kw) ||
+    personByEmail(r.requester, lang, users).toLowerCase().includes(kw) ||
+    (r.steps || []).some((st) => personByEmail(st.approver, lang, users).toLowerCase().includes(kw)));
+
+  const th = "px-3 py-2.5 text-left text-[11px] font-semibold text-slate-500 whitespace-nowrap";
+  const td = "px-3 py-2.5 text-xs text-slate-700 align-top";
+
+  return (
+    <div className="p-8">
+      <SectionHeader icon={ClipboardCheck} title={t("nav.approvalHistory")} subtitle={t("approvalHistory.subtitle")} />
+
+      <div className="mb-4 flex items-center gap-2 flex-wrap">
+        <select value={filter} onChange={(e) => setFilter(e.target.value)}
+                className="text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:border-slate-400">
+          <option value="all">{t("approvalHistory.fAll")}</option>
+          <option value="pending">{t("approvalHistory.fPending")}</option>
+          <option value="approved">{t("approvalHistory.fApproved")}</option>
+          <option value="rejected">{t("approvalHistory.fRejected")}</option>
+          <option value="cancelled">{t("approvalHistory.fCancelled")}</option>
+        </select>
+        <input value={q} onChange={(e) => setQ(e.target.value)}
+               placeholder={t("approvalHistory.searchPh")}
+               className="flex-1 min-w-[220px] max-w-md text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:border-slate-400" />
+        <span className="text-sm text-slate-500 ml-auto">
+          {t("approvalHistory.total")} {rows.length}{t("approvalHistory.unit")}
+        </span>
+        <button onClick={reload} disabled={loading}
+                className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+          <Loader2 size={14} className={loading ? "animate-spin" : ""} />
+          {t("changeHistory.refresh")}
+        </button>
+      </div>
+
+      {loading ? (
+        <EmptyState text="..." />
+      ) : rows.length === 0 ? (
+        <EmptyState text={t("approvalHistory.none")} />
+      ) : (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full" style={{ tableLayout: "fixed" }}>
+              <thead className="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  <th className={th} style={{ width: 46 }}>{t("approvalHistory.colNo")}</th>
+                  <th className={th} style={{ width: 104 }}>{t("approvalHistory.colCode")}</th>
+                  <th className={th}>{t("approvalHistory.colName")}</th>
+                  <th className={th} style={{ width: 74 }}>{t("approvalHistory.colType")}</th>
+                  <th className={th} style={{ width: 150 }}>{t("approvalHistory.colRequester")}</th>
+                  <th className={th} style={{ width: 132 }}>{t("approvalHistory.colRequestedAt")}</th>
+                  <th className={th} style={{ width: 168 }}>{t("approvalHistory.colStage")}</th>
+                  <th className={th} style={{ width: 84 }}>{t("approvalHistory.colStatus")}</th>
+                  <th className={th} style={{ width: 132 }}>{t("approvalHistory.colDecidedAt")}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {rows.map((r, i) => {
+                  const s = STATUS[r.status] || STATUS.pending;
+                  const stage = stageOf(r);
+                  return (
+                    <tr key={r.spId} className="hover:bg-slate-50">
+                      <td className={`${td} text-slate-400 text-center`}>{rows.length - i}</td>
+                      <td className={`${td} font-mono text-slate-500`}>{r.code}</td>
+                      {/* 항목명은 길어질 수 있어 말줄임한다. 전체는 마우스를 올리면 보인다. */}
+                      <td className={td} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                          title={labelOf(r)}>{labelOf(r)}</td>
+                      <td className={td}>
+                        <span className="px-2 py-0.5 rounded-full text-[11px] font-medium whitespace-nowrap"
+                              style={{ backgroundColor: r.reqType === "delete" ? "#FEE2E2" : "#E4F1F0",
+                                       color: r.reqType === "delete" ? "#B91C1C" : BRAND.accent }}>
+                          {r.reqType === "delete" ? t("approval.typeDelete") : t("approval.typeEdit")}
+                        </span>
+                      </td>
+                      <td className={td} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                          title={personByEmail(r.requester, lang, users)}>{personByEmail(r.requester, lang, users)}</td>
+                      <td className={`${td} whitespace-nowrap`}>{formatDateTime(r.created, lang)}</td>
+                      {/* 진행 중이면 「2/3 2차 ICS Admin」 과 담당자를 함께 적어, 누가 잡고 있는지 바로 보인다. */}
+                      <td className={td}>
+                        <span className="font-medium">{stage.text}</span>
+                        {stage.who && <span className="block text-[11px] text-slate-400 truncate" title={stage.who}>{stage.who}</span>}
+                      </td>
+                      <td className={td}>
+                        <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap"
+                              style={{ backgroundColor: s.bg, color: s.fg }}>{s.label}</span>
+                      </td>
+                      <td className={`${td} whitespace-nowrap text-slate-500`}>{decidedAt(r)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ChangeHistoryPage({ controls, currentUser }) {
   const { lang, t } = useLang();
   const { users } = useAppData();
@@ -5426,9 +5610,14 @@ function ChangeHistoryPage({ controls, currentUser }) {
     const c = controls.find((x) => x.code === r.code && x.year === r.year);
     return c ? cName(c, lang) : r.code;
   }
+  // 결재선의 role 은 LM1 · MC · LM2 · ICS_CONTACT · CFO 로 저장된다(buildApprovalSteps).
+  // 소문자 키(lm1·contact…)로 찾으면 언제나 빈 문자열이 나와 차수 이름이 표시되지 않는다.
+  // 결재 화면(ApprovalPage)의 stepLabel 과 같은 기준으로 맞춘다.
   function stepLabel(st) {
-    const k = { lm1: "stepLm1", lm2: "stepLm2", contact: "stepContact", final: "stepFinal" }[st.role];
-    return k ? t(`approval.${k}`) : "";
+    if (st.role === "LM1" || st.role === "MC") return t("approval.stepLm1");
+    if (st.role === "LM2") return t("approval.stepLm2");
+    if (st.role === "ICS_CONTACT") return t("approval.stepContact");
+    return t("approval.stepFinal");
   }
 
   // 결재가 끝난 요청만. 최근 처리 순.
@@ -7661,6 +7850,10 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
             )}
             {page === "categoryAccess" && (hasCategoryAccess(currentUser, "adminOnly") ? <CategoryAccessPage currentUser={currentUser} addLog={addLog} showToast={showToast} /> : <EmptyState text="Access denied" />)}
             {page === "permissions" && (hasCategoryAccess(currentUser, "adminOnly") ? <PermissionsPage permissions={permissions} setPermissions={setPermissions} currentUser={currentUser} addLog={addLog} showToast={showToast} /> : <EmptyState text="Access denied" />)}
+            {page === "approvalHistory" && (hasCategoryAccess(currentUser, "executive")
+              ? <ApprovalHistoryPage controls={controlsForYear} />
+              : <EmptyState text="Access denied" />
+            )}
             {page === "changeHistory" && (hasCategoryAccess(currentUser, "executive")
               ? <ChangeHistoryPage controls={controlsForYear} currentUser={currentUser} />
               : <EmptyState text="Access denied" />)}
