@@ -710,6 +710,7 @@ const STR = {
       approve: "승인", reject: "반려",
       stepLm1: "1차 MC", stepLm2: "1차 MC", stepContact: "2차 ICS Admin", stepFinal: "3차 CFO",
       stepApproved: "승인", stepRejected: "반려", stepWaiting: "대기 중",
+      trailTitle: "결재 현황",
       rejectedBy: "반려 처리", approvedBy: "승인 의견", noReason: "(사유 없음)",
       rejectNeedsReason: "반려하려면 사유를 입력해 주세요.",
       inProgress: "진행 중", done: "승인 완료", rejected: "반려",
@@ -1077,6 +1078,7 @@ const STR = {
       approve: "Approve", reject: "Reject",
       stepLm1: "1st MC", stepLm2: "1st MC", stepContact: "2nd ICS Admin", stepFinal: "3rd CFO",
       stepApproved: "Approved", stepRejected: "Rejected", stepWaiting: "Pending",
+      trailTitle: "Approval status",
       rejectedBy: "Rejected by", approvedBy: "Approval comment", noReason: "(no reason given)",
       rejectNeedsReason: "Please enter a reason to reject.",
       inProgress: "In progress", done: "Approved", rejected: "Rejected",
@@ -5183,36 +5185,40 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
     return t("approval.stepFinal");
   };
 
-  // 결재선. 누가 어느 차례에서 무엇을 했는지 한 줄로 읽히게 한다.
-  // 예전에는 ✓ / ✕ 만 붙어 있어, 여러 칩이 나란히 있으면 어느 것이 처리된 것인지
-  // 한눈에 들어오지 않았다. 처리 결과와 날짜를 글자로 함께 적는다.
+  // 결재 현황. 칩만 바닥에 늘어놓으면 위쪽의 변경 내용 표와 구분되지 않아
+  // 무엇을 보는 영역인지 알기 어려웠다. 제목을 붙인 하나의 틀로 묶는다.
+  // 각 칸에는 차수·역할·처리자·결과·처리 시각을 한 줄로 적는다.
   function StepTrail({ r }) {
     return (
-      <div className="flex flex-wrap items-center gap-2 mt-2">
-        {r.steps.map((st, i) => {
-          const cur = r.status === "pending" && i === r.step - 1;
-          const done = st.status === "approved" || st.status === "rejected";
-          const bg = st.status === "approved" ? "#DCFCE7" : st.status === "rejected" ? "#FEE2E2" : cur ? "#E4F1F0" : "#F1F5F9";
-          const fg = st.status === "approved" ? "#15803D" : st.status === "rejected" ? "#B91C1C" : cur ? BRAND.accent : "#94A3B8";
-          // 처리한 날짜는 「무엇을」 다음에 옅게 붙인다. 없으면 생략한다.
-          const when = st.date ? formatDateTime(st.date, lang).slice(0, 10) : "";
-          return (
-            <span key={i} className="text-xs px-2.5 py-1.5 rounded-lg inline-flex items-center gap-1.5 whitespace-nowrap"
-                  style={{ backgroundColor: bg, color: fg }}
-                  title={`${personByEmail(st.approver, lang, users)}${st.comment ? " · " + st.comment : ""}`}>
-              <span className="font-semibold">{i + 1}. {stepLabel(st)}</span>
-              <span className="opacity-80">{personByEmail(st.approver, lang, users)}</span>
-              {done && (
-                <span className="font-semibold flex items-center gap-1">
-                  {st.status === "approved" ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
-                  {st.status === "approved" ? t("approval.stepApproved") : t("approval.stepRejected")}
-                  {when && <span className="font-normal opacity-70">{when}</span>}
-                </span>
-              )}
-              {!done && cur && <span className="font-semibold">{t("approval.stepWaiting")}</span>}
-            </span>
-          );
-        })}
+      <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
+        <p className="text-[11px] font-semibold text-slate-500 mb-2">{t("approval.trailTitle")}</p>
+        <div className="flex flex-wrap items-center gap-2">
+          {r.steps.map((st, i) => {
+            const cur = r.status === "pending" && i === r.step - 1;
+            const done = st.status === "approved" || st.status === "rejected";
+            const bg = st.status === "approved" ? "#DCFCE7" : st.status === "rejected" ? "#FEE2E2" : cur ? "#E4F1F0" : "#FFFFFF";
+            const fg = st.status === "approved" ? "#15803D" : st.status === "rejected" ? "#B91C1C" : cur ? BRAND.accent : "#94A3B8";
+            // 처리 시각은 날짜와 시:분까지 적는다. 같은 날 여러 단계가 처리되면
+            // 날짜만으로는 순서를 알 수 없다. (예전에는 앞 10자만 잘라 「2026년 08월」 로 보였다)
+            const when = st.date ? formatDateTime(st.date, lang) : "";
+            return (
+              <span key={i} className="text-xs px-2.5 py-1.5 rounded-lg inline-flex items-center gap-1.5 whitespace-nowrap border"
+                    style={{ backgroundColor: bg, color: fg, borderColor: done || cur ? "transparent" : "#E2E8F0" }}
+                    title={`${personByEmail(st.approver, lang, users)}${st.comment ? " · " + st.comment : ""}`}>
+                <span className="font-semibold">{i + 1}. {stepLabel(st)}</span>
+                <span className="opacity-80">{personByEmail(st.approver, lang, users)}</span>
+                {done && (
+                  <span className="font-semibold flex items-center gap-1">
+                    {st.status === "approved" ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
+                    {st.status === "approved" ? t("approval.stepApproved") : t("approval.stepRejected")}
+                    {when && <span className="font-normal opacity-70">{when}</span>}
+                  </span>
+                )}
+                {!done && cur && <span className="font-semibold">{t("approval.stepWaiting")}</span>}
+              </span>
+            );
+          })}
+        </div>
       </div>
     );
   }
@@ -5321,15 +5327,28 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
                         <p className="text-sm text-slate-700 mt-0.5">{labelOf(r)}</p>
                       </div>
                       {/* 카드 하나에 표가 길게 들어가므로, 결과 배지가 작으면 눈에 들어오지 않는다.
-                          아이콘을 붙이고 글자·여백을 키워 상태를 먼저 읽게 한다. */}
-                      <span className="text-sm px-3.5 py-1.5 rounded-full font-semibold whitespace-nowrap flex items-center gap-1.5"
-                            style={{ backgroundColor: r.status === "approved" ? "#DCFCE7" : r.status === "rejected" ? "#FEE2E2" : "#FEF3C7",
-                                     color: r.status === "approved" ? "#15803D" : r.status === "rejected" ? "#B91C1C" : "#B45309" }}>
-                        {r.status === "approved" ? <CheckCircle2 size={15} />
-                          : r.status === "rejected" ? <XCircle size={15} />
-                          : <Clock size={15} />}
-                        {r.status === "approved" ? t("approval.done") : r.status === "rejected" ? t("approval.rejected") : t("approval.inProgress")}
-                      </span>
+                          아이콘을 붙이고 글자·여백을 키워 상태를 먼저 읽게 한다.
+                          요청 취소도 같은 줄에 둔다. 카드 맨 아래 회색 글씨로 두었더니
+                          긴 표를 다 지나쳐야 보여, 취소할 수 있다는 것을 모르고 지나쳤다. */}
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {r.status === "pending" && !isArchived && (
+                          <button
+                            onClick={() => cancelRequest(r)}
+                            disabled={acting === r.spId}
+                            className="text-sm px-3.5 py-1.5 rounded-full font-medium whitespace-nowrap flex items-center gap-1.5 border border-slate-300 text-slate-600 hover:border-red-300 hover:text-red-600 hover:bg-red-50 disabled:opacity-40"
+                          >
+                            <Undo2 size={14} /> {t("approval.cancelBtn")}
+                          </button>
+                        )}
+                        <span className="text-sm px-3.5 py-1.5 rounded-full font-semibold whitespace-nowrap flex items-center gap-1.5"
+                              style={{ backgroundColor: r.status === "approved" ? "#DCFCE7" : r.status === "rejected" ? "#FEE2E2" : "#FEF3C7",
+                                       color: r.status === "approved" ? "#15803D" : r.status === "rejected" ? "#B91C1C" : "#B45309" }}>
+                          {r.status === "approved" ? <CheckCircle2 size={15} />
+                            : r.status === "rejected" ? <XCircle size={15} />
+                            : <Clock size={15} />}
+                          {r.status === "approved" ? t("approval.done") : r.status === "rejected" ? t("approval.rejected") : t("approval.inProgress")}
+                        </span>
+                      </div>
                     </div>
                     {/* 내가 올린 요청에도 무엇을 어떻게 바꾸려 했는지 보여 준다.
                         결재 대기 카드에만 있어, 요청자는 자기가 올린 내용을 확인할 수 없었다. */}
@@ -5374,17 +5393,6 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
                         <p className="mt-1.5 whitespace-pre-wrap">{st.comment}</p>
                       </div>
                     ))}
-                    {r.status === "pending" && !isArchived && (
-                      <div className="flex justify-end mt-2">
-                        <button
-                          onClick={() => cancelRequest(r)}
-                          disabled={acting === r.spId}
-                          className="text-xs text-slate-400 hover:text-red-500 flex items-center gap-1 disabled:opacity-40"
-                        >
-                          <Undo2 size={12} /> {t("approval.cancelBtn")}
-                        </button>
-                      </div>
-                    )}
                   </div>
                 ))}
               </div>
