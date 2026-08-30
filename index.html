@@ -727,7 +727,6 @@ const STR = {
       stepApproved: "승인", stepRejected: "반려", stepWaiting: "대기 중",
       stepLocked: "대기(잠김)",
       trailTitle: "결재 현황",
-      openToAct: "눌러서 처리",
       rejectedBy: "반려 처리", approvedBy: "승인 의견", noReason: "(사유 없음)",
       rejectNeedsReason: "반려하려면 사유를 입력해 주세요.",
       inProgress: "진행 중", done: "승인 완료", rejected: "반려",
@@ -1110,7 +1109,6 @@ const STR = {
       stepApproved: "Approved", stepRejected: "Rejected", stepWaiting: "Pending",
       stepLocked: "Locked",
       trailTitle: "Approval status",
-      openToAct: "Open to act",
       rejectedBy: "Rejected by", approvedBy: "Approval comment", noReason: "(no reason given)",
       rejectNeedsReason: "Please enter a reason to reject.",
       inProgress: "In progress", done: "Approved", rejected: "Rejected",
@@ -5443,16 +5441,22 @@ function RequestTable({ rows, controls, kind, onPick }) {
                 </td>
                 <td className={td} style={ell} title={r.requester}>{nameOfEmail(r.requester)}</td>
                 <td className={`${td} whitespace-nowrap`}>{formatDateShort(r.created)}</td>
-                <td className={td}>
+                {/* 차수와 결재자를 한 줄에 둔다. 위아래로 나누면 행 높이가 들쭉날쭉해져
+                    다른 열의 값과 눈높이가 어긋난다. 「1/3 1차 MC · System Account」 */}
+                <td className={`${td} truncate`} title={who ? `${stage} · ${st.approver}` : stage}>
                   <span className="font-medium">{stage}</span>
-                  {who && <span className="block text-[11px] text-slate-400 truncate" title={st.approver}>{who}</span>}
+                  {who && <span className="text-slate-400"> · {who}</span>}
                 </td>
+                {/* 「눌러서 처리」 안내는 뺐다. 행 높이만 늘리고, 정작 눌러야 하는
+                    행에서만 나와 다른 행과 높이가 달라졌다.
+                    대신 상태 배지 옆에 화살표를 두어 누를 수 있다는 것을 드러낸다.
+                    행 전체가 hover 로 밝아지고 커서도 손 모양이라 이것으로 충분하다. */}
                 <td className={td}>
-                  <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap"
-                        style={{ backgroundColor: s.bg, color: s.fg }}>{s.label}</span>
-                  {kind === "turn" && (
-                    <span className="block text-[11px] mt-1" style={{ color: BRAND.accent }}>{t("approval.openToAct")}</span>
-                  )}
+                  <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                    <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold"
+                          style={{ backgroundColor: s.bg, color: s.fg }}>{s.label}</span>
+                    {kind === "turn" && <ChevronRight size={13} style={{ color: BRAND.accent }} />}
+                  </span>
                 </td>
               </tr>
             );
