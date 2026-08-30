@@ -506,6 +506,7 @@ const STR = {
       settings: "부서 및 ISA · FSA사용자 권한",
       categoryAccess: "카테고리 접근 권한",
       permissions: "권한 관리",
+      myApprovals: "나의 결재 이력",
       approvalHistory: "결재 승인 이력",
       changeHistory: "통제 항목 변경 이력",
       finalReport: "최종 결과 보고",
@@ -743,6 +744,12 @@ const STR = {
       refresh: "새로고침",
       colDecidedBy: "최종 결재자", colFinal: "최종 결재일",
     },
+    myApprovals: {
+      subtitle: "내가 승인하거나 반려한 결재 건입니다. 처리일 최신순으로 보여 줍니다.",
+      searchPh: "통제 코드 · 항목명 · 요청자로 검색",
+      colMyStep: "내 차수", colMyResult: "내 처리", colMyDate: "내 처리일",
+      none: "처리한 결재 건이 없습니다.",
+    },
     approvalHistory: {
       subtitle: "진행 중인 건을 포함한 모든 결재 요청을 요청일 순으로 봅니다.",
       searchPh: "통제 코드 · 항목명 · 요청자 · 결재자로 검색",
@@ -888,6 +895,7 @@ const STR = {
       settings: "Dept. & ISA/FSA User Access",
       categoryAccess: "Category Access",
       permissions: "Access Control",
+      myApprovals: "My approvals",
       approvalHistory: "Approval history",
       changeHistory: "Control change history",
       finalReport: "Final Report",
@@ -1124,6 +1132,12 @@ const STR = {
       searchPh: "Search by control code, name or requester",
       refresh: "Refresh",
       colDecidedBy: "Decided by", colFinal: "Decided",
+    },
+    myApprovals: {
+      subtitle: "Requests you have approved or rejected, most recently decided first.",
+      searchPh: "Search by control code, name or requester",
+      colMyStep: "My step", colMyResult: "My decision", colMyDate: "Decided",
+      none: "You have not decided on any requests yet.",
     },
     approvalHistory: {
       subtitle: "All approval requests, including those in progress, listed by request date.",
@@ -1430,6 +1444,9 @@ const MENU_GROUPS = [
     // 평가 그룹에 두면 옆의 ISA·FSA 4개처럼 권한이 필요한 화면으로 오해하기 쉬워
     // 전 직원 공개인 대시보드·학습과 같은 자리에 둔다.
     { key: "approval", icon: FileCheck2 },
+    // 내가 승인·반려한 건만 모아 본다. 결재 승인 화면은 「지금 내 차례」 만 보여 주므로
+    // 이미 처리한 건을 다시 확인할 방법이 없었다.
+    { key: "myApprovals", icon: History },
   ] },
   { key: "assessment", label: "assessment", items: [
     { key: "self", icon: ClipboardList, hiddenFor: ["cfo", "rd"], categoryKey: "self" },
@@ -5500,13 +5517,15 @@ function RequestDetailModal({ r, controls, onClose, canAct, canCancel, acting, c
 
   return (
     <Modal title={`${r.code} · ${name}`} size="xl" onClose={onClose}>
+      {/* 두 배지의 글자·여백을 같게 둔다. 예전에는 왼쪽이 text-xs/py-1,
+          오른쪽이 text-sm/py-1.5 라 나란히 놓았을 때 높이가 어긋났다. */}
       <div className="flex items-center gap-2 mb-4">
-        <span className="text-xs px-2.5 py-1 rounded-full font-medium"
+        <span className="text-xs px-3 py-1 rounded-full font-semibold"
               style={{ backgroundColor: r.reqType === "delete" ? "#FEE2E2" : "#E4F1F0",
                        color: r.reqType === "delete" ? "#B91C1C" : BRAND.accent }}>
           {r.reqType === "delete" ? t("approval.typeDelete") : t("approval.typeEdit")}
         </span>
-        <span className="text-sm px-3.5 py-1.5 rounded-full font-semibold"
+        <span className="text-xs px-3 py-1 rounded-full font-semibold"
               style={{ backgroundColor: S.bg, color: S.fg }}>{S.label}</span>
       </div>
 
@@ -5540,15 +5559,20 @@ function RequestDetailModal({ r, controls, onClose, canAct, canCancel, acting, c
             const cur = r.status === "pending" && i === r.step - 1;
             const done = st.status === "approved" || st.status === "rejected";
             // 아직 차례가 오지 않은 단계는 「대기(잠김)」. 앞 단계가 끝나야 열린다.
+            // ACC Voucher 의 결재 이력과 같은 방식 — 배지 없이 색 있는 글자로만 구분한다.
+            //   승인 #107c10 · 반려 #a4262c · 대기 #7d5700 · 대기(잠김) #a19f9d
+            // 배지를 쓰면 상단의 상태 배지와 섞여 어느 것이 전체 상태인지 헷갈린다.
             const badge = done
               ? (st.status === "approved"
-                  ? { text: t("approval.stepApproved"), bg: "#DCFCE7", fg: "#15803D" }
-                  : { text: t("approval.stepRejected"), bg: "#FEE2E2", fg: "#B91C1C" })
+                  ? { text: t("approval.stepApproved"), fg: "#107c10" }
+                  : { text: t("approval.stepRejected"), fg: "#a4262c" })
               : cur
-                ? { text: t("approval.stepWaiting"), bg: "#FEF3C7", fg: "#B45309" }
-                : { text: t("approval.stepLocked"), bg: "#F1F5F9", fg: "#94A3B8" };
+                ? { text: t("approval.stepWaiting"), fg: "#7d5700" }
+                : { text: t("approval.stepLocked"), fg: "#a19f9d" };
             return (
-              <div key={i} className={`px-3 py-2.5 flex items-start justify-between gap-3 ${cur ? "bg-amber-50/40" : ""}`}>
+              // 현재 차례 표시는 옅은 회색으로 둔다. 노란 배경은 「경고」 처럼 읽혀
+              // 아직 처리되지 않았다는 사실보다 강하게 눈에 띄었다.
+              <div key={i} className={`px-3 py-2.5 flex items-start justify-between gap-3 ${cur ? "bg-slate-50" : ""}`}>
                 <div className="min-w-0">
                   {/* stepLabel 이 이미 「1차 MC」 처럼 차수를 품고 있다.
                       앞에 번호를 또 붙이면 「1차 1차 MC」 가 된다. 라벨만 쓴다. */}
@@ -5565,8 +5589,9 @@ function RequestDetailModal({ r, controls, onClose, canAct, canCancel, acting, c
                     </p>
                   )}
                 </div>
-                <span className="text-[11px] px-2 py-0.5 rounded-full font-semibold whitespace-nowrap flex-shrink-0"
-                      style={{ backgroundColor: badge.bg, color: badge.fg }}>
+                {/* 원형 배지를 없애고 색 글자만 둔다(ACC 와 동일). 글자는 한 단계 키운다. */}
+                <span className="text-xs font-semibold whitespace-nowrap flex-shrink-0"
+                      style={{ color: badge.fg }}>
                   {badge.text}
                 </span>
               </div>
@@ -5612,6 +5637,148 @@ function RequestDetailModal({ r, controls, onClose, canAct, canCancel, acting, c
         </div>
       )}
     </Modal>
+  );
+}
+
+
+// ── 나의 결재 이력 ────────────────────────────────────────────────────
+// 결재 승인 화면은 「지금 내 차례」 만 보여 준다. 이미 처리한 건은 사라져서
+// 내가 무엇을 언제 승인·반려했는지 확인할 방법이 없었다.
+// 결재 승인 이력은 전 건을 보여 주므로 남의 건까지 섞인다. 여기는 내 것만 본다.
+function MyApprovalsPage({ controls, currentUser }) {
+  const { lang, t } = useLang();
+  const { users } = useAppData();
+  const [requests, setRequests] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [q, setQ] = useState("");
+  const [detail, setDetail] = useState(null);
+
+  async function reload() {
+    setLoading(true);
+    try { setRequests(await loadIcsChangeRequests()); }
+    catch (e) { console.warn("[ICS] 결재 요청 로드 실패:", e.message); setRequests([]); }
+    setLoading(false);
+  }
+  useEffect(() => { reload(); }, []);
+
+  function labelOf(r) {
+    const c = controls.find((x) => x.code === r.code && x.year === r.year);
+    return c ? cName(c, lang) : r.code;
+  }
+  function stepLabel(st) {
+    if (st.role === "LM1" || st.role === "MC") return t("approval.stepLm1");
+    if (st.role === "LM2") return t("approval.stepLm2");
+    if (st.role === "ICS_CONTACT") return t("approval.stepContact");
+    return t("approval.stepFinal");
+  }
+
+  const me = (currentUser.email || "").toLowerCase();
+  // 내가 처리한 단계만 골라 낸다. 한 요청에서 내가 두 차수를 맡는 경우는
+  // buildApprovalSteps 가 중복을 걸러 내므로 실제로는 한 건이다.
+  const mine = requests
+    .map((r) => {
+      const step = r.steps.find((st) =>
+        String(st.approver || "").toLowerCase() === me &&
+        (st.status === "approved" || st.status === "rejected"));
+      return step ? { r, step } : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => new Date(b.step.date || 0) - new Date(a.step.date || 0));
+
+  const kw = q.trim().toLowerCase();
+  const rows = !kw ? mine : mine.filter(({ r }) =>
+    (r.code || "").toLowerCase().includes(kw) ||
+    labelOf(r).toLowerCase().includes(kw) ||
+    nameOfEmail(r.requester).toLowerCase().includes(kw) ||
+    (r.requester || "").toLowerCase().includes(kw));
+
+  const th = "px-3 py-2.5 text-left text-[11px] font-semibold text-slate-500 whitespace-nowrap";
+  const td = "px-3 py-2.5 text-xs text-slate-700 align-top";
+  const ell = { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
+
+  return (
+    <div className="p-8">
+      <SectionHeader icon={History} title={t("nav.myApprovals")} subtitle={t("myApprovals.subtitle")} />
+
+      <div className="mb-4 flex items-center gap-2 flex-wrap">
+        <input value={q} onChange={(e) => setQ(e.target.value)}
+               placeholder={t("myApprovals.searchPh")}
+               className="flex-1 min-w-[220px] max-w-md text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:border-slate-400" />
+        <span className="text-sm text-slate-500 ml-auto">
+          {t("approvalHistory.total")} {rows.length}{t("approvalHistory.unit")}
+        </span>
+        <button onClick={reload} disabled={loading}
+                className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+          <Loader2 size={14} className={loading ? "animate-spin" : ""} />
+          {t("changeHistory.refresh")}
+        </button>
+      </div>
+
+      {loading ? (
+        <EmptyState text="..." />
+      ) : rows.length === 0 ? (
+        <EmptyState text={t("myApprovals.none")} />
+      ) : (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <table className="w-full" style={{ tableLayout: "fixed" }}>
+            <thead className="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th className={th} style={{ width: "4%" }}>{t("approvalHistory.colNo")}</th>
+                <th className={th} style={{ width: "9%" }}>{t("approvalHistory.colCode")}</th>
+                <th className={th} style={{ width: "28%" }}>{t("approvalHistory.colName")}</th>
+                <th className={th} style={{ width: "8%" }}>{t("approvalHistory.colType")}</th>
+                <th className={th} style={{ width: "13%" }}>{t("approvalHistory.colRequester")}</th>
+                <th className={th} style={{ width: "12%" }}>{t("myApprovals.colMyStep")}</th>
+                <th className={th} style={{ width: "8%" }}>{t("myApprovals.colMyResult")}</th>
+                <th className={th} style={{ width: "11%" }}>{t("myApprovals.colMyDate")}</th>
+                <th className={th} style={{ width: "7%" }}>{t("approvalHistory.colStatus")}</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {rows.map(({ r, step }, i) => {
+                // 내 처리 결과와 요청의 최종 상태는 다를 수 있다.
+                // 내가 승인해도 뒤 차수에서 반려되면 요청은 반려로 끝난다.
+                const my = step.status === "approved"
+                  ? { text: t("approval.stepApproved"), fg: "#107c10" }
+                  : { text: t("approval.stepRejected"), fg: "#a4262c" };
+                const S = {
+                  pending:   { label: t("approvalHistory.fPending"), bg: "#FEF3C7", fg: "#B45309" },
+                  approved:  { label: t("approval.done"),            bg: "#DCFCE7", fg: "#15803D" },
+                  rejected:  { label: t("approval.rejected"),        bg: "#FEE2E2", fg: "#B91C1C" },
+                  cancelled: { label: t("approval.cancelled"),       bg: "#F1F5F9", fg: "#64748B" },
+                }[r.status] || { label: r.status, bg: "#F1F5F9", fg: "#64748B" };
+                return (
+                  <tr key={r.spId} onClick={() => setDetail(r)} className="hover:bg-slate-50 cursor-pointer">
+                    <td className={`${td} text-slate-400 text-center`}>{rows.length - i}</td>
+                    <td className={`${td} font-mono text-slate-500`}>{r.code}</td>
+                    <td className={td} style={ell} title={labelOf(r)}>{labelOf(r)}</td>
+                    <td className={td}>
+                      <span className="px-2 py-0.5 rounded-full text-[11px] font-medium whitespace-nowrap"
+                            style={{ backgroundColor: r.reqType === "delete" ? "#FEE2E2" : "#E4F1F0",
+                                     color: r.reqType === "delete" ? "#B91C1C" : BRAND.accent }}>
+                        {r.reqType === "delete" ? t("approval.typeDelete") : t("approval.typeEdit")}
+                      </span>
+                    </td>
+                    <td className={td} style={ell} title={r.requester}>{nameOfEmail(r.requester)}</td>
+                    <td className={td} style={ell}>{stepLabel(step)}</td>
+                    {/* 내 처리 결과는 결재 현황과 같은 방식으로 색 글자만 쓴다. */}
+                    <td className={`${td} font-semibold`} style={{ color: my.fg }}>{my.text}</td>
+                    <td className={`${td} whitespace-nowrap text-slate-500`}>
+                      {step.date ? formatDateTime(step.date, lang) : "-"}
+                    </td>
+                    <td className={td}>
+                      <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap"
+                            style={{ backgroundColor: S.bg, color: S.fg }}>{S.label}</span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <RequestDetailModal r={detail} controls={controls} onClose={() => setDetail(null)} />
+    </div>
   );
 }
 
@@ -8026,6 +8193,9 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
             )}
             {page === "categoryAccess" && (hasCategoryAccess(currentUser, "adminOnly") ? <CategoryAccessPage currentUser={currentUser} addLog={addLog} showToast={showToast} /> : <EmptyState text="Access denied" />)}
             {page === "permissions" && (hasCategoryAccess(currentUser, "adminOnly") ? <PermissionsPage permissions={permissions} setPermissions={setPermissions} currentUser={currentUser} addLog={addLog} showToast={showToast} /> : <EmptyState text="Access denied" />)}
+            {/* 나의 결재 이력은 본인 처리분만 보여 주므로 별도 권한이 필요 없다.
+                결재 승인과 같이 전 직원이 들어올 수 있다. */}
+            {page === "myApprovals" && <MyApprovalsPage controls={controlsForYear} currentUser={currentUser} />}
             {page === "approvalHistory" && (hasCategoryAccess(currentUser, "executive")
               ? <ApprovalHistoryPage controls={controlsForYear} />
               : <EmptyState text="Access denied" />
