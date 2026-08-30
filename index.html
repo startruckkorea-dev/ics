@@ -513,6 +513,8 @@ const STR = {
       matrixTotal: "전체", matrixAssessed: "평가 완료",
       chartTitle: "부서별 리스크 분포",
       noAssigned: "없음",
+      scopedWith: "권한이 있는 부서의 통제 현황입니다.",
+      scopedNone: "배정된 부서가 없어 권한이 있는 항목만 표시됩니다.",
     },
     learn: {
       title: "학습",
@@ -696,6 +698,7 @@ const STR = {
       myRequests: "내가 올린 요청", noRequests: "올린 요청이 없습니다.",
       typeEdit: "수정 요청", typeDelete: "삭제 요청",
       requestedBy: "요청자", changeContent: "변경 내용",
+      asIs: "변경 전 (As-Is)", toBe: "변경 후 (To-Be)",
       deleteNotice: "최종 승인되면 이 통제 항목이 삭제됩니다. 이미 등록된 평가 내용도 함께 조회할 수 없게 됩니다.",
       commentPlaceholder: "의견을 입력하세요. (반려 시 사유를 남겨 주세요)",
       approve: "승인", reject: "반려",
@@ -872,6 +875,8 @@ const STR = {
       matrixTotal: "Total", matrixAssessed: "Assessed",
       chartTitle: "Risk distribution by department",
       noAssigned: "None",
+      scopedWith: "Control status for the departments you have access to.",
+      scopedNone: "No department is assigned, so only the items you have access to are shown.",
     },
     learn: {
       title: "Learning",
@@ -1055,6 +1060,7 @@ const STR = {
       myRequests: "My requests", noRequests: "You have not submitted any requests.",
       typeEdit: "Change", typeDelete: "Deletion",
       requestedBy: "Requested by", changeContent: "Requested changes",
+      asIs: "As-Is", toBe: "To-Be",
       deleteNotice: "Once fully approved, this control item will be deleted along with access to its recorded assessments.",
       commentPlaceholder: "Add a comment. (Please give a reason when rejecting)",
       approve: "Approve", reject: "Reject",
@@ -1521,7 +1527,10 @@ function Dashboard({ controls: allControls, goTo, isAdmin, allowedDepts }) {
       <SectionHeader
         icon={LayoutDashboard}
         title={t("dashboard.title")}
-        subtitle={isAdmin ? t("dashboard.subtitleAdmin") : `${t("dashboard.subtitleScoped")} (${visibleDepts.map((d) => d[lang]).join(", ") || t("dashboard.noAssigned")})`}
+        subtitle={isAdmin ? t("dashboard.subtitleAdmin")
+          : visibleDepts.length
+            ? `${t("dashboard.scopedWith")} (${visibleDepts.map((d) => d[lang]).join(", ")})`
+            : t("dashboard.scopedNone")}
       />
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
@@ -2171,7 +2180,10 @@ function ControlList({ controls: allControls, filter, setFilter, isAdmin, allowe
       <SectionHeader
         icon={Building2}
         title={t("list.title")}
-        subtitle={isAdmin ? t("list.subtitleAdmin") : `${t("list.subtitleScoped")} (${visibleDeptOptions.map((d) => d[lang]).join(", ") || t("dashboard.noAssigned")})`}
+        subtitle={isAdmin ? t("list.subtitleAdmin")
+          : visibleDeptOptions.length
+            ? `${t("list.subtitleScoped")} (${visibleDeptOptions.map((d) => d[lang]).join(", ")})`
+            : t("dashboard.scopedNone")}
       />
 
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-4 flex flex-wrap items-center gap-3">
@@ -3015,7 +3027,10 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
       <SectionHeader
         icon={ClipboardEdit}
         title={t("manage.title")}
-        subtitle={isAdmin ? t("manage.subtitleAdmin") : `${t("manage.subtitleScoped")} (${visibleDeptOptions.map((d) => d[lang]).join(", ") || t("dashboard.noAssigned")})`}
+        subtitle={isAdmin ? t("manage.subtitleAdmin")
+          : visibleDeptOptions.length
+            ? `${t("manage.subtitleScoped")} (${visibleDeptOptions.map((d) => d[lang]).join(", ")})`
+            : t("dashboard.scopedNone")}
         action={
           <div className="flex items-center gap-2">
             <button
@@ -4881,6 +4896,49 @@ function exportControlsToExcel(controls, lang, departments = INITIAL_DEPARTMENTS
 
 // 통제 항목 변경(수정·삭제) 결재 승인 화면.
 // 별도 접근 권한 없이 전 직원이 들어올 수 있고, 본인에게 배정된 건만 표시된다.
+// 통제 항목 수정 요청의 변경 전·후를 나란히 보여 준다.
+// 나열만 하면 무엇이 실제로 바뀌는지 결재자가 원본과 대조해야 한다.
+function DiffTable({ r, controls }) {
+  const { lang, t } = useLang();
+  const { departments, users } = useAppData();
+  const before = controls.find((x) => x.code === r.code && x.year === r.year) || {};
+  const p = r.payload || {};
+
+  const rows = [
+    [t("list.colName"),        cName(before, lang) || "-",                              p.name || "-"],
+    [t("list.colDept"),        deptName(before.dept, lang, departments) || "-",         deptName(p.dept, lang, departments) || "-"],
+    [t("list.colCat"),         catName(before.cat, lang) || "-",                        catName(p.cat, lang) || "-"],
+    [t("list.colAccessor"),    personByEmail(before.accessor, lang, users) || "-",      personByEmail(p.accessor, lang, users) || "-"],
+    [t("list.colReviewer"),    personByEmail(before.reviewer, lang, users) || "-",      personByEmail(p.reviewer, lang, users) || "-"],
+    [t("manage.fieldFreq"),    freqLabel(before.frequency, lang) || "-",                freqLabel(p.frequency, lang) || "-"],
+    [t("manage.fieldImportance"), importanceLabel(before.importance, lang) || "-",      importanceLabel(p.importance, lang) || "-"],
+    [t("manage.fieldDesc"),    before.desc || "-",                                      p.desc || "-"],
+  ];
+
+  return (
+    <div className="mt-3 rounded-lg border border-slate-200 overflow-hidden">
+      <div className="grid grid-cols-[92px_1fr_1fr] text-[11px] font-medium bg-slate-100 text-slate-500">
+        <div className="px-2.5 py-1.5">{t("approval.changeContent")}</div>
+        <div className="px-2.5 py-1.5 border-l border-slate-200">{t("approval.asIs")}</div>
+        <div className="px-2.5 py-1.5 border-l border-slate-200" style={{ color: "#15803D" }}>{t("approval.toBe")}</div>
+      </div>
+      {rows.map(([label, a, b], i) => {
+        const changed = String(a) !== String(b);
+        return (
+          <div key={i}
+               className="grid grid-cols-[92px_1fr_1fr] text-xs border-t border-slate-100"
+               style={{ backgroundColor: changed ? "#FFFDF5" : "#fff" }}>
+            <div className="px-2.5 py-2 text-slate-400">{label}</div>
+            <div className="px-2.5 py-2 border-l border-slate-100 text-slate-500 whitespace-pre-wrap break-words">{a}</div>
+            <div className="px-2.5 py-2 border-l border-slate-100 whitespace-pre-wrap break-words"
+                 style={{ color: changed ? "#15803D" : "#64748B", fontWeight: changed ? 600 : 400 }}>{b}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, isArchived }) {
   const { lang, t } = useLang();
   const { departments, users } = useAppData();
@@ -5097,14 +5155,7 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
                       </div>
                     )}
                     {r.reqType === "edit" && (
-                      <div className="bg-slate-50 rounded-lg p-3 mt-3 text-xs text-slate-600 space-y-1">
-                        <p className="font-medium text-slate-500 mb-1">{t("approval.changeContent")}</p>
-                        <p>{t("list.colName")}: <span className="whitespace-pre-wrap">{r.payload.name || "-"}</span></p>
-                        <p>{t("list.colDept")}: {deptName(r.payload.dept, lang, departments)} · {t("list.colCat")}: {catName(r.payload.cat, lang)}</p>
-                        <p>{t("list.colAccessor")}: {personByEmail(r.payload.accessor, lang, users)} · {t("list.colReviewer")}: {personByEmail(r.payload.reviewer, lang, users)}</p>
-                        <p>{t("manage.fieldFreq")}: {freqLabel(r.payload.frequency, lang)} · {t("manage.fieldImportance")}: {importanceLabel(r.payload.importance, lang)}</p>
-                        {r.payload.desc && <p className="whitespace-pre-wrap">{t("manage.fieldDesc")}: {r.payload.desc}</p>}
-                      </div>
+                      <DiffTable r={r} controls={controls} />
                     )}
                     {r.reqType === "delete" && (
                       <div className="bg-red-50 rounded-lg p-3 mt-3 text-xs text-red-700">
@@ -5173,14 +5224,7 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
                       </div>
                     )}
                     {r.reqType === "edit" && (
-                      <div className="bg-slate-50 rounded-lg p-3 mt-3 text-xs text-slate-600 space-y-1">
-                        <p className="font-medium text-slate-500 mb-1">{t("approval.changeContent")}</p>
-                        <p>{t("list.colName")}: <span className="whitespace-pre-wrap">{r.payload.name || "-"}</span></p>
-                        <p>{t("list.colDept")}: {deptName(r.payload.dept, lang, departments)} · {t("list.colCat")}: {r.payload.cat || "-"}</p>
-                        <p>{t("list.colAccessor")}: {personByEmail(r.payload.accessor, lang, users)} · {t("list.colReviewer")}: {personByEmail(r.payload.reviewer, lang, users)}</p>
-                        <p>{t("manage.fieldFreq")}: {freqLabel(r.payload.frequency, lang)} · {t("manage.fieldImp")}: {r.payload.importance || "-"}</p>
-                        {r.payload.desc && <p className="whitespace-pre-wrap">{t("manage.fieldDesc")}: {r.payload.desc}</p>}
-                      </div>
+                      <DiffTable r={r} controls={controls} />
                     )}
                     {r.reqType === "delete" && (
                       <div className="bg-red-50 rounded-lg p-3 mt-3 text-xs text-red-700">
