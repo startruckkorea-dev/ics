@@ -3655,18 +3655,27 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
               </div>
             </div>
 
-            {/* 통제영역은 선택 하나라 폭을 다 쓰지 않는다. 절반만 쓰고 나머지는 비워
-                아래 설명 칸이 위로 올라오게 한다. */}
-            <div className="grid grid-cols-2 gap-x-3">
-              <Field label={t("manage.fieldCat")}>
+            {/* 통제영역은 정해진 5개 중 고르는 값이라 한글·영문을 따로 입력받을 필요가 없다.
+                그래서 두 칸을 같은 reqForm.cat 에 묶는다 — 한쪽에서 고르면 다른 쪽도 곧바로
+                같은 항목으로 바뀐다. 통제명·설명과 같은 좌우 2열이라 화면 흐름도 이어진다.
+                (통제명·설명은 번역이 필요해 따로 받지만, 여기는 그럴 필요가 없다) */}
+            <div>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                <p className="text-[11px] font-semibold text-slate-500">{t("manage.fieldCat")} · {t("common.ko")}</p>
+                <p className="text-[11px] font-semibold" style={{ color: BRAND.accent }}>{t("manage.fieldCat")} · {t("common.en")}</p>
                 <select className={inputCls} value={reqForm.cat}
                         onChange={(e) => setReqForm({ ...reqForm, cat: e.target.value })}>
-                  {CATEGORIES.map((x) => <option key={x.id} value={x.id}>{x[lang]}</option>)}
+                  {CATEGORIES.map((x) => <option key={x.id} value={x.id}>{x.ko}</option>)}
+                </select>
+                <select className={inputCls} value={reqForm.cat}
+                        onChange={(e) => setReqForm({ ...reqForm, cat: e.target.value })}>
+                  {CATEGORIES.map((x) => <option key={x.id} value={x.id}>{x.en}</option>)}
                 </select>
                 {reqForm.cat !== reqForm.control.cat && (
-                  <p className="text-xs mt-1.5" style={{ color: BRAND.accent }}>{t("self.reqChanged")}</p>
+                  /* 두 칸이 한 값이므로 안내도 하나만 둔다. 칸마다 띄우면 같은 말이 두 번 나온다. */
+                  <p className="col-span-2 text-xs mt-1" style={{ color: BRAND.accent }}>{t("self.reqChanged")}</p>
                 )}
-              </Field>
+              </div>
             </div>
 
             <div>
