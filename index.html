@@ -326,6 +326,20 @@ function personByEmail(email, lang, users = INITIAL_USERS) {
   return email || "-";
 }
 
+// 이메일에 해당하는 이름. employee_search.xlsx 로 채운 명부에서 찾는다.
+// 명부에 없으면(서비스 계정 등) 이메일의 @ 앞부분을 쓴다 — 이메일 전체보다 짧고,
+// 사람 이름이 아니라는 것도 그대로 드러난다.
+// personByEmail 은 「이름이 섞여 보이는 문제」 때문에 일부러 이메일만 돌려주므로 건드리지 않는다.
+// 결재선처럼 자리가 좁고 사람이 누구인지가 중요한 곳에서만 이 함수를 쓴다.
+function nameOfEmail(email) {
+  const e = String(email || "").trim();
+  if (!e) return "-";
+  const hit = [...ICS_EMPLOYEE_DIR, ...ICS_MC_CANDIDATES].find(
+    (x) => String(x.email || "").toLowerCase() === e.toLowerCase());
+  if (hit && hit.name) return hit.name;
+  return e.split("@")[0];
+}
+
 function uid(prefix = "c") {
   return `${prefix}_${Math.random().toString(36).slice(2, 9)}`;
 }
@@ -3875,17 +3889,20 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
             {reqSteps.length === 0 ? (
               <p className="text-xs text-red-600">{t("self.reqNoLine")}</p>
             ) : (
-              <div className="flex flex-wrap items-center gap-x-1.5 gap-y-2">
+              // 이메일 전체를 넣으면 세 단계가 두 줄로 넘어간다. 이름으로 줄이면 한 줄에 들어간다.
+              // 전체 이메일은 마우스를 올리면 title 로 확인할 수 있다.
+              <div className="flex items-center gap-x-1 flex-nowrap overflow-hidden">
                 {reqSteps.map((st, i) => (
                   <React.Fragment key={i}>
-                    {i > 0 && <ChevronRight size={13} className="text-slate-300 flex-shrink-0" />}
-                    <span className="inline-flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5">
-                      <span className="text-[10px] font-semibold text-white rounded px-1.5 py-0.5"
+                    {i > 0 && <ChevronRight size={12} className="text-slate-300 flex-shrink-0" />}
+                    <span className="inline-flex items-baseline gap-1.5 bg-white border border-slate-200 rounded-lg px-2 py-1.5 min-w-0"
+                          title={st.approver}>
+                      <span className="text-[10px] font-semibold text-white rounded px-1.5 py-0.5 flex-shrink-0"
                             style={{ backgroundColor: BRAND.accent }}>
                         {i + 1}
                       </span>
-                      <span className="text-xs text-slate-700">{personByEmail(st.approver, lang, users)}</span>
-                      <span className="text-[11px] text-slate-400">
+                      <span className="text-xs text-slate-700 truncate">{nameOfEmail(st.approver)}</span>
+                      <span className="text-[11px] text-slate-400 whitespace-nowrap flex-shrink-0">
                         {(st.role === "LM1" || st.role === "MC") ? t("approval.stepLm1")
                           : st.role === "LM2" ? t("approval.stepLm2")
                           : st.role === "ICS_CONTACT" ? t("approval.stepContact")
@@ -3906,7 +3923,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
                         : sk.role === "LM2" ? t("approval.stepLm2")
                         : sk.role === "ICS_CONTACT" ? t("approval.stepContact")
                         : t("approval.stepFinal")}
-                      {" "}{t("self.reqSkipped")} — {personByEmail(sk.approver, lang, users)}
+                      {" "}{t("self.reqSkipped")} — <span title={sk.approver}>{nameOfEmail(sk.approver)}</span>
                       {" "}{sk.reason === "self" ? t("self.reqSkipSelf") : t("self.reqSkipDup")}
                     </span>
                   </p>
