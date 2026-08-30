@@ -112,6 +112,7 @@ import {
   Maximize2,
   Clock,
   CheckCircle2,
+  XCircle,
   FileCheck2,
   FileSpreadsheet,
 } from "lucide-react";
@@ -708,6 +709,9 @@ const STR = {
       commentPlaceholder: "의견을 입력하세요. (반려 시 사유를 남겨 주세요)",
       approve: "승인", reject: "반려",
       stepLm1: "1차 MC", stepLm2: "1차 MC", stepContact: "2차 ICS Admin", stepFinal: "3차 CFO",
+      stepApproved: "승인", stepRejected: "반려", stepWaiting: "대기 중",
+      rejectedBy: "반려 처리", approvedBy: "승인 의견", noReason: "(사유 없음)",
+      rejectNeedsReason: "반려하려면 사유를 입력해 주세요.",
       inProgress: "진행 중", done: "승인 완료", rejected: "반려",
       rejectReason: "반려 사유",
       cancelBtn: "요청 취소", cancelled: "취소됨",
@@ -1072,6 +1076,9 @@ const STR = {
       commentPlaceholder: "Add a comment. (Please give a reason when rejecting)",
       approve: "Approve", reject: "Reject",
       stepLm1: "1st MC", stepLm2: "1st MC", stepContact: "2nd ICS Admin", stepFinal: "3rd CFO",
+      stepApproved: "Approved", stepRejected: "Rejected", stepWaiting: "Pending",
+      rejectedBy: "Rejected by", approvedBy: "Approval comment", noReason: "(no reason given)",
+      rejectNeedsReason: "Please enter a reason to reject.",
       inProgress: "In progress", done: "Approved", rejected: "Rejected",
       rejectReason: "Reason",
       cancelBtn: "Withdraw request", cancelled: "Withdrawn",
@@ -5068,6 +5075,12 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
 
   async function act(r, approved) {
     if (isArchived) return;
+    // 화면에서 버튼을 막아 두었지만 여기서도 한 번 더 본다.
+    // 반려 사유는 요청자가 무엇을 고쳐야 할지 아는 유일한 단서다.
+    if (!approved && !(comment[r.spId] || "").trim()) {
+      alert(t("approval.rejectNeedsReason"));
+      return;
+    }
     setActing(r.spId);
     try {
       // 다른 결재자나 다른 탭에서 이미 처리했는지 확인한다.
@@ -5170,19 +5183,33 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
     return t("approval.stepFinal");
   };
 
+  // 결재선. 누가 어느 차례에서 무엇을 했는지 한 줄로 읽히게 한다.
+  // 예전에는 ✓ / ✕ 만 붙어 있어, 여러 칩이 나란히 있으면 어느 것이 처리된 것인지
+  // 한눈에 들어오지 않았다. 처리 결과와 날짜를 글자로 함께 적는다.
   function StepTrail({ r }) {
     return (
       <div className="flex flex-wrap items-center gap-2 mt-2">
         {r.steps.map((st, i) => {
           const cur = r.status === "pending" && i === r.step - 1;
+          const done = st.status === "approved" || st.status === "rejected";
           const bg = st.status === "approved" ? "#DCFCE7" : st.status === "rejected" ? "#FEE2E2" : cur ? "#E4F1F0" : "#F1F5F9";
           const fg = st.status === "approved" ? "#15803D" : st.status === "rejected" ? "#B91C1C" : cur ? BRAND.accent : "#94A3B8";
+          // 처리한 날짜는 「무엇을」 다음에 옅게 붙인다. 없으면 생략한다.
+          const when = st.date ? formatDateTime(st.date, lang).slice(0, 10) : "";
           return (
-            <span key={i} className="text-xs px-2.5 py-1 rounded-full whitespace-nowrap"
+            <span key={i} className="text-xs px-2.5 py-1.5 rounded-lg inline-flex items-center gap-1.5 whitespace-nowrap"
                   style={{ backgroundColor: bg, color: fg }}
                   title={`${personByEmail(st.approver, lang, users)}${st.comment ? " · " + st.comment : ""}`}>
-              {i + 1}. {stepLabel(st)} · {personByEmail(st.approver, lang, users)}
-              {st.status === "approved" ? " ✓" : st.status === "rejected" ? " ✕" : ""}
+              <span className="font-semibold">{i + 1}. {stepLabel(st)}</span>
+              <span className="opacity-80">{personByEmail(st.approver, lang, users)}</span>
+              {done && (
+                <span className="font-semibold flex items-center gap-1">
+                  {st.status === "approved" ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
+                  {st.status === "approved" ? t("approval.stepApproved") : t("approval.stepRejected")}
+                  {when && <span className="font-normal opacity-70">{when}</span>}
+                </span>
+              )}
+              {!done && cur && <span className="font-semibold">{t("approval.stepWaiting")}</span>}
             </span>
           );
         })}
@@ -5249,10 +5276,17 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
                       onChange={(e) => setComment((prev) => ({ ...prev, [r.spId]: e.target.value }))}
                       placeholder={t("approval.commentPlaceholder")}
                     />
-                    <div className="flex justify-end gap-2 mt-3">
+                    {/* 반려는 사유가 없으면 요청자가 무엇을 고쳐 다시 올려야 할지 알 수 없다.
+                        의견이 비어 있으면 반려 버튼을 눌러도 진행하지 않고 입력을 요구한다.
+                        (승인 의견은 선택 사항이라 그대로 둔다) */}
+                    <div className="flex items-center justify-end gap-2 mt-3">
+                      {!(comment[r.spId] || "").trim() && (
+                        <span className="text-xs text-slate-400 mr-auto">{t("approval.rejectNeedsReason")}</span>
+                      )}
                       <button
                         onClick={() => act(r, false)}
-                        disabled={acting === r.spId || isArchived}
+                        disabled={acting === r.spId || isArchived || !(comment[r.spId] || "").trim()}
+                        title={!(comment[r.spId] || "").trim() ? t("approval.rejectNeedsReason") : ""}
                         className="px-4 py-2 text-sm rounded-lg border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-40"
                       >
                         {t("approval.reject")}
@@ -5286,9 +5320,14 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
                         <p className="text-xs text-slate-400 font-mono">{r.code} · {r.reqType === "delete" ? t("approval.typeDelete") : t("approval.typeEdit")}</p>
                         <p className="text-sm text-slate-700 mt-0.5">{labelOf(r)}</p>
                       </div>
-                      <span className="text-xs px-2.5 py-1 rounded-full font-medium whitespace-nowrap"
+                      {/* 카드 하나에 표가 길게 들어가므로, 결과 배지가 작으면 눈에 들어오지 않는다.
+                          아이콘을 붙이고 글자·여백을 키워 상태를 먼저 읽게 한다. */}
+                      <span className="text-sm px-3.5 py-1.5 rounded-full font-semibold whitespace-nowrap flex items-center gap-1.5"
                             style={{ backgroundColor: r.status === "approved" ? "#DCFCE7" : r.status === "rejected" ? "#FEE2E2" : "#FEF3C7",
                                      color: r.status === "approved" ? "#15803D" : r.status === "rejected" ? "#B91C1C" : "#B45309" }}>
+                        {r.status === "approved" ? <CheckCircle2 size={15} />
+                          : r.status === "rejected" ? <XCircle size={15} />
+                          : <Clock size={15} />}
                         {r.status === "approved" ? t("approval.done") : r.status === "rejected" ? t("approval.rejected") : t("approval.inProgress")}
                       </span>
                     </div>
@@ -5310,10 +5349,30 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
                     )}
 
                     <StepTrail r={r} />
-                    {r.steps.filter((st) => st.status === "rejected" && st.comment).map((st, i) => (
-                      <p key={i} className="text-xs text-red-600 mt-2 whitespace-pre-wrap">
-                        {t("approval.rejectReason")}: {st.comment}
-                      </p>
+                    {/* 누가 반려했는지와 사유를 함께 보여 준다.
+                        예전에는 사유만 한 줄로 나와, 세 단계 중 누가 반려했는지 알 수 없었다.
+                        승인 의견도 남겼다면 같은 방식으로 보여 준다(있을 때만). */}
+                    {r.steps.filter((st) => st.status === "rejected").map((st, i) => (
+                      <div key={`rj${i}`} className="rounded-lg p-3 mt-3 text-xs" style={{ backgroundColor: "#FEE2E2", color: "#B91C1C" }}>
+                        <p className="font-semibold flex items-center gap-1.5">
+                          <XCircle size={13} />
+                          {t("approval.rejectedBy")} — {stepLabel(st)} · {personByEmail(st.approver, lang, users)}
+                          {st.date && <span className="font-normal opacity-70">{formatDateTime(st.date, lang)}</span>}
+                        </p>
+                        <p className="mt-1.5 whitespace-pre-wrap">
+                          {t("approval.rejectReason")}: {st.comment || t("approval.noReason")}
+                        </p>
+                      </div>
+                    ))}
+                    {r.steps.filter((st) => st.status === "approved" && (st.comment || "").trim()).map((st, i) => (
+                      <div key={`ap${i}`} className="rounded-lg p-3 mt-2 text-xs" style={{ backgroundColor: "#F0FDF4", color: "#15803D" }}>
+                        <p className="font-semibold flex items-center gap-1.5">
+                          <CheckCircle2 size={13} />
+                          {t("approval.approvedBy")} — {stepLabel(st)} · {personByEmail(st.approver, lang, users)}
+                          {st.date && <span className="font-normal opacity-70">{formatDateTime(st.date, lang)}</span>}
+                        </p>
+                        <p className="mt-1.5 whitespace-pre-wrap">{st.comment}</p>
+                      </div>
                     ))}
                     {r.status === "pending" && !isArchived && (
                       <div className="flex justify-end mt-2">
