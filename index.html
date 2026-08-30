@@ -1421,10 +1421,14 @@ function Sidebar({ page, setPage, currentUser, approvalCount = 0 }) {
                   >
                     <Icon size={17} className="flex-shrink-0 mt-0.5" />
                     <span className="leading-snug flex-1">{t(`nav.${item.key}`)}</span>
-                    {item.key === "approval" && approvalCount > 0 && (
+                    {item.key === "approval" && (
+                      // 처리할 건이 없어도 0 을 보여 준다. 배지가 사라지면
+                      // 「없는 것」인지 「아직 안 읽어온 것」인지 구분되지 않는다.
                       <span
-                        className="flex-shrink-0 text-[11px] font-semibold rounded-full px-1.5 min-w-[18px] text-center leading-[18px] mt-0.5"
-                        style={{ backgroundColor: "#DC2626", color: "#fff" }}
+                        className="flex-shrink-0 text-[11px] font-semibold rounded-full px-1.5 min-w-[18px] text-center"
+                        style={ approvalCount > 0
+                          ? { backgroundColor: "#DC2626", color: "#fff" }
+                          : { backgroundColor: "rgba(255,255,255,.16)", color: "rgba(255,255,255,.6)" } }
                         title={t("approval.myTurn")}
                       >
                         {approvalCount > 99 ? "99+" : approvalCount}
@@ -7217,6 +7221,23 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
                   ENG
                 </button>
               </div>
+              {/* 결재 대기 바로가기 — 어느 화면에 있든 처리할 건수를 알 수 있게 상단에 둔다.
+                  누르면 결재 승인 화면으로 이동한다. */}
+              <button
+                onClick={() => setPage("approval")}
+                title={t("approval.myTurn")}
+                className="relative flex items-center justify-center w-9 h-9 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 transition-colors"
+              >
+                <FileCheck2 size={17} style={{ color: approvalCount > 0 ? "#DC2626" : "#94A3B8" }} />
+                <span
+                  className="absolute -top-1.5 -right-1.5 text-[10px] font-bold rounded-full px-1 min-w-[17px] h-[17px] flex items-center justify-center"
+                  style={ approvalCount > 0
+                    ? { backgroundColor: "#DC2626", color: "#fff", boxShadow: "0 0 0 2px #fff" }
+                    : { backgroundColor: "#E2E8F0", color: "#94A3B8", boxShadow: "0 0 0 2px #fff" } }
+                >
+                  {approvalCount > 99 ? "99+" : approvalCount}
+                </span>
+              </button>
               <div className="flex items-center gap-2 text-sm text-slate-500">
                 <div className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center text-xs font-medium text-slate-600">
                   {pName(currentUser.name, lang, users)[0]}
