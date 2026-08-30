@@ -859,6 +859,7 @@ const STR = {
       allCat: "All components", allRisk: "All risk levels",
       assignedDeptAll: "All assigned depts.", allCategory: "All categories", allRisk: "All risk levels",
       confirm: "Confirm", close: "Close", download: "Download", approve: "Approve", reject: "Return",
+      ko: "KO", en: "EN",
       saving: "Saving...",
       items: "items", cases: "cases",
       year: "Year", currentYear: "In progress", archivedYear: "Archived",
@@ -3425,7 +3426,11 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
     const r = changeReqs[c.code];
     if (r && r.status === "pending") { alert(t("manage.lockedPending")); return; }
     setReqForm({
-      control: c, name: cName(c, lang), desc: cDesc(c, lang), cat: c.cat,
+      // 통제 항목은 한글·영문을 함께 보관한다. 화면 언어와 무관하게 둘 다 받아
+      // 승인 시 한쪽이 다른 쪽 값으로 덮이지 않게 한다.
+      control: c, cat: c.cat,
+      name: c.name || "", nameEn: c.nameEn || "",
+      desc: c.desc || "", descEn: c.descEn || "",
       mc: "",       // 1차 MC 는 요청자가 직접 지정한다
       reason: "",   // 요청 사유 — Steps JSON 에 함께 저장하므로 목록 컬럼 추가가 필요 없다
     });
@@ -3465,7 +3470,9 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
         Title: c.code, Year: c.year, ReqType: "edit",
         RequesterEmail: currentUser.email,
         Payload: JSON.stringify({
-          dept: c.dept, cat: reqForm.cat, name, desc: (reqForm.desc || "").trim(),
+          dept: c.dept, cat: reqForm.cat,
+          name, nameEn: (reqForm.nameEn || "").trim(),
+          desc: (reqForm.desc || "").trim(), descEn: (reqForm.descEn || "").trim(),
           accessor: c.accessor, reviewer: c.reviewer,
           frequency: c.frequency, importance: c.importance,
           // 요청 사유. Payload 에 함께 담아 SharePoint 컬럼을 새로 만들지 않는다.
@@ -4905,14 +4912,16 @@ function DiffTable({ r, controls }) {
   const p = r.payload || {};
 
   const rows = [
-    [t("list.colName"),        cName(before, lang) || "-",                              p.name || "-"],
+    [`${t("list.colName")} (${t("common.ko")})`, before.name || "-",                    p.name || "-"],
+    [`${t("list.colName")} (${t("common.en")})`, before.nameEn || "-",                  p.nameEn || "-"],
     [t("list.colDept"),        deptName(before.dept, lang, departments) || "-",         deptName(p.dept, lang, departments) || "-"],
     [t("list.colCat"),         catName(before.cat, lang) || "-",                        catName(p.cat, lang) || "-"],
     [t("list.colAccessor"),    personByEmail(before.accessor, lang, users) || "-",      personByEmail(p.accessor, lang, users) || "-"],
     [t("list.colReviewer"),    personByEmail(before.reviewer, lang, users) || "-",      personByEmail(p.reviewer, lang, users) || "-"],
     [t("manage.fieldFreq"),    freqLabel(before.frequency, lang) || "-",                freqLabel(p.frequency, lang) || "-"],
     [t("manage.fieldImportance"), importanceLabel(before.importance, lang) || "-",      importanceLabel(p.importance, lang) || "-"],
-    [t("manage.fieldDesc"),    before.desc || "-",                                      p.desc || "-"],
+    [`${t("manage.fieldDesc")} (${t("common.ko")})`, before.desc || "-",                p.desc || "-"],
+    [`${t("manage.fieldDesc")} (${t("common.en")})`, before.descEn || "-",              p.descEn || "-"],
   ];
 
   return (
@@ -5042,8 +5051,9 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
             const pl = r.payload || {};
             if (target.spId) {
               await icsUpdateItem(ICS_LISTS.controls, target.spId, {
-                Dept: pl.dept, Category: pl.cat, NameKo: pl.name, NameEn: pl.name,
-                DescKo: pl.desc, DescEn: pl.desc,
+                Dept: pl.dept, Category: pl.cat,
+                NameKo: pl.name, NameEn: pl.nameEn || pl.name,
+                DescKo: pl.desc, DescEn: pl.descEn || pl.desc,
                 AccessorEmail: pl.accessor, ReviewerEmail: pl.reviewer,
                 Frequency: pl.frequency, Importance: pl.importance,
               });
@@ -5064,8 +5074,10 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
       } else if (applied && applied.kind === "edit") {
         const pl = applied.pl;
         setControls((prev) => prev.map((x) => (x.id === applied.target.id
-          ? { ...x, dept: pl.dept, cat: pl.cat, name: pl.name, nameEn: pl.name,
-              desc: pl.desc, descEn: pl.desc, accessor: pl.accessor, reviewer: pl.reviewer,
+          ? { ...x, dept: pl.dept, cat: pl.cat,
+              name: pl.name, nameEn: pl.nameEn || pl.name,
+              desc: pl.desc, descEn: pl.descEn || pl.desc,
+              accessor: pl.accessor, reviewer: pl.reviewer,
               frequency: pl.frequency, importance: pl.importance }
           : x)));
       }
