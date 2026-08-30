@@ -497,6 +497,7 @@ const STR = {
       allCat: "전체 통제영역", allRisk: "전체 신호등",
       assignedDeptAll: "배정 부서 전체", allCategory: "전체 통제영역", allRisk: "전체 신호등",
       confirm: "확인", close: "닫기", download: "다운로드", approve: "승인", reject: "반려",
+      ko: "한글", en: "영문",
       saving: "저장 중입니다...",
       items: "건", cases: "건",
       year: "연도", currentYear: "진행중", archivedYear: "아카이브",
@@ -612,6 +613,7 @@ const STR = {
       subtitleUser: "님이 담당하는 통제 항목을 자가평가합니다.",
       needsAction: "평가 필요", submitted: "제출 완료",
       writeBtn: "자가평가 작성", rejectReasonTitle: "검토자 반려 사유",
+      lockedByRequest: "수정 요청 결재 중 — 결재가 끝나면 작성할 수 있습니다",
       riskLevel: "리스크 수준 선택", commentPlaceholder: "평가 근거 및 특이사항을 입력하세요.",
       sampleCount: "샘플링 건수", recommendedNote: "권장", attachBtn: "샘플링 자료 첨부",
       submitBtn: "제출", editBtn: "수정", withdrawBtn: "제출 철회",
@@ -975,6 +977,7 @@ const STR = {
       subtitleUser: ", here are the control items assigned to you.",
       needsAction: "Needs assessment", submitted: "Submitted",
       writeBtn: "Write assessment", rejectReasonTitle: "Reviewer's return reason",
+      lockedByRequest: "Change request under approval — available once it is decided",
       riskLevel: "Select risk level", commentPlaceholder: "Enter your rationale and any notable findings.",
       sampleCount: "Sample size", recommendedNote: "recommended", attachBtn: "Attach sampling evidence",
       submitBtn: "Submit", editBtn: "Edit", withdrawBtn: "Withdraw",
@@ -3614,10 +3617,17 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
             </p>
           </div>
           <div className="space-y-3">
-            <Field label={t("manage.fieldName")}>
+            <Field label={`${t("manage.fieldName")} (${t("common.ko")})`}>
               <input className={inputCls} value={reqForm.name}
                      onChange={(e) => setReqForm({ ...reqForm, name: e.target.value })} />
-              {reqForm.name !== cName(reqForm.control, lang) && (
+              {reqForm.name !== (reqForm.control.name || "") && (
+                <p className="text-xs mt-1.5" style={{ color: BRAND.accent }}>{t("self.reqChanged")}</p>
+              )}
+            </Field>
+            <Field label={`${t("manage.fieldName")} (${t("common.en")})`}>
+              <input className={inputCls} value={reqForm.nameEn}
+                     onChange={(e) => setReqForm({ ...reqForm, nameEn: e.target.value })} />
+              {reqForm.nameEn !== (reqForm.control.nameEn || "") && (
                 <p className="text-xs mt-1.5" style={{ color: BRAND.accent }}>{t("self.reqChanged")}</p>
               )}
             </Field>
@@ -3630,16 +3640,20 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
                 <p className="text-xs mt-1.5" style={{ color: BRAND.accent }}>{t("self.reqChanged")}</p>
               )}
             </Field>
-            <Field label={t("manage.fieldDesc")}>
-              <textarea
-                className={inputCls}
-                rows={4}
-                maxLength={DESC_MAX}
+            <Field label={`${t("manage.fieldDesc")} (${t("common.ko")})`}>
+              <textarea className={inputCls} rows={4} maxLength={DESC_MAX}
                 value={reqForm.desc}
-                onChange={(e) => setReqForm({ ...reqForm, desc: e.target.value })}
-              />
+                onChange={(e) => setReqForm({ ...reqForm, desc: e.target.value })} />
               <p className="text-xs text-slate-400 mt-1.5 text-right">
                 {(reqForm.desc || "").length} / {DESC_MAX}
+              </p>
+            </Field>
+            <Field label={`${t("manage.fieldDesc")} (${t("common.en")})`}>
+              <textarea className={inputCls} rows={4} maxLength={DESC_MAX}
+                value={reqForm.descEn}
+                onChange={(e) => setReqForm({ ...reqForm, descEn: e.target.value })} />
+              <p className="text-xs text-slate-400 mt-1.5 text-right">
+                {(reqForm.descEn || "").length} / {DESC_MAX}
               </p>
             </Field>
           </div>
@@ -3885,6 +3899,13 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
                   </div>
                 ) : editing === c.id && !isArchived ? (
                   <SelfAssessForm control={c} draft={draft} setDraft={setDraft} onCancel={() => setEditing(null)} onSubmit={() => submit(c)} />
+                ) : changeReqs[c.code]?.status === "pending" ? (
+                  // 수정 요청이 결재 중이면 자가평가를 막는다.
+                  // 결재가 끝나면 통제명·설명·통제영역이 바뀌므로,
+                  // 그 전에 쓴 평가는 바뀐 항목에 대한 것이 아니게 된다.
+                  <div className="flex justify-end items-center gap-2 text-sm text-slate-400">
+                    <Lock size={13} /> {t("self.lockedByRequest")}
+                  </div>
                 ) : (
                   // 작성 버튼은 카드 하단 우측에 둔다. 상단 배지와 붙으면 구분이 어렵다.
                   !isArchived && (
