@@ -711,6 +711,7 @@ const STR = {
     changeHistory: {
       subtitle: "결재가 완료된 통제 항목 수정·삭제 요청의 기록입니다. 요청자·승인자·사유가 함께 남습니다.",
       searchPh: "통제 코드 · 항목명 · 요청자로 검색",
+      refresh: "새로고침",
     },
     finalReport: {
       title: "최종 결과 보고",
@@ -1069,6 +1070,7 @@ const STR = {
     changeHistory: {
       subtitle: "Completed change and delete requests for control items, with requester, approvers and reasons.",
       searchPh: "Search by control code, name or requester",
+      refresh: "Refresh",
     },
     finalReport: {
       title: "Final Report",
@@ -5162,6 +5164,30 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
                         {r.status === "approved" ? t("approval.done") : r.status === "rejected" ? t("approval.rejected") : t("approval.inProgress")}
                       </span>
                     </div>
+                    {/* 내가 올린 요청에도 무엇을 어떻게 바꾸려 했는지 보여 준다.
+                        결재 대기 카드에만 있어, 요청자는 자기가 올린 내용을 확인할 수 없었다. */}
+                    {r.payload?.reason && (
+                      <div className="rounded-lg p-3 mt-3 text-xs" style={{ backgroundColor: "#FEF9E7", color: "#8A6116" }}>
+                        <p className="font-medium mb-1">{t("self.reqReasonLabel")}</p>
+                        <p className="whitespace-pre-wrap">{r.payload.reason}</p>
+                      </div>
+                    )}
+                    {r.reqType === "edit" && (
+                      <div className="bg-slate-50 rounded-lg p-3 mt-3 text-xs text-slate-600 space-y-1">
+                        <p className="font-medium text-slate-500 mb-1">{t("approval.changeContent")}</p>
+                        <p>{t("list.colName")}: <span className="whitespace-pre-wrap">{r.payload.name || "-"}</span></p>
+                        <p>{t("list.colDept")}: {deptName(r.payload.dept, lang, departments)} · {t("list.colCat")}: {r.payload.cat || "-"}</p>
+                        <p>{t("list.colAccessor")}: {personByEmail(r.payload.accessor, lang, users)} · {t("list.colReviewer")}: {personByEmail(r.payload.reviewer, lang, users)}</p>
+                        <p>{t("manage.fieldFreq")}: {freqLabel(r.payload.frequency, lang)} · {t("manage.fieldImp")}: {r.payload.importance || "-"}</p>
+                        {r.payload.desc && <p className="whitespace-pre-wrap">{t("manage.fieldDesc")}: {r.payload.desc}</p>}
+                      </div>
+                    )}
+                    {r.reqType === "delete" && (
+                      <div className="bg-red-50 rounded-lg p-3 mt-3 text-xs text-red-700">
+                        {t("approval.deleteNotice")}
+                      </div>
+                    )}
+
                     <StepTrail r={r} />
                     {r.steps.filter((st) => st.status === "rejected" && st.comment).map((st, i) => (
                       <p key={i} className="text-xs text-red-600 mt-2 whitespace-pre-wrap">
@@ -5198,14 +5224,15 @@ function ChangeHistoryPage({ controls, currentUser }) {
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
 
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      try { setRequests(await loadIcsChangeRequests()); }
-      catch (e) { console.warn("[ICS] 변경 요청 로드 실패:", e.message); setRequests([]); }
-      setLoading(false);
-    })();
-  }, []);
+  // 화면을 처음 열 때 한 번 읽는다. 다른 사람이 그 사이 결재를 끝냈을 수 있으므로
+  // 새로고침 버튼을 함께 둔다. 메뉴를 다시 눌러도 컴포넌트가 살아 있으면 재조회되지 않는다.
+  async function reload() {
+    setLoading(true);
+    try { setRequests(await loadIcsChangeRequests()); }
+    catch (e) { console.warn("[ICS] 변경 요청 로드 실패:", e.message); setRequests([]); }
+    setLoading(false);
+  }
+  useEffect(() => { reload(); }, []);
 
   function labelOf(r) {
     const c = controls.find((x) => x.code === r.code && x.year === r.year);
@@ -5231,13 +5258,21 @@ function ChangeHistoryPage({ controls, currentUser }) {
   return (
     <div className="p-8">
       <SectionHeader icon={History} title={t("nav.changeHistory")} subtitle={t("changeHistory.subtitle")} />
-      <div className="mb-4">
+      <div className="mb-4 flex items-center gap-2">
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder={t("changeHistory.searchPh")}
-          className="w-full max-w-md text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:border-slate-400"
+          className="flex-1 max-w-md text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:border-slate-400"
         />
+        <button
+          onClick={reload}
+          disabled={loading}
+          className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+        >
+          <Loader2 size={14} className={loading ? "animate-spin" : ""} />
+          {t("changeHistory.refresh")}
+        </button>
       </div>
       {loading ? (
         <EmptyState text="..." />
