@@ -726,6 +726,7 @@ const STR = {
       stepLm1: "1차 MC", stepLm2: "1차 MC", stepContact: "2차 ICS Admin", stepFinal: "3차 CFO",
       stepApproved: "승인", stepRejected: "반려", stepWaiting: "대기 중",
       trailTitle: "결재 현황",
+      openToAct: "눌러서 처리",
       rejectedBy: "반려 처리", approvedBy: "승인 의견", noReason: "(사유 없음)",
       rejectNeedsReason: "반려하려면 사유를 입력해 주세요.",
       inProgress: "진행 중", done: "승인 완료", rejected: "반려",
@@ -1107,6 +1108,7 @@ const STR = {
       stepLm1: "1st MC", stepLm2: "1st MC", stepContact: "2nd ICS Admin", stepFinal: "3rd CFO",
       stepApproved: "Approved", stepRejected: "Rejected", stepWaiting: "Pending",
       trailTitle: "Approval status",
+      openToAct: "Open to act",
       rejectedBy: "Rejected by", approvedBy: "Approval comment", noReason: "(no reason given)",
       rejectNeedsReason: "Please enter a reason to reject.",
       inProgress: "In progress", done: "Approved", rejected: "Rejected",
@@ -3364,6 +3366,21 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
 /* 1차 자가평가                                                         */
 /* ------------------------------------------------------------------ */
 
+// 표 안에서 쓰는 짧은 날짜. 한국어 형식(2026년 08월 30일 22:51)은 126px 이 필요해
+// 좁은 열에서 두 줄로 접힌다. 표는 자릿수가 세로로 맞는 편이 읽기도 좋다.
+// 팝업·카드처럼 자리가 넉넉한 곳에서는 formatDateTime 을 그대로 쓴다.
+function formatDateShort(iso) {
+  if (!iso) return "-";
+  const str = String(iso).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+  const raw = new Date(iso);
+  if (isNaN(raw.getTime())) return str.slice(0, 10);
+  const d = new Date(raw.getTime() + 9 * 3600 * 1000);   // UTC 저장값을 KST 로
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} `
+       + `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
+}
+
 function formatDateTime(iso, lang) {
   if (!iso) return "-";
   const str = String(iso);
@@ -5115,6 +5132,8 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState(null);
   const [comment, setComment] = useState({});
+  // 행을 누르면 열리는 상세 팝업. 승인·반려·요청 취소도 여기서 한다.
+  const [detail, setDetail] = useState(null);
   const myEmail = (currentUser.email || "").toLowerCase();
 
   async function reload() {
@@ -5319,83 +5338,17 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
         </div>
       ) : (
         <>
-          <div className="mb-6">
+          {/* 두 목록 모두 결재 승인 이력과 같은 표로 둔다. 카드로 쌓으면 한 건에
+              화면 한 뭉치를 써서, 몇 건이 밀려 있는지 한눈에 들어오지 않는다.
+              무엇을 어떻게 바꾸려는지·결재 현황은 행을 눌러 팝업에서 본다. */}
+          <div className="mb-8">
             <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
               <AlertTriangle size={15} className="text-amber-500" /> {t("approval.myTurn")} ({myTurn.length})
             </h3>
             {myTurn.length === 0 ? (
               <EmptyState text={t("approval.noTurn")} />
             ) : (
-              <div className="space-y-3">
-                {myTurn.map((r) => (
-                  <div key={r.spId} className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-                    <div className="flex items-start justify-between gap-3 flex-wrap">
-                      <div className="min-w-0">
-                        <p className="text-xs text-slate-400 font-mono">{r.code} · {r.year}</p>
-                        <p className="text-sm font-semibold text-slate-800 mt-0.5">{labelOf(r)}</p>
-                      </div>
-                      <span className="text-xs px-2.5 py-1 rounded-full font-medium whitespace-nowrap"
-                            style={{ backgroundColor: r.reqType === "delete" ? "#FEE2E2" : "#E4F1F0",
-                                     color: r.reqType === "delete" ? "#B91C1C" : BRAND.accent }}>
-                        {r.reqType === "delete" ? t("approval.typeDelete") : t("approval.typeEdit")}
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-500 mt-1.5">
-                      {t("approval.requestedBy")} {personByEmail(r.requester, lang, users)} · {formatDateTime(r.created, lang)}
-                    </p>
-
-                    {r.payload?.reason && (
-                      <div className="rounded-lg p-3 mt-3 text-xs" style={{ backgroundColor: "#FEF9E7", color: "#7A5C10" }}>
-                        <p className="font-medium mb-1">{t("self.reqReasonLabel")}</p>
-                        <p className="whitespace-pre-wrap">{r.payload.reason}</p>
-                      </div>
-                    )}
-                    {r.reqType === "edit" && (
-                      <DiffTable r={r} controls={controls} />
-                    )}
-                    {r.reqType === "delete" && (
-                      <div className="bg-red-50 rounded-lg p-3 mt-3 text-xs text-red-700">
-                        {t("approval.deleteNotice")}
-                      </div>
-                    )}
-
-                    <StepTrail r={r} />
-
-                    <textarea
-                      className={`${inputCls} mt-3`}
-                      rows={2}
-                      value={comment[r.spId] || ""}
-                      onChange={(e) => setComment((prev) => ({ ...prev, [r.spId]: e.target.value }))}
-                      placeholder={t("approval.commentPlaceholder")}
-                    />
-                    {/* 반려는 사유가 없으면 요청자가 무엇을 고쳐 다시 올려야 할지 알 수 없다.
-                        의견이 비어 있으면 반려 버튼을 눌러도 진행하지 않고 입력을 요구한다.
-                        (승인 의견은 선택 사항이라 그대로 둔다) */}
-                    <div className="flex items-center justify-end gap-2 mt-3">
-                      {!(comment[r.spId] || "").trim() && (
-                        <span className="text-xs text-slate-400 mr-auto">{t("approval.rejectNeedsReason")}</span>
-                      )}
-                      <button
-                        onClick={() => act(r, false)}
-                        disabled={acting === r.spId || isArchived || !(comment[r.spId] || "").trim()}
-                        title={!(comment[r.spId] || "").trim() ? t("approval.rejectNeedsReason") : ""}
-                        className="px-4 py-2 text-sm rounded-lg border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-40"
-                      >
-                        {t("approval.reject")}
-                      </button>
-                      <button
-                        onClick={() => act(r, true)}
-                        disabled={acting === r.spId || isArchived}
-                        className="px-4 py-2 text-sm rounded-lg text-white disabled:opacity-40 flex items-center gap-1.5"
-                        style={{ backgroundColor: BRAND.accent }}
-                      >
-                        {acting === r.spId && <Loader2 size={14} className="animate-spin" />}
-                        {t("approval.approve")}
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <RequestTable rows={myTurn} controls={controls} kind="turn" onPick={setDetail} />
             )}
           </div>
 
@@ -5404,89 +5357,106 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
             {mine.length === 0 ? (
               <EmptyState text={t("approval.noRequests")} />
             ) : (
-              <div className="space-y-2">
-                {mine.map((r) => (
-                  <div key={r.spId} className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
-                    <div className="flex items-start justify-between gap-3 flex-wrap">
-                      <div className="min-w-0">
-                        <p className="text-xs text-slate-400 font-mono">{r.code} · {r.reqType === "delete" ? t("approval.typeDelete") : t("approval.typeEdit")}</p>
-                        <p className="text-sm text-slate-700 mt-0.5">{labelOf(r)}</p>
-                      </div>
-                      {/* 카드 하나에 표가 길게 들어가므로, 결과 배지가 작으면 눈에 들어오지 않는다.
-                          아이콘을 붙이고 글자·여백을 키워 상태를 먼저 읽게 한다.
-                          요청 취소도 같은 줄에 둔다. 카드 맨 아래 회색 글씨로 두었더니
-                          긴 표를 다 지나쳐야 보여, 취소할 수 있다는 것을 모르고 지나쳤다. */}
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        {r.status === "pending" && !isArchived && (
-                          <button
-                            onClick={() => cancelRequest(r)}
-                            disabled={acting === r.spId}
-                            className="text-sm px-3.5 py-1.5 rounded-full font-medium whitespace-nowrap flex items-center gap-1.5 border border-slate-300 text-slate-600 hover:border-red-300 hover:text-red-600 hover:bg-red-50 disabled:opacity-40"
-                          >
-                            <Undo2 size={14} /> {t("approval.cancelBtn")}
-                          </button>
-                        )}
-                        <span className="text-sm px-3.5 py-1.5 rounded-full font-semibold whitespace-nowrap flex items-center gap-1.5"
-                              style={{ backgroundColor: r.status === "approved" ? "#DCFCE7" : r.status === "rejected" ? "#FEE2E2" : "#FEF3C7",
-                                       color: r.status === "approved" ? "#15803D" : r.status === "rejected" ? "#B91C1C" : "#B45309" }}>
-                          {r.status === "approved" ? <CheckCircle2 size={15} />
-                            : r.status === "rejected" ? <XCircle size={15} />
-                            : <Clock size={15} />}
-                          {r.status === "approved" ? t("approval.done") : r.status === "rejected" ? t("approval.rejected") : t("approval.inProgress")}
-                        </span>
-                      </div>
-                    </div>
-                    {/* 내가 올린 요청에도 무엇을 어떻게 바꾸려 했는지 보여 준다.
-                        결재 대기 카드에만 있어, 요청자는 자기가 올린 내용을 확인할 수 없었다. */}
-                    {r.payload?.reason && (
-                      <div className="rounded-lg p-3 mt-3 text-xs" style={{ backgroundColor: "#FEF9E7", color: "#8A6116" }}>
-                        <p className="font-medium mb-1">{t("self.reqReasonLabel")}</p>
-                        <p className="whitespace-pre-wrap">{r.payload.reason}</p>
-                      </div>
-                    )}
-                    {r.reqType === "edit" && (
-                      <DiffTable r={r} controls={controls} />
-                    )}
-                    {r.reqType === "delete" && (
-                      <div className="bg-red-50 rounded-lg p-3 mt-3 text-xs text-red-700">
-                        {t("approval.deleteNotice")}
-                      </div>
-                    )}
-
-                    <StepTrail r={r} />
-                    {/* 누가 반려했는지와 사유를 함께 보여 준다.
-                        예전에는 사유만 한 줄로 나와, 세 단계 중 누가 반려했는지 알 수 없었다.
-                        승인 의견도 남겼다면 같은 방식으로 보여 준다(있을 때만). */}
-                    {r.steps.filter((st) => st.status === "rejected").map((st, i) => (
-                      <div key={`rj${i}`} className="rounded-lg p-3 mt-3 text-xs" style={{ backgroundColor: "#FEE2E2", color: "#B91C1C" }}>
-                        <p className="font-semibold flex items-center gap-1.5">
-                          <XCircle size={13} />
-                          {t("approval.rejectedBy")} — {stepLabel(st)} · {personByEmail(st.approver, lang, users)}
-                          {st.date && <span className="font-normal opacity-70">{formatDateTime(st.date, lang)}</span>}
-                        </p>
-                        <p className="mt-1.5 whitespace-pre-wrap">
-                          {t("approval.rejectReason")}: {st.comment || t("approval.noReason")}
-                        </p>
-                      </div>
-                    ))}
-                    {r.steps.filter((st) => st.status === "approved" && (st.comment || "").trim()).map((st, i) => (
-                      <div key={`ap${i}`} className="rounded-lg p-3 mt-2 text-xs" style={{ backgroundColor: "#F0FDF4", color: "#15803D" }}>
-                        <p className="font-semibold flex items-center gap-1.5">
-                          <CheckCircle2 size={13} />
-                          {t("approval.approvedBy")} — {stepLabel(st)} · {personByEmail(st.approver, lang, users)}
-                          {st.date && <span className="font-normal opacity-70">{formatDateTime(st.date, lang)}</span>}
-                        </p>
-                        <p className="mt-1.5 whitespace-pre-wrap">{st.comment}</p>
-                      </div>
-                    ))}
-                  </div>
-                ))}
-              </div>
+              <RequestTable rows={mine} controls={controls} kind="mine" onPick={setDetail} />
             )}
           </div>
-
         </>
       )}
+      {/* 팝업에서 승인·반려까지 처리한다. 표에는 한 줄에 담기는 것만 둔다. */}
+      <RequestDetailModal
+        r={detail}
+        controls={controls}
+        onClose={() => setDetail(null)}
+        canAct={!!detail && detail.status === "pending" && myTurn.some((x) => x.spId === detail.spId) && !isArchived}
+        canCancel={!!detail && detail.status === "pending" && mine.some((x) => x.spId === detail.spId) && !isArchived}
+        acting={acting === (detail && detail.spId)}
+        comment={detail ? (comment[detail.spId] || "") : ""}
+        setComment={(v) => detail && setComment((prev) => ({ ...prev, [detail.spId]: v }))}
+        onAct={(ok) => { const r = detail; setDetail(null); act(r, ok); }}
+        onCancelReq={() => { const r = detail; setDetail(null); cancelRequest(r); }}
+      />
+    </div>
+  );
+}
+
+// 결재 요청 목록 표. 결재 승인 화면의 두 목록이 같은 모양을 쓴다.
+function RequestTable({ rows, controls, kind, onPick }) {
+  const { lang, t } = useLang();
+  const { users } = useAppData();
+  const th = "px-3 py-2.5 text-left text-[11px] font-semibold text-slate-500 whitespace-nowrap";
+  const td = "px-3 py-2.5 text-xs text-slate-700 align-top";
+  const ell = { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
+
+  const labelOf = (r) => {
+    const c = controls.find((x) => x.code === r.code && x.year === r.year);
+    return c ? cName(c, lang) : r.code;
+  };
+  const stepLabel = (st) => {
+    if (st.role === "LM1" || st.role === "MC") return t("approval.stepLm1");
+    if (st.role === "LM2") return t("approval.stepLm2");
+    if (st.role === "ICS_CONTACT") return t("approval.stepContact");
+    return t("approval.stepFinal");
+  };
+  const S = {
+    pending:   { label: t("approvalHistory.fPending"), bg: "#FEF3C7", fg: "#B45309" },
+    approved:  { label: t("approval.done"),            bg: "#DCFCE7", fg: "#15803D" },
+    rejected:  { label: t("approval.rejected"),        bg: "#FEE2E2", fg: "#B91C1C" },
+    cancelled: { label: t("approval.cancelled"),       bg: "#F1F5F9", fg: "#64748B" },
+  };
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+      <table className="w-full" style={{ tableLayout: "fixed" }}>
+        <thead className="bg-slate-50 border-b border-slate-200">
+          <tr>
+            <th className={th} style={{ width: "3.5%" }}>{t("approvalHistory.colNo")}</th>
+            <th className={th} style={{ width: "9%" }}>{t("approvalHistory.colCode")}</th>
+            <th className={th} style={{ width: "28%" }}>{t("approvalHistory.colName")}</th>
+            <th className={th} style={{ width: "7.5%" }}>{t("approvalHistory.colType")}</th>
+            <th className={th} style={{ width: "13%" }}>{t("approvalHistory.colRequester")}</th>
+            <th className={th} style={{ width: "11%" }}>{t("approvalHistory.colRequestedAt")}</th>
+            <th className={th} style={{ width: "16%" }}>{t("approvalHistory.colStage")}</th>
+            <th className={th} style={{ width: "12%" }}>{t("approvalHistory.colStatus")}</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {rows.map((r, i) => {
+            const s = S[r.status] || S.pending;
+            const st = r.steps[r.step - 1];
+            // 내 결재 대기는 「내가 몇 번째인지」가, 내가 올린 요청은 「누가 잡고 있는지」가 궁금하다.
+            const stage = r.status !== "pending" ? t("approvalHistory.stageDone")
+              : st ? `${r.step}/${r.steps.length} ${stepLabel(st)}` : "-";
+            const who = r.status === "pending" && st ? nameOfEmail(st.approver) : "";
+            return (
+              <tr key={r.spId} onClick={() => onPick(r)} className="hover:bg-slate-50 cursor-pointer">
+                <td className={`${td} text-slate-400 text-center`}>{rows.length - i}</td>
+                <td className={`${td} font-mono text-slate-500`}>{r.code}</td>
+                <td className={td} style={ell} title={labelOf(r)}>{labelOf(r)}</td>
+                <td className={td}>
+                  <span className="px-2 py-0.5 rounded-full text-[11px] font-medium whitespace-nowrap"
+                        style={{ backgroundColor: r.reqType === "delete" ? "#FEE2E2" : "#E4F1F0",
+                                 color: r.reqType === "delete" ? "#B91C1C" : BRAND.accent }}>
+                    {r.reqType === "delete" ? t("approval.typeDelete") : t("approval.typeEdit")}
+                  </span>
+                </td>
+                <td className={td} style={ell} title={r.requester}>{nameOfEmail(r.requester)}</td>
+                <td className={`${td} whitespace-nowrap`}>{formatDateShort(r.created)}</td>
+                <td className={td}>
+                  <span className="font-medium">{stage}</span>
+                  {who && <span className="block text-[11px] text-slate-400 truncate" title={st.approver}>{who}</span>}
+                </td>
+                <td className={td}>
+                  <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap"
+                        style={{ backgroundColor: s.bg, color: s.fg }}>{s.label}</span>
+                  {kind === "turn" && (
+                    <span className="block text-[11px] mt-1" style={{ color: BRAND.accent }}>{t("approval.openToAct")}</span>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -5495,7 +5465,7 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
 
 // 결재 요청 상세. 결재 승인 이력·통제 항목 변경 이력이 같은 팝업을 쓴다.
 // 표에는 한 줄에 담기는 것만 두고, 사유·의견·단계별 처리 시각은 여기서 본다.
-function RequestDetailModal({ r, controls, onClose }) {
+function RequestDetailModal({ r, controls, onClose, canAct, canCancel, acting, comment, setComment, onAct, onCancelReq }) {
   const { lang, t } = useLang();
   const { users } = useAppData();
   if (!r) return null;
@@ -5580,6 +5550,43 @@ function RequestDetailModal({ r, controls, onClose }) {
           })}
         </div>
       </div>
+
+      {/* 처리는 여기서 한다. 표에서 바로 승인·반려하면 무엇을 바꾸는 건인지
+          확인하지 않고 누를 수 있다. 팝업에서는 변경 내용을 본 뒤 결정하게 된다. */}
+      {canAct && (
+        <div className="mt-4">
+          <textarea
+            className={`${inputCls}`}
+            rows={2}
+            value={comment || ""}
+            onChange={(e) => setComment(e.target.value)}
+            placeholder={t("approval.commentPlaceholder")}
+          />
+          <div className="flex items-center justify-end gap-2 mt-3">
+            {!(comment || "").trim() && (
+              <span className="text-xs text-slate-400 mr-auto">{t("approval.rejectNeedsReason")}</span>
+            )}
+            <button onClick={() => onAct(false)} disabled={acting || !(comment || "").trim()}
+                    title={!(comment || "").trim() ? t("approval.rejectNeedsReason") : ""}
+                    className="px-4 py-2 text-sm rounded-lg border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-40">
+              {t("approval.reject")}
+            </button>
+            <button onClick={() => onAct(true)} disabled={acting}
+                    className="px-4 py-2 text-sm rounded-lg text-white disabled:opacity-40 flex items-center gap-1.5"
+                    style={{ backgroundColor: BRAND.accent }}>
+              {acting && <Loader2 size={14} className="animate-spin" />}{t("approval.approve")}
+            </button>
+          </div>
+        </div>
+      )}
+      {canCancel && (
+        <div className="flex justify-end mt-4">
+          <button onClick={onCancelReq} disabled={acting}
+                  className="text-sm px-3.5 py-1.5 rounded-full font-medium flex items-center gap-1.5 border border-slate-300 text-slate-600 hover:border-red-300 hover:text-red-600 hover:bg-red-50 disabled:opacity-40">
+            <Undo2 size={14} /> {t("approval.cancelBtn")}
+          </button>
+        </div>
+      )}
     </Modal>
   );
 }
@@ -5623,12 +5630,12 @@ function ApprovalHistoryPage({ controls }) {
     if (r.status !== "pending") return { text: t("approvalHistory.stageDone"), who: "" };
     const st = r.steps[r.step - 1];
     if (!st) return { text: "-", who: "" };
-    return { text: `${r.step}/${r.steps.length} ${stepLabel(st)}`, who: personByEmail(st.approver, lang, users) };
+    return { text: `${r.step}/${r.steps.length} ${stepLabel(st)}`, who: nameOfEmail(st.approver) };
   }
   // 마지막으로 처리된 단계의 시각. 진행 중이면 아직 없다.
   function decidedAt(r) {
     const last = [...r.steps].reverse().find((st) => st.status !== "pending" && st.date);
-    return last ? formatDateTime(last.date, lang) : "-";
+    return last ? formatDateShort(last.date) : "-";
   }
 
   const STATUS = {
@@ -5689,15 +5696,15 @@ function ApprovalHistoryPage({ controls }) {
             <table className="w-full" style={{ tableLayout: "fixed" }}>
               <thead className="bg-slate-50 border-b border-slate-200">
                 <tr>
-                  <th className={th} style={{ width: "4%" }}>{t("approvalHistory.colNo")}</th>
+                  <th className={th} style={{ width: "3.5%" }}>{t("approvalHistory.colNo")}</th>
                   <th className={th} style={{ width: "9%" }}>{t("approvalHistory.colCode")}</th>
-                  <th className={th} style={{ width: "26%" }}>{t("approvalHistory.colName")}</th>
-                  <th className={th} style={{ width: "8%" }}>{t("approvalHistory.colType")}</th>
+                  <th className={th} style={{ width: "24%" }}>{t("approvalHistory.colName")}</th>
+                  <th className={th} style={{ width: "7.5%" }}>{t("approvalHistory.colType")}</th>
                   <th className={th} style={{ width: "13%" }}>{t("approvalHistory.colRequester")}</th>
-                  <th className={th} style={{ width: "11%" }}>{t("approvalHistory.colRequestedAt")}</th>
-                  <th className={th} style={{ width: "15%" }}>{t("approvalHistory.colStage")}</th>
+                  <th className={th} style={{ width: "10.5%" }}>{t("approvalHistory.colRequestedAt")}</th>
+                  <th className={th} style={{ width: "14.5%" }}>{t("approvalHistory.colStage")}</th>
                   <th className={th} style={{ width: "7%" }}>{t("approvalHistory.colStatus")}</th>
-                  <th className={th} style={{ width: "7%" }}>{t("approvalHistory.colDecidedAt")}</th>
+                  <th className={th} style={{ width: "11%" }}>{t("approvalHistory.colDecidedAt")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -5720,8 +5727,8 @@ function ApprovalHistoryPage({ controls }) {
                         </span>
                       </td>
                       <td className={td} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-                          title={personByEmail(r.requester, lang, users)}>{personByEmail(r.requester, lang, users)}</td>
-                      <td className={td}>{formatDateTime(r.created, lang)}</td>
+                          title={r.requester}>{nameOfEmail(r.requester)}</td>
+                      <td className={`${td} whitespace-nowrap`}>{formatDateShort(r.created)}</td>
                       {/* 진행 중이면 「2/3 2차 ICS Admin」 과 담당자를 함께 적어, 누가 잡고 있는지 바로 보인다. */}
                       <td className={td}>
                         <span className="font-medium">{stage.text}</span>
@@ -5731,7 +5738,7 @@ function ApprovalHistoryPage({ controls }) {
                         <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap"
                               style={{ backgroundColor: s.bg, color: s.fg }}>{s.label}</span>
                       </td>
-                      <td className={`${td} text-slate-500`}>{decidedAt(r)}</td>
+                      <td className={`${td} text-slate-500 whitespace-nowrap`}>{decidedAt(r)}</td>
                     </tr>
                   );
                 })}
@@ -5777,12 +5784,13 @@ function ChangeHistoryPage({ controls, currentUser }) {
   // 마지막으로 처리된 단계의 시각 = 최종 결재일.
   function decidedAt(r) {
     const last = [...r.steps].reverse().find((st) => st.status !== "pending" && st.date);
-    return last ? formatDateTime(last.date, lang) : "-";
+    return last ? formatDateShort(last.date) : "-";
   }
   // 최종적으로 판단을 내린 사람. 반려면 반려한 사람, 승인이면 마지막 승인자.
+  // 이메일 전체를 넣으면 열을 넘겨 잘리므로 이름으로 줄인다(전체는 title 로).
   function decidedBy(r) {
     const last = [...r.steps].reverse().find((st) => st.status !== "pending");
-    return last ? `${stepLabel(last)} · ${personByEmail(last.approver, lang, users)}` : "-";
+    return last ? `${stepLabel(last)} · ${nameOfEmail(last.approver)}` : "-";
   }
 
   const STATUS = {
@@ -5840,15 +5848,15 @@ function ChangeHistoryPage({ controls, currentUser }) {
           <table className="w-full" style={{ tableLayout: "fixed" }}>
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
-                <th className={th} style={{ width: "4%" }}>{t("approvalHistory.colNo")}</th>
+                <th className={th} style={{ width: "3.5%" }}>{t("approvalHistory.colNo")}</th>
                 <th className={th} style={{ width: "9%" }}>{t("approvalHistory.colCode")}</th>
-                <th className={th} style={{ width: "26%" }}>{t("approvalHistory.colName")}</th>
-                <th className={th} style={{ width: "8%" }}>{t("approvalHistory.colType")}</th>
+                <th className={th} style={{ width: "24%" }}>{t("approvalHistory.colName")}</th>
+                <th className={th} style={{ width: "7.5%" }}>{t("approvalHistory.colType")}</th>
                 <th className={th} style={{ width: "13%" }}>{t("approvalHistory.colRequester")}</th>
-                <th className={th} style={{ width: "11%" }}>{t("approvalHistory.colRequestedAt")}</th>
-                <th className={th} style={{ width: "15%" }}>{t("changeHistory.colDecidedBy")}</th>
+                <th className={th} style={{ width: "10.5%" }}>{t("approvalHistory.colRequestedAt")}</th>
+                <th className={th} style={{ width: "14.5%" }}>{t("changeHistory.colDecidedBy")}</th>
                 <th className={th} style={{ width: "7%" }}>{t("approvalHistory.colStatus")}</th>
-                <th className={th} style={{ width: "7%" }}>{t("changeHistory.colFinal")}</th>
+                <th className={th} style={{ width: "11%" }}>{t("changeHistory.colFinal")}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -5866,16 +5874,14 @@ function ChangeHistoryPage({ controls, currentUser }) {
                         {r.reqType === "delete" ? t("approval.typeDelete") : t("approval.typeEdit")}
                       </span>
                     </td>
-                    <td className={td} style={ell} title={personByEmail(r.requester, lang, users)}>
-                      {personByEmail(r.requester, lang, users)}
-                    </td>
-                    <td className={td}>{formatDateTime(r.created, lang)}</td>
+                    <td className={td} style={ell} title={r.requester}>{nameOfEmail(r.requester)}</td>
+                    <td className={`${td} whitespace-nowrap`}>{formatDateShort(r.created)}</td>
                     <td className={td} style={ell} title={decidedBy(r)}>{decidedBy(r)}</td>
                     <td className={td}>
                       <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap"
                             style={{ backgroundColor: s.bg, color: s.fg }}>{s.label}</span>
                     </td>
-                    <td className={`${td} text-slate-500`}>{decidedAt(r)}</td>
+                    <td className={`${td} text-slate-500 whitespace-nowrap`}>{decidedAt(r)}</td>
                   </tr>
                 );
               })}
