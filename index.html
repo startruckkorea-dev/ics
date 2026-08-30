@@ -189,8 +189,11 @@ function hasCategoryAccess(user, categoryKey) {
   }
   if (grant && grant[categoryKey]) return true;
   if (categoryKey === "adminOnly") return user.role === "admin";
-  // 부서별 통제 현황(controlMgmt)은 관리자 전용으로 이동했다.
-  // 관리자이거나, 카테고리 접근 권한 표에서 「통제 관리」가 체크된 계정만 접근한다.
+  // controlMgmt 는 page === "list"(부서별 통제 현황) 하나만 여는데, 그 화면으로 가는
+  // 메뉴가 없어 실제로는 도달할 수 없다. 그래서 08-30 부터 카테고리 접근 권한 표에서
+  // 「통제 관리」 열을 뺐다.
+  // 판정과 SharePoint 컬럼(ControlMgmt)은 남겨 둔다 — 기존에 저장된 값을 지우지 않고,
+  // 나중에 그 화면을 메뉴로 되살릴 때 그대로 쓰기 위해서다.
   if (categoryKey === "controlMgmt") return user.role === "admin";
   if (categoryKey === "executive") return user.role === "admin" || user.role === "cfo" || user.role === "rd";
   return true; // icsOverview — 대시보드·학습은 전 직원 공개
@@ -791,7 +794,7 @@ const STR = {
       title: "카테고리 접근 권한",
       subtitle: "직원별 카테고리 접근 권한을 관리자가 직접 체크박스로 부여·변경할 수 있습니다. 변경 즉시 SharePoint(ICS_CategoryAccess)에 저장되고 활동 로그에도 기록됩니다.",
       colUser: "사용자", colCategory: "카테고리",
-      defaultNote: "기본 권한: ICS Overview는 전체 공개, 통제 관리(부서별 통제 현황·통제 항목 관리)는 Admin, 관리자 전용은 Admin, 경영진 전용은 Admin/CFO/RD만 기본 접근 가능. 단, ISA 1차 자가평가·ISA 2차 검토·FSA 최종 자가평가·FSA 2차검토 4개 화면은 역할(Admin 포함)과 무관하게 아래 표에 체크된 계정만 접근 가능합니다 (기본 허용 없음). 평가 이력·리포트는 이 4개 중 검토·FSA·FSA검토 중 하나라도 있으면 별도 등록 없이 접근 가능합니다. 「관리자 전용」을 체크하면 화면은 열리지만, 통제 항목 추가·수정·삭제와 전체 부서 조회는 Admin 역할이 있어야 합니다.",
+      defaultNote: "기본 권한: ICS Overview(대시보드·학습·결재 승인)는 전체 공개, 관리자 전용은 Admin, 경영진 전용은 Admin/CFO/RD만 기본 접근 가능. 단, ISA 1차 자가평가·ISA 2차 검토·FSA 최종 자가평가·FSA 2차검토 4개 화면은 역할(Admin 포함)과 무관하게 아래 표에 체크된 계정만 접근 가능합니다 (기본 허용 없음). 평가 이력·리포트는 이 4개 중 검토·FSA·FSA검토 중 하나라도 있으면 별도 등록 없이 접근 가능합니다. 결재 승인은 별도 등록 없이 누구나 들어올 수 있으며, 본인에게 배정된 건만 표시됩니다. 「관리자 전용」을 체크하면 화면은 열리지만, 통제 항목 추가·수정·삭제와 전체 부서 조회는 Admin 역할이 있어야 합니다.",
       emptyText: "검색 결과가 없습니다.",
       requestGuideTitle: "카테고리 접근 권한 신청 방법",
       viewOnlyNotice: "이 화면은 조회 전용입니다. 권한 변경은 Admin 계정으로 로그인해서 진행해 주세요.",
@@ -1155,7 +1158,7 @@ const STR = {
       title: "Category Access",
       subtitle: "Admins can grant or change category access per employee directly with checkboxes. Changes save immediately to SharePoint (ICS_CategoryAccess) and are logged.",
       colUser: "User", colCategory: "Category",
-      defaultNote: "Defaults: ICS Overview is open to everyone. Control Management (Department Control Status and Control Item Management) is Admin only. Admin only is Admin by default; Executive is Admin/CFO/RD by default. However, ISA 1st Self-Assessment, ISA 2nd Review, FSA Final Self-Assessment, and FSA 2nd Review are only accessible to accounts checked below, regardless of role (including Admin) — there is no default access. History & Reports is accessible if the account has access to any of Review, FSA, or FSA Review, with no separate entry needed. Ticking Admin only opens those screens \u2014 adding, editing, or deleting control items and viewing all departments still require the Admin role.",
+      defaultNote: "Defaults: ICS Overview (Dashboard, Learning, Approvals) is open to everyone. Admin only is Admin by default; Executive is Admin/CFO/RD by default. However, ISA 1st Self-Assessment, ISA 2nd Review, FSA Final Self-Assessment, and FSA 2nd Review are only accessible to accounts checked below, regardless of role (including Admin) — there is no default access. History & Reports is accessible if the account has access to any of Review, FSA, or FSA Review, with no separate entry needed. Approvals requires no entry — anyone can open it, and only items assigned to them are shown. Ticking Admin only opens those screens \u2014 adding, editing, or deleting control items and viewing all departments still require the Admin role.",
       emptyText: "No results found.",
       requestGuideTitle: "How to request category access",
       viewOnlyNotice: "This screen is view-only. Please sign in with an Admin account to change permissions.",
@@ -1371,6 +1374,11 @@ const MENU_GROUPS = [
   { key: "icsOverview", label: "icsOverview", items: [
     { key: "dashboard", icon: LayoutDashboard },
     { key: "learn", icon: GraduationCap },
+    // 결재 승인은 별도 접근 권한 없이 전 직원이 들어올 수 있다.
+    // 본인에게 배정된 건만 표시되므로 할당이 없으면 빈 화면이 나온다.
+    // 평가 그룹에 두면 옆의 ISA·FSA 4개처럼 권한이 필요한 화면으로 오해하기 쉬워
+    // 전 직원 공개인 대시보드·학습과 같은 자리에 둔다.
+    { key: "approval", icon: FileCheck2 },
   ] },
   { key: "assessment", label: "assessment", items: [
     { key: "self", icon: ClipboardList, hiddenFor: ["cfo", "rd"], categoryKey: "self" },
@@ -1378,9 +1386,6 @@ const MENU_GROUPS = [
     { key: "fsa", icon: ShieldCheck, hiddenFor: ["cfo", "rd"], categoryKey: "fsa" },
     { key: "fsaReview", icon: CheckCircle2, categoryKey: "fsaReview" },
     { key: "history", icon: History, categoryKey: "history" },
-    // 결재 승인은 별도 접근 권한 없이 전 직원이 들어올 수 있다.
-    // 본인에게 배정된 건만 표시되므로 할당이 없으면 빈 화면이 나온다.
-    { key: "approval", icon: FileCheck2 },
   ] },
   { key: "adminOnly", label: "adminOnly", items: [
     { key: "settings", icon: Settings },
@@ -6137,9 +6142,12 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
   const [removing, setRemoving] = useState(null);
   const [confirmRemove, setConfirmRemove] = useState(null);
 
-  const categoryKeys = ["controlMgmt", "self", "review", "fsa", "fsaReview", "adminOnly", "executive"];
+  // 「통제 관리」는 뺐다. 그 열이 여는 화면(page === "list")으로 가는 메뉴가 없어
+  // 체크해도 아무 변화가 없었다. 관리자가 보고 판단만 흐려지는 열이었다.
+  // SharePoint 의 ControlMgmt 컬럼과 hasCategoryAccess 분기는 남겨 둔다 —
+  // 기존에 저장된 값을 지우지 않기 위해서다(화면에서만 다루지 않는다).
+  const categoryKeys = ["self", "review", "fsa", "fsaReview", "adminOnly", "executive"];
   const categoryLabelPath = {
-    controlMgmt: "navGroup.controlMgmt",
     self: "nav.self",
     review: "nav.review",
     fsa: "nav.fsa",
