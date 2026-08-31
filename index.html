@@ -5613,8 +5613,11 @@ function RequestDetailModal({ r, controls, onClose, canAct, canCancel, acting, c
     cancelled: { label: t("approval.cancelled"),       bg: "#F1F5F9", fg: "#64748B" },
   }[r.status] || { label: r.status, bg: "#F1F5F9", fg: "#64748B" };
 
+  // 요청자·요청 시간·요청 사유 세 줄. 한 줄짜리 값이라 위아래 여백이 넉넉할 이유가 없다.
+  // py-1.5(6px씩) 는 세 줄이면 36px 을 먹어 아래 비교표가 그만큼 밀린다.
+  // 줄 간격을 좁히고 leading 을 함께 맞춰 글자가 붙어 보이지 않게 한다.
   const Row = ({ label, children }) => (
-    <div className="flex gap-3 py-1.5">
+    <div className="flex gap-3 py-[3px] leading-5">
       <span className="text-slate-400 w-[104px] flex-shrink-0">{label}</span>
       <span className="min-w-0 flex-1">{children}</span>
     </div>
@@ -5654,7 +5657,7 @@ function RequestDetailModal({ r, controls, onClose, canAct, canCancel, acting, c
               style={{ backgroundColor: S.bg, color: S.fg }}>{S.label}</span>
       </div>
 
-      <div className="bg-slate-50 rounded-lg px-4 py-3 text-xs text-slate-700">
+      <div className="bg-slate-50 rounded-lg px-4 py-2.5 text-xs text-slate-700">
         <Row label={t("approval.hRequester")}>{personByEmail(r.requester, lang, users)}</Row>
         <Row label={t("approval.hRequestedAt")}>{formatDateTime(r.created, lang)}</Row>
         {r.payload?.reason && (
