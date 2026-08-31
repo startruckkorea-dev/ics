@@ -5625,9 +5625,12 @@ async function exportRequestPdf(bodyId, fileName, title) {
       return dataUrlToUint8(hc.toDataURL("image/png"));
     }
 
-    const A4W = 595, A4H = 842, marginPt = 34, hdrH = 22;
-    const printW = A4W - marginPt * 2;
-    const printableH = A4H - marginPt * 2 - hdrH;
+    // 위쪽 여백은 좌우·아래와 따로 잡는다. 배너가 이미 경계를 만들어 주므로
+    // 34pt(12mm)를 그대로 두면 배너와 제목 사이가 통째로 비어 내용이 밀려 보인다.
+    const A4W = 595, A4H = 842, hdrH = 22;
+    const marginX = 34, marginTop = 12, marginBottom = 28;
+    const printW = A4W - marginX * 2;
+    const printableH = A4H - hdrH - marginTop - marginBottom;
     const pxPerPt = cvs.width / A4W;
     const sliceH = Math.round(printableH * pxPerPt);
     const pages = Math.max(1, Math.ceil(cvs.height / sliceH));
@@ -5645,7 +5648,7 @@ async function exportRequestPdf(bodyId, fileName, title) {
       sc.getContext("2d").drawImage(cvs, 0, srcY, cvs.width, hPx, 0, 0, cvs.width, hPx);
       const sb = await dataUrlToUint8(sc.toDataURL("image/jpeg", 0.92));
       const si = await doc.embedJpg(sb);
-      page.drawImage(si, { x: marginPt, y: A4H - hdrH - marginPt - hPt, width: printW, height: hPt });
+      page.drawImage(si, { x: marginX, y: A4H - hdrH - marginTop - hPt, width: printW, height: hPt });
     }
 
     const bytes = await doc.save();
