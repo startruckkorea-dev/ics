@@ -5221,13 +5221,20 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
   useEffect(() => { reload(); }, []);
 
   // 내 차례인 건 = 진행 중 && 현재 단계의 승인자가 나
+  // 요청일 최신순. loadIcsChangeRequests 는 SharePoint 가 준 순서(대체로 오래된 것 먼저)를
+  // 그대로 돌려주므로, 정렬하지 않으면 예전 건이 맨 위에 온다.
+  // 결재 승인 이력·나의 결재 이력·통제 항목 변경 이력이 모두 최신순이라 여기도 맞춘다.
+  const byNewest = (a, b) => new Date(b.created || 0) - new Date(a.created || 0);
+
   const myTurn = requests.filter((r) => {
     if (r.status !== "pending") return false;
     const cur = r.steps[r.step - 1];
     return cur && (cur.approver || "").toLowerCase() === myEmail && cur.status === "pending";
-  });
+  }).sort(byNewest);
   // 내가 올린 요청
-  const mine = requests.filter((r) => r.requester === myEmail && r.status !== "cancelled");
+  const mine = requests
+    .filter((r) => r.requester === myEmail && r.status !== "cancelled")
+    .sort(byNewest);
 
   function labelOf(r) {
     const c = controls.find((x) => x.code === r.code && x.year === r.year);
