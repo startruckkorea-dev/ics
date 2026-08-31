@@ -5145,9 +5145,12 @@ function DiffTable({ r, controls }) {
   ];
 
   return (
+    // 라벨 열 폭은 가장 긴 라벨이 한 줄에 들어가야 정해진다.
+    //   한글 「통제 설명 (한글)」 87px · 영문 「Control name (KO)」 100px (text-xs 기준)
+    //   좌우 여백 20px 을 더해 124px. 92px 이던 때는 「(한글)」 이 아래로 내려갔다.
     <div className="mt-3 rounded-lg border border-slate-200 overflow-hidden">
-      <div className="grid grid-cols-[92px_1fr_1fr] text-[11px] font-medium bg-slate-100 text-slate-500">
-        <div className="px-2.5 py-1.5">{t("approval.changeContent")}</div>
+      <div className="grid grid-cols-[124px_1fr_1fr] text-[11px] font-medium bg-slate-100 text-slate-500">
+        <div className="px-2.5 py-1.5 whitespace-nowrap">{t("approval.changeContent")}</div>
         <div className="px-2.5 py-1.5 border-l border-slate-200">{t("approval.asIs")}</div>
         <div className="px-2.5 py-1.5 border-l border-slate-200" style={{ color: "#15803D" }}>{t("approval.toBe")}</div>
       </div>
@@ -5155,9 +5158,9 @@ function DiffTable({ r, controls }) {
         const changed = String(a) !== String(b);
         return (
           <div key={i}
-               className="grid grid-cols-[92px_1fr_1fr] text-xs border-t border-slate-100"
+               className="grid grid-cols-[124px_1fr_1fr] text-xs border-t border-slate-100"
                style={{ backgroundColor: changed ? "#FFFDF5" : "#fff" }}>
-            <div className="px-2.5 py-2 text-slate-400">{label}</div>
+            <div className="px-2.5 py-2 text-slate-400 whitespace-nowrap">{label}</div>
             <div className="px-2.5 py-2 border-l border-slate-100 text-slate-500 whitespace-pre-wrap break-words">{a}</div>
             <div className="px-2.5 py-2 border-l border-slate-100 whitespace-pre-wrap break-words"
                  style={{ color: changed ? "#15803D" : "#64748B", fontWeight: changed ? 600 : 400 }}>{b}</div>
