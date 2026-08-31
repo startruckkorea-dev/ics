@@ -5540,7 +5540,7 @@ function RequestTable({ rows, controls, kind, onPick }) {
                 <td className={`${td} font-mono text-slate-500`}>{r.code}</td>
                 <td className={td} style={ell} title={labelOf(r)}>{labelOf(r)}</td>
                 <td className={td}>
-                  <span className="px-2 py-[3px] leading-none rounded-full text-[11px] font-medium whitespace-nowrap"
+                  <span className="px-2 leading-[20px] rounded-full text-[11px] font-medium whitespace-nowrap"
                         style={{ backgroundColor: r.reqType === "delete" ? "#FEE2E2" : "#E4F1F0",
                                  color: r.reqType === "delete" ? "#B91C1C" : BRAND.accent }}>
                     {r.reqType === "delete" ? t("approval.typeDelete") : t("approval.typeEdit")}
@@ -5560,7 +5560,7 @@ function RequestTable({ rows, controls, kind, onPick }) {
                     행 전체가 hover 로 밝아지고 커서도 손 모양이라 이것으로 충분하다. */}
                 <td className={td}>
                   <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-                    <span className="px-2 py-[3px] leading-none rounded-full text-[11px] font-semibold"
+                    <span className="px-2 leading-[20px] rounded-full text-[11px] font-semibold"
                           style={{ backgroundColor: s.bg, color: s.fg }}>{s.label}</span>
                     {kind === "turn" && <ChevronRight size={13} style={{ color: BRAND.accent }} />}
                   </span>
@@ -5697,12 +5697,15 @@ async function exportRequestPdf(bodyId, fileName, title) {
   }
 }
 
-// [배지 글자 정렬] 배지에는 leading-none 을 함께 준다.
-// text-xs 의 기본 line-height 는 1rem(16px)이고 글자는 12px 이라 위아래 2px 씩 여유가 생긴다.
-// 브라우저는 그 여유를 균등하게 나눠 글자를 가운데 두지만, html2canvas 는 글꼴 baseline 을
-// 자기 방식으로 계산해 아래쪽으로 치우치게 그린다. PDF 에서 배지 글자만 내려앉아 보이던 원인이다.
-// line-height 를 1 로 두면 여유 자체가 없어져 어긋날 여지가 사라진다.
-// 줄어든 높이는 padding 으로 되돌린다(py-1 → py-[5px], py-0.5 → py-[3px]).
+// [배지 글자 정렬] 배지 높이는 세로 padding 이 아니라 line-height 로 만든다.
+// html2canvas 는 글자를 line box 기준으로 앉히는데, 세로 padding 으로 높이를 만들면
+// padding 은 line box 밖이라 계산에 들어가지 않아 글자가 아래쪽으로 치우친다.
+// 실제로 PDF 를 6배로 확대해 재 보니 배지 24.5px 안에서 글자가 아래에 붙어
+// 위 여백 13px · 아래 여백 0.5px 이었다.
+// 세로 padding 을 없애고 line-height 로 높이를 만들면 line box 가 곧 요소 높이가 되어
+// html2canvas 도 그 안에서 글자를 앉힌다.
+//   px-3 py-1  (12px 글자) → px-3 leading-[24px]
+//   px-2 py-0.5 (11px 글자) → px-2 leading-[20px]
 
 // 결재 요청 상세. 결재 승인 이력·통제 항목 변경 이력이 같은 팝업을 쓴다.
 // 표에는 한 줄에 담기는 것만 두고, 사유·의견·단계별 처리 시각은 여기서 본다.
@@ -5763,16 +5766,16 @@ function RequestDetailModal({ r, controls, onClose, canAct, canCancel, acting, c
       {/* 구분·상태 배지와 요청 취소를 한 줄에 둔다. 취소 버튼을 맨 아래 두었더니
           긴 비교표를 다 지나쳐야 보여, 취소할 수 있다는 것을 모르고 지나쳤다. */}
       <div className="flex items-center gap-2 mb-3">
-        <span className="text-xs px-3 py-[5px] leading-none rounded-full font-semibold"
+        <span className="text-xs px-3 leading-[24px] rounded-full font-semibold"
               style={{ backgroundColor: r.reqType === "delete" ? "#FEE2E2" : "#E4F1F0",
                        color: r.reqType === "delete" ? "#B91C1C" : BRAND.accent }}>
           {r.reqType === "delete" ? t("approval.typeDelete") : t("approval.typeEdit")}
         </span>
-        <span className="text-xs px-3 py-[5px] leading-none rounded-full font-semibold"
+        <span className="text-xs px-3 leading-[24px] rounded-full font-semibold"
               style={{ backgroundColor: S.bg, color: S.fg }}>{S.label}</span>
         {canCancel && (
           <button onClick={onCancelReq} disabled={acting}
-                  className="ml-auto text-xs px-3 py-[5px] leading-none rounded-full font-medium flex items-center gap-1.5 border border-slate-300 text-slate-600 hover:border-red-300 hover:text-red-600 hover:bg-red-50 disabled:opacity-40">
+                  className="ml-auto text-xs px-3 h-[24px] leading-[24px] rounded-full font-medium inline-flex items-center gap-1.5 border border-slate-300 text-slate-600 hover:border-red-300 hover:text-red-600 hover:bg-red-50 disabled:opacity-40">
             <Undo2 size={12} /> {t("approval.cancelBtn")}
           </button>
         )}
@@ -6023,7 +6026,7 @@ function MyApprovalsPage({ controls, currentUser }) {
                     <td className={`${td} font-mono text-slate-500`}>{r.code}</td>
                     <td className={td} style={ell} title={labelOf(r)}>{labelOf(r)}</td>
                     <td className={td}>
-                      <span className="px-2 py-[3px] leading-none rounded-full text-[11px] font-medium whitespace-nowrap"
+                      <span className="px-2 leading-[20px] rounded-full text-[11px] font-medium whitespace-nowrap"
                             style={{ backgroundColor: r.reqType === "delete" ? "#FEE2E2" : "#E4F1F0",
                                      color: r.reqType === "delete" ? "#B91C1C" : BRAND.accent }}>
                         {r.reqType === "delete" ? t("approval.typeDelete") : t("approval.typeEdit")}
@@ -6037,7 +6040,7 @@ function MyApprovalsPage({ controls, currentUser }) {
                       {step.date ? formatDateTime(step.date, lang) : "-"}
                     </td>
                     <td className={td}>
-                      <span className="px-2 py-[3px] leading-none rounded-full text-[11px] font-semibold whitespace-nowrap"
+                      <span className="px-2 leading-[20px] rounded-full text-[11px] font-semibold whitespace-nowrap"
                             style={{ backgroundColor: S.bg, color: S.fg }}>{S.label}</span>
                     </td>
                   </tr>
@@ -6191,7 +6194,7 @@ function ApprovalHistoryPage({ controls }) {
                       <td className={td} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
                           title={labelOf(r)}>{labelOf(r)}</td>
                       <td className={td}>
-                        <span className="px-2 py-[3px] leading-none rounded-full text-[11px] font-medium whitespace-nowrap"
+                        <span className="px-2 leading-[20px] rounded-full text-[11px] font-medium whitespace-nowrap"
                               style={{ backgroundColor: r.reqType === "delete" ? "#FEE2E2" : "#E4F1F0",
                                        color: r.reqType === "delete" ? "#B91C1C" : BRAND.accent }}>
                           {r.reqType === "delete" ? t("approval.typeDelete") : t("approval.typeEdit")}
@@ -6209,7 +6212,7 @@ function ApprovalHistoryPage({ controls }) {
                         {stage.who && <span className="text-slate-400"> · {stage.who}</span>}
                       </td>
                       <td className={td}>
-                        <span className="px-2 py-[3px] leading-none rounded-full text-[11px] font-semibold whitespace-nowrap"
+                        <span className="px-2 leading-[20px] rounded-full text-[11px] font-semibold whitespace-nowrap"
                               style={{ backgroundColor: s.bg, color: s.fg }}>{s.label}</span>
                       </td>
                       <td className={`${td} text-slate-500 whitespace-nowrap`}>{decidedAt(r)}</td>
@@ -6350,7 +6353,7 @@ function ChangeHistoryPage({ controls, currentUser }) {
                     <td className={`${td} font-mono text-slate-500`}>{r.code}</td>
                     <td className={td} style={ell} title={labelOf(r)}>{labelOf(r)}</td>
                     <td className={td}>
-                      <span className="px-2 py-[3px] leading-none rounded-full text-[11px] font-medium whitespace-nowrap"
+                      <span className="px-2 leading-[20px] rounded-full text-[11px] font-medium whitespace-nowrap"
                             style={{ backgroundColor: r.reqType === "delete" ? "#FEE2E2" : "#E4F1F0",
                                      color: r.reqType === "delete" ? "#B91C1C" : BRAND.accent }}>
                         {r.reqType === "delete" ? t("approval.typeDelete") : t("approval.typeEdit")}
@@ -6360,7 +6363,7 @@ function ChangeHistoryPage({ controls, currentUser }) {
                     <td className={`${td} whitespace-nowrap`}>{formatDateShort(r.created)}</td>
                     <td className={td} style={ell} title={decidedBy(r)}>{decidedBy(r)}</td>
                     <td className={td}>
-                      <span className="px-2 py-[3px] leading-none rounded-full text-[11px] font-semibold whitespace-nowrap"
+                      <span className="px-2 leading-[20px] rounded-full text-[11px] font-semibold whitespace-nowrap"
                             style={{ backgroundColor: s.bg, color: s.fg }}>{s.label}</span>
                     </td>
                     <td className={`${td} text-slate-500 whitespace-nowrap`}>{decidedAt(r)}</td>
