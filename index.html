@@ -331,6 +331,17 @@ function personByEmail(email, lang, users = INITIAL_USERS) {
   return email || "-";
 }
 
+// 결재 요청 번호. ICS-2026-08-31_ID-1 형태.
+//   날짜는 요청일, 뒤 숫자는 SharePoint 항목 번호(spId)다.
+// spId 는 SharePoint 가 항목마다 매기고 중복되지 않게 보장하므로,
+// 번호를 저장할 열을 따로 만들 필요가 없다. 이미 쌓인 요청에도 그대로 붙는다.
+// (ACC Voucher 도 같은 방식 — 'ACC-Voucher-'+dateStr+'_ID-'+requestId)
+function reqNo(r) {
+  if (!r) return "-";
+  const d = String(r.created || "").slice(0, 10) || "0000-00-00";
+  return `ICS-${d}_ID-${r.spId}`;
+}
+
 // 이메일에 해당하는 이름. employee_search.xlsx 로 채운 명부에서 찾는다.
 // 명부에 없으면(서비스 계정 등) 이메일의 @ 앞부분을 쓴다 — 이메일 전체보다 짧고,
 // 사람 이름이 아니라는 것도 그대로 드러난다.
@@ -765,7 +776,7 @@ const STR = {
     approvalHistory: {
       subtitle: "진행 중인 건을 포함한 모든 결재 요청을 요청일 순으로 봅니다.",
       searchPh: "통제 코드 · 항목명 · 요청자 · 결재자로 검색",
-      colNo: "번호", colCode: "통제 코드", colName: "통제명", colType: "구분",
+      colNo: "번호", colReqNo: "요청 번호", colCode: "통제 코드", colName: "통제명", colType: "구분",
       colRequester: "요청자", colRequestedAt: "요청일", colStage: "현재 단계",
       colStatus: "상태", colDecidedAt: "처리일",
       total: "총", unit: "건",
@@ -1157,7 +1168,7 @@ const STR = {
     approvalHistory: {
       subtitle: "All approval requests, including those in progress, listed by request date.",
       searchPh: "Search by control code, name, requester, or approver",
-      colNo: "No.", colCode: "Control code", colName: "Control name", colType: "Type",
+      colNo: "No.", colReqNo: "Request no.", colCode: "Control code", colName: "Control name", colType: "Type",
       colRequester: "Requester", colRequestedAt: "Requested", colStage: "Current stage",
       colStatus: "Status", colDecidedAt: "Decided",
       total: "Total", unit: "",
@@ -5503,13 +5514,14 @@ function RequestTable({ rows, controls, kind, onPick }) {
         <thead className="bg-slate-50 border-b border-slate-200">
           <tr>
             <th className={th} style={{ width: "3.5%" }}>{t("approvalHistory.colNo")}</th>
-            <th className={th} style={{ width: "9%" }}>{t("approvalHistory.colCode")}</th>
-            <th className={th} style={{ width: "28%" }}>{t("approvalHistory.colName")}</th>
+                <th className={th} style={{ width: "13%" }}>{t("approvalHistory.colReqNo")}</th>
+            <th className={th} style={{ width: "8%" }}>{t("approvalHistory.colCode")}</th>
+            <th className={th} style={{ width: "23%" }}>{t("approvalHistory.colName")}</th>
             <th className={th} style={{ width: "7.5%" }}>{t("approvalHistory.colType")}</th>
-            <th className={th} style={{ width: "13%" }}>{t("approvalHistory.colRequester")}</th>
+            <th className={th} style={{ width: "11%" }}>{t("approvalHistory.colRequester")}</th>
             <th className={th} style={{ width: "11%" }}>{t("approvalHistory.colRequestedAt")}</th>
-            <th className={th} style={{ width: "16%" }}>{t("approvalHistory.colStage")}</th>
-            <th className={th} style={{ width: "12%" }}>{t("approvalHistory.colStatus")}</th>
+            <th className={th} style={{ width: "13%" }}>{t("approvalHistory.colStage")}</th>
+            <th className={th} style={{ width: "10%" }}>{t("approvalHistory.colStatus")}</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
@@ -5523,6 +5535,8 @@ function RequestTable({ rows, controls, kind, onPick }) {
             return (
               <tr key={r.spId} onClick={() => onPick(r)} className="hover:bg-slate-50 cursor-pointer">
                 <td className={`${td} text-slate-400 text-center`}>{rows.length - (page * APPR_PAGE_SIZE + i)}</td>
+                    {/* 요청 번호. 결재 문의·메일에서 이 번호로 건을 특정한다. */}
+                    <td className={`${td} font-mono text-slate-500`} style={ell} title={reqNo(r)}>{reqNo(r)}</td>
                 <td className={`${td} font-mono text-slate-500`}>{r.code}</td>
                 <td className={td} style={ell} title={labelOf(r)}>{labelOf(r)}</td>
                 <td className={td}>
@@ -5721,13 +5735,12 @@ function RequestDetailModal({ r, controls, onClose, canAct, canCancel, acting, c
   async function onPdf() {
     setPdfBusy(true);
     // 파일명에 통제 코드와 요청일을 넣어 여러 건을 받아도 구분된다.
-    const d = (r.created || "").slice(0, 10) || "unknown";
-    await exportRequestPdf(bodyId, `ICS_${r.code}_${d}.pdf`, `${r.code} · ${name}`);
+    await exportRequestPdf(bodyId, `${reqNo(r)}.pdf`, `${reqNo(r)} · ${name}`);
     setPdfBusy(false);
   }
 
   return (
-    <Modal title={`${r.code} · ${name}`} size="xl" onClose={onClose}
+    <Modal title={`${reqNo(r)} · ${name}`} size="xl" onClose={onClose}
            bodyId={bodyId}
            headerActions={
              <button onClick={onPdf} disabled={pdfBusy}
@@ -5759,6 +5772,8 @@ function RequestDetailModal({ r, controls, onClose, canAct, canCancel, acting, c
       </div>
 
       <div className="bg-slate-50 rounded-lg px-4 py-2 text-xs text-slate-700">
+        {/* 통제 코드는 제목이 요청 번호로 바뀌었으므로 여기서 함께 보여 준다. */}
+        <Row label={t("approvalHistory.colCode")}>{r.code}</Row>
         <Row label={t("approval.hRequester")}>{personByEmail(r.requester, lang, users)}</Row>
         <Row label={t("approval.hRequestedAt")}>{formatDateTime(r.created, lang)}</Row>
         {r.payload?.reason && (
@@ -5969,13 +5984,14 @@ function MyApprovalsPage({ controls, currentUser }) {
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
                 <th className={th} style={{ width: "4%" }}>{t("approvalHistory.colNo")}</th>
-                <th className={th} style={{ width: "9%" }}>{t("approvalHistory.colCode")}</th>
-                <th className={th} style={{ width: "28%" }}>{t("approvalHistory.colName")}</th>
+                <th className={th} style={{ width: "13%" }}>{t("approvalHistory.colReqNo")}</th>
+                <th className={th} style={{ width: "8%" }}>{t("approvalHistory.colCode")}</th>
+                <th className={th} style={{ width: "21%" }}>{t("approvalHistory.colName")}</th>
                 <th className={th} style={{ width: "8%" }}>{t("approvalHistory.colType")}</th>
-                <th className={th} style={{ width: "13%" }}>{t("approvalHistory.colRequester")}</th>
-                <th className={th} style={{ width: "12%" }}>{t("myApprovals.colMyStep")}</th>
+                <th className={th} style={{ width: "11%" }}>{t("approvalHistory.colRequester")}</th>
+                <th className={th} style={{ width: "10%" }}>{t("myApprovals.colMyStep")}</th>
                 <th className={th} style={{ width: "8%" }}>{t("myApprovals.colMyResult")}</th>
-                <th className={th} style={{ width: "11%" }}>{t("myApprovals.colMyDate")}</th>
+                <th className={th} style={{ width: "10%" }}>{t("myApprovals.colMyDate")}</th>
                 <th className={th} style={{ width: "7%" }}>{t("approvalHistory.colStatus")}</th>
               </tr>
             </thead>
@@ -5995,6 +6011,8 @@ function MyApprovalsPage({ controls, currentUser }) {
                 return (
                   <tr key={r.spId} onClick={() => setDetail(r)} className="hover:bg-slate-50 cursor-pointer">
                     <td className={`${td} text-slate-400 text-center`}>{rows.length - (pageMy * APPR_PAGE_SIZE + i)}</td>
+                    {/* 요청 번호. 결재 문의·메일에서 이 번호로 건을 특정한다. */}
+                    <td className={`${td} font-mono text-slate-500`} style={ell} title={reqNo(r)}>{reqNo(r)}</td>
                     <td className={`${td} font-mono text-slate-500`}>{r.code}</td>
                     <td className={td} style={ell} title={labelOf(r)}>{labelOf(r)}</td>
                     <td className={td}>
@@ -6138,14 +6156,15 @@ function ApprovalHistoryPage({ controls }) {
               <thead className="bg-slate-50 border-b border-slate-200">
                 <tr>
                   <th className={th} style={{ width: "3.5%" }}>{t("approvalHistory.colNo")}</th>
-                  <th className={th} style={{ width: "9%" }}>{t("approvalHistory.colCode")}</th>
-                  <th className={th} style={{ width: "24%" }}>{t("approvalHistory.colName")}</th>
+                <th className={th} style={{ width: "13%" }}>{t("approvalHistory.colReqNo")}</th>
+                  <th className={th} style={{ width: "8%" }}>{t("approvalHistory.colCode")}</th>
+                  <th className={th} style={{ width: "18.5%" }}>{t("approvalHistory.colName")}</th>
                   <th className={th} style={{ width: "7.5%" }}>{t("approvalHistory.colType")}</th>
-                  <th className={th} style={{ width: "13%" }}>{t("approvalHistory.colRequester")}</th>
+                  <th className={th} style={{ width: "11%" }}>{t("approvalHistory.colRequester")}</th>
                   <th className={th} style={{ width: "10.5%" }}>{t("approvalHistory.colRequestedAt")}</th>
-                  <th className={th} style={{ width: "14.5%" }}>{t("approvalHistory.colStage")}</th>
+                  <th className={th} style={{ width: "12%" }}>{t("approvalHistory.colStage")}</th>
                   <th className={th} style={{ width: "7%" }}>{t("approvalHistory.colStatus")}</th>
-                  <th className={th} style={{ width: "11%" }}>{t("approvalHistory.colDecidedAt")}</th>
+                  <th className={th} style={{ width: "9%" }}>{t("approvalHistory.colDecidedAt")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -6156,6 +6175,10 @@ function ApprovalHistoryPage({ controls }) {
                     <tr key={r.spId} onClick={() => setDetail(r)}
                         className="hover:bg-slate-50 cursor-pointer">
                       <td className={`${td} text-slate-400 text-center`}>{rows.length - (pageAh * APPR_PAGE_SIZE + i)}</td>
+                    {/* 요청 번호. 결재 문의·메일에서 이 번호로 건을 특정한다. */}
+                    <td className={`${td} font-mono text-slate-500`}
+                          style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                          title={reqNo(r)}>{reqNo(r)}</td>
                       <td className={`${td} font-mono text-slate-500`}>{r.code}</td>
                       {/* 항목명은 길어질 수 있어 말줄임한다. 전체는 마우스를 올리면 보인다. */}
                       <td className={td} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
@@ -6298,14 +6321,15 @@ function ChangeHistoryPage({ controls, currentUser }) {
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
                 <th className={th} style={{ width: "3.5%" }}>{t("approvalHistory.colNo")}</th>
-                <th className={th} style={{ width: "9%" }}>{t("approvalHistory.colCode")}</th>
-                <th className={th} style={{ width: "24%" }}>{t("approvalHistory.colName")}</th>
+                <th className={th} style={{ width: "13%" }}>{t("approvalHistory.colReqNo")}</th>
+                <th className={th} style={{ width: "8%" }}>{t("approvalHistory.colCode")}</th>
+                <th className={th} style={{ width: "18.5%" }}>{t("approvalHistory.colName")}</th>
                 <th className={th} style={{ width: "7.5%" }}>{t("approvalHistory.colType")}</th>
-                <th className={th} style={{ width: "13%" }}>{t("approvalHistory.colRequester")}</th>
+                <th className={th} style={{ width: "11%" }}>{t("approvalHistory.colRequester")}</th>
                 <th className={th} style={{ width: "10.5%" }}>{t("approvalHistory.colRequestedAt")}</th>
-                <th className={th} style={{ width: "14.5%" }}>{t("changeHistory.colDecidedBy")}</th>
+                <th className={th} style={{ width: "12%" }}>{t("changeHistory.colDecidedBy")}</th>
                 <th className={th} style={{ width: "7%" }}>{t("approvalHistory.colStatus")}</th>
-                <th className={th} style={{ width: "11%" }}>{t("changeHistory.colFinal")}</th>
+                <th className={th} style={{ width: "9%" }}>{t("changeHistory.colFinal")}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -6314,6 +6338,8 @@ function ChangeHistoryPage({ controls, currentUser }) {
                 return (
                   <tr key={r.spId} onClick={() => setDetail(r)} className="hover:bg-slate-50 cursor-pointer">
                     <td className={`${td} text-slate-400 text-center`}>{rows.length - (pageCh * APPR_PAGE_SIZE + i)}</td>
+                    {/* 요청 번호. 결재 문의·메일에서 이 번호로 건을 특정한다. */}
+                    <td className={`${td} font-mono text-slate-500`} style={ell} title={reqNo(r)}>{reqNo(r)}</td>
                     <td className={`${td} font-mono text-slate-500`}>{r.code}</td>
                     <td className={td} style={ell} title={labelOf(r)}>{labelOf(r)}</td>
                     <td className={td}>
