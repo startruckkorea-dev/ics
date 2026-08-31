@@ -5700,19 +5700,20 @@ async function exportRequestPdf(bodyId, fileName, title) {
   }
 }
 
-// [배지 글자 정렬] line-height 를 글자 크기와 같게 두고(leading-none),
-// 높이는 세로 padding 으로 만든다.
+// [배지 글자 정렬] 글자를 안쪽 span 으로 한 겹 감싼다.
 //
-// html2canvas 는 글자의 baseline 을 line box 아래 끝에 놓는다.
-// line-height 가 글자보다 크면 그 차이만큼 글자가 아래로 밀린다.
-// PDF 를 6배로 확대해 실제로 쟀다.
-//   line-height 24px → 배지 23.4px 안에서 위 여백 12.1px · 아래 0px
-//   line-height 12px → baseline 이 12 라 글자가 line box 안에 꽉 찬다
-// padding 은 line box 밖이라 글자를 밀지 않고 배지만 키운다.
+// html2canvas 는 글자의 baseline 을 그 글자를 담은 요소의 바닥에 놓는다.
+// 배지 자체에 세로 padding 을 주면 바닥이 그만큼 내려가 글자도 같이 내려간다.
+// PDF 를 6배로 확대해 네 번 쟀는데 padding 을 어떻게 나눠도 결과가 같았다.
+//   배지 24.5px → 위 12.9 · 아래 0.5
+//   배지 23.4px → 위 12.1 · 아래 0.0
+//   배지 21.8px → 위 10.0 · 아래 0.8   (pt4 / pb6 로 나눠도 그대로)
+// ACC Voucher 도 같은 증상이다(위 40 : 아래 5).
 //
-// 위아래를 4/6 으로 나눈 것은 한글 글자가 baseline 위쪽에 몰려 있기 때문이다.
-// 같은 값(5/5)이면 위 8.2 · 아래 5.0 으로 아래가 좁다. 4/6 이면 7.2 · 6.0 이 된다.
-// 화면에서는 브라우저가 알아서 가운데 두므로 2px 차이는 드러나지 않는다.
+// 그래서 역할을 나눈다.
+//   바깥 span — 알약 배경과 py-[5px] 여백만 맡는다
+//   안쪽 span — 글자만 담는다. padding 이 없으니 바닥이 곧 글자 바닥이다
+// baseline 이 안쪽 span 바닥에 놓이고, 바깥 padding 이 위아래 여백을 만든다.
 
 // 결재 요청 상세. 결재 승인 이력·통제 항목 변경 이력이 같은 팝업을 쓴다.
 // 표에는 한 줄에 담기는 것만 두고, 사유·의견·단계별 처리 시각은 여기서 본다.
@@ -5773,13 +5774,17 @@ function RequestDetailModal({ r, controls, onClose, canAct, canCancel, acting, c
       {/* 구분·상태 배지와 요청 취소를 한 줄에 둔다. 취소 버튼을 맨 아래 두었더니
           긴 비교표를 다 지나쳐야 보여, 취소할 수 있다는 것을 모르고 지나쳤다. */}
       <div className="flex items-center gap-2 mb-3">
-        <span className="text-xs px-3 pt-[4px] pb-[6px] leading-none rounded-full font-semibold"
+        <span className="text-xs px-3 py-[5px] rounded-full font-semibold inline-block"
               style={{ backgroundColor: r.reqType === "delete" ? "#FEE2E2" : "#E4F1F0",
                        color: r.reqType === "delete" ? "#B91C1C" : BRAND.accent }}>
-          {r.reqType === "delete" ? t("approval.typeDelete") : t("approval.typeEdit")}
+          <span className="block leading-none">
+            {r.reqType === "delete" ? t("approval.typeDelete") : t("approval.typeEdit")}
+          </span>
         </span>
-        <span className="text-xs px-3 pt-[4px] pb-[6px] leading-none rounded-full font-semibold"
-              style={{ backgroundColor: S.bg, color: S.fg }}>{S.label}</span>
+        <span className="text-xs px-3 py-[5px] rounded-full font-semibold inline-block"
+              style={{ backgroundColor: S.bg, color: S.fg }}>
+          <span className="block leading-none">{S.label}</span>
+        </span>
         {canCancel && (
           <button onClick={onCancelReq} disabled={acting}
                   className="ml-auto text-xs px-3 pt-[4px] pb-[6px] leading-none rounded-full font-medium inline-flex items-center gap-1.5 border border-slate-300 text-slate-600 hover:border-red-300 hover:text-red-600 hover:bg-red-50 disabled:opacity-40">
