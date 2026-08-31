@@ -5878,6 +5878,15 @@ function RequestDetailModal({ r, controls, onClose, canAct, canCancel, acting, c
           확인하지 않고 누를 수 있다. 팝업에서는 변경 내용을 본 뒤 결정하게 된다. */}
       {canAct && (
         <div className="mt-4">
+          {/* 안내를 입력란 위로 올렸다. 버튼 옆 회색 글씨로 두었더니
+              「왜 반려가 눌리지 않는가」 를 다 누른 뒤에야 읽게 됐다.
+              쓰기 전에 보이도록 입력란 바로 위, 붉은 글씨로 둔다. */}
+          {!(comment || "").trim() && (
+            <p className="flex items-center gap-1.5 text-xs font-medium mb-1.5" style={{ color: "#B91C1C" }}>
+              <AlertTriangle size={13} className="flex-shrink-0" />
+              {t("approval.rejectNeedsReason")}
+            </p>
+          )}
           <textarea
             className={`${inputCls}`}
             rows={2}
@@ -5886,9 +5895,6 @@ function RequestDetailModal({ r, controls, onClose, canAct, canCancel, acting, c
             placeholder={t("approval.commentPlaceholder")}
           />
           <div className="flex items-center justify-end gap-2 mt-3">
-            {!(comment || "").trim() && (
-              <span className="text-xs text-slate-400 mr-auto">{t("approval.rejectNeedsReason")}</span>
-            )}
             <button onClick={() => onAct(false)} disabled={acting || !(comment || "").trim()}
                     title={!(comment || "").trim() ? t("approval.rejectNeedsReason") : ""}
                     className="px-4 py-2 text-sm rounded-lg border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-40">
