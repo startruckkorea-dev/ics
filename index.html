@@ -5628,7 +5628,11 @@ async function exportRequestPdf(bodyId, fileName, title) {
     // 위쪽 여백은 좌우·아래와 따로 잡는다. 배너가 이미 경계를 만들어 주므로
     // 34pt(12mm)를 그대로 두면 배너와 제목 사이가 통째로 비어 내용이 밀려 보인다.
     const A4W = 595, A4H = 842, hdrH = 22;
-    const marginX = 34, marginTop = 12, marginBottom = 28;
+    // marginTop 은 0 이다. 배너(22pt)가 이미 위쪽 경계를 만들고,
+    // 캡처 이미지 자체가 위에 7.4pt 흰 여백을 품고 있어 제목이 배너에 붙지 않는다.
+    // 여백을 더 주면 배너를 넣기 전(24pt)보다 오히려 아래로 밀린다 — 실제 PDF 좌표로 확인:
+    //   배너 없던 때 24pt · 배너+34pt 56pt · 배너+12pt 34pt · 배너+0 22pt
+    const marginX = 34, marginTop = 0, marginBottom = 28;
     const printW = A4W - marginX * 2;
     const printableH = A4H - hdrH - marginTop - marginBottom;
     // 이미지는 printW(527pt) 폭으로 그려진다. 배율을 A4W(595pt) 기준으로 잡으면
