@@ -308,7 +308,7 @@ const ACTION_LABELS = {
   request_delete_control: { ko: "통제 항목 삭제 요청", en: "Control item deletion requested" },
   approve_change: { ko: "변경 요청 승인", en: "Change request approved" },
   reject_change: { ko: "변경 요청 반려", en: "Change request rejected" },
-  cancel_change: { ko: "변경 요청 취소", en: "Change request withdrawn" },
+  cancel_change: { ko: "변경 요청 철회", en: "Change request withdrawn" },
   edit_learn_content: { ko: "학습 콘텐츠 수정", en: "Learning content edited" },
   withdraw_self: { ko: "자가평가 제출 철회", en: "Self-assessment submission withdrawn" },
   withdraw_fsa: { ko: "최종 자가평가 제출 철회", en: "Final self-assessment submission withdrawn" },
@@ -649,7 +649,7 @@ const STR = {
       subtitleUser: "님이 담당하는 통제 항목을 자가평가합니다.",
       needsAction: "평가 필요", submitted: "제출 완료",
       writeBtn: "자가평가 작성", rejectReasonTitle: "검토자 반려 사유",
-      lockedByRequest: "수정 요청이 결재 중입니다. 결재가 완료되거나 요청을 취소하면 자가평가를 작성할 수 있습니다.",
+      lockedByRequest: "수정 요청이 결재 중입니다. 결재가 완료되거나 요청을 철회하면 자가평가를 작성할 수 있습니다.",
       riskLevel: "리스크 수준 선택", commentPlaceholder: "평가 근거 및 특이사항을 입력하세요.",
       sampleCount: "샘플링 건수", recommendedNote: "권장", attachBtn: "샘플링 자료 첨부",
       submitBtn: "제출", editBtn: "수정", withdrawBtn: "제출 철회",
@@ -755,7 +755,10 @@ const STR = {
       rejectNeedsReason: "반려하려면 사유를 입력해 주세요.",
       inProgress: "진행 중", done: "승인 완료", rejected: "반려",
       rejectReason: "반려 사유",
-      cancelBtn: "요청 취소", cancelled: "취소됨",
+      // APS 18개 시스템이 모두 「철회」 를 쓴다(ACC Voucher 는 SharePoint 에도 '철회' 로 저장).
+      // ICS 안에서도 자가평가는 이미 「제출 철회」 라 결재만 「취소」 인 것은 앞뒤가 맞지 않았다.
+      // 영문은 원래부터 Withdraw / withdrawn 이었다.
+      cancelBtn: "요청 철회", cancelled: "철회됨",
       historyTitle: "변경 이력",
       noHistory: "완료된 변경 요청이 없습니다.",
       hRequester: "요청자", hRequestedAt: "요청 시간", hApprovers: "승인자",
@@ -781,7 +784,7 @@ const STR = {
       colStatus: "상태", colDecidedAt: "처리일",
       total: "총", unit: "건",
       fAll: "전체 상태", fPending: "진행 중", fApproved: "승인완료",
-      fRejected: "반려", fCancelled: "취소됨",
+      fRejected: "반려", fCancelled: "철회됨",
       stageDone: "완료", none: "표시할 결재 요청이 없습니다.",
     },
     finalReport: {
@@ -5262,17 +5265,17 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
     if (r.requester !== myEmail || r.status !== "pending") return;
     const ok = window.confirm(lang === "en"
       ? "Withdraw this change request? Approvers will no longer see it."
-      : "이 변경 요청을 취소하시겠습니까? 결재자 목록에서도 사라집니다.");
+      : "이 변경 요청을 철회하시겠습니까? 결재자 목록에서도 사라집니다.");
     if (!ok) return;
     setActing(r.spId);
     try {
       await icsUpdateItem(ICS_LISTS.changeRequests, r.spId, { Status: "cancelled" });
       addLog(currentUser.email, "cancel_change", r.code, labelOf(r), labelOf(r));
-      showToast(lang === "en" ? "Request withdrawn." : "요청이 취소되었습니다.");
+      showToast(lang === "en" ? "Request withdrawn." : "요청이 철회되었습니다.");
       await reload();
     } catch (e) {
       console.warn("[ICS] 요청 취소 실패:", e.message);
-      alert(lang === "en" ? "Failed to withdraw the request." : "요청 취소에 실패했습니다.");
+      alert(lang === "en" ? "Failed to withdraw the request." : "요청 철회에 실패했습니다.");
     } finally {
       setActing(null);
     }
