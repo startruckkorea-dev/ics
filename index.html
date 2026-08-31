@@ -5574,11 +5574,16 @@ async function exportRequestPdf(bodyId, fileName, title) {
   // 「요청 취소」 같은 조작 버튼은 출력물에 남을 이유가 없다.
   const hidden = [...el.querySelectorAll("button")];
   hidden.forEach((n) => { n.dataset.pdfPrev = n.style.display; n.style.display = "none"; });
+  // 캡처 대상(el)은 화면용 여백 px-6 py-5 를 갖고 있다. 그대로 뜨면 그 20px 이
+  // 이미지 안에 들어가고, PDF 여백 34pt 와 배너 22pt 위에 또 쌓여 내용이 아래로 밀린다.
+  // 캡처하는 동안만 위아래 여백을 걷어낸다. 좌우는 표가 가장자리에 붙지 않게 남긴다.
+  const prevPad = el.style.padding;
+  el.style.paddingTop = "0"; el.style.paddingBottom = "0";
   // 제목은 팝업 머리글에 있어 본문 캡처에 들어오지 않는다. 잠시 본문 맨 위에 끼운다.
   let head = null;
   if (title) {
     head = document.createElement("div");
-    head.style.cssText = "font-size:15px;font-weight:700;color:#1e293b;margin:0 0 14px;padding-bottom:10px;border-bottom:2px solid #e2e8f0";
+    head.style.cssText = "font-size:15px;font-weight:700;color:#1e293b;margin:0 0 12px;padding-bottom:9px;border-bottom:2px solid #e2e8f0";
     head.textContent = title;
     el.insertBefore(head, el.firstChild);
   }
@@ -5650,6 +5655,7 @@ async function exportRequestPdf(bodyId, fileName, title) {
   } finally {
     // 화면을 원래대로 되돌린다. 하나라도 남으면 이후 화면이 어긋난다.
     el.style.maxHeight = prevMax; el.style.overflow = prevOv;
+    el.style.padding = prevPad;
     clipped.forEach((n) => n.classList.add("truncate"));
     hidden.forEach((n) => { n.style.display = n.dataset.pdfPrev || ""; delete n.dataset.pdfPrev; });
     if (head && head.parentNode) head.parentNode.removeChild(head);
@@ -5681,8 +5687,9 @@ function RequestDetailModal({ r, controls, onClose, canAct, canCancel, acting, c
   // 요청자·요청 시간·요청 사유 세 줄. 한 줄짜리 값이라 위아래 여백이 넉넉할 이유가 없다.
   // py-1.5(6px씩) 는 세 줄이면 36px 을 먹어 아래 비교표가 그만큼 밀린다.
   // 줄 간격을 좁히고 leading 을 함께 맞춰 글자가 붙어 보이지 않게 한다.
+  // 한 줄짜리 값 세 개다. 줄 간격을 없애고 leading 만으로 붙는 것을 막는다.
   const Row = ({ label, children }) => (
-    <div className="flex gap-3 py-[3px] leading-5">
+    <div className="flex gap-3 leading-[1.55]">
       <span className="text-slate-400 w-[104px] flex-shrink-0">{label}</span>
       <span className="min-w-0 flex-1">{children}</span>
     </div>
@@ -5712,7 +5719,9 @@ function RequestDetailModal({ r, controls, onClose, canAct, canCancel, acting, c
            }>
       {/* 두 배지의 글자·여백을 같게 둔다. 예전에는 왼쪽이 text-xs/py-1,
           오른쪽이 text-sm/py-1.5 라 나란히 놓았을 때 높이가 어긋났다. */}
-      <div className="flex items-center gap-2 mb-4">
+      {/* 구분·상태 배지와 요청 취소를 한 줄에 둔다. 취소 버튼을 맨 아래 두었더니
+          긴 비교표를 다 지나쳐야 보여, 취소할 수 있다는 것을 모르고 지나쳤다. */}
+      <div className="flex items-center gap-2 mb-3">
         <span className="text-xs px-3 py-1 rounded-full font-semibold"
               style={{ backgroundColor: r.reqType === "delete" ? "#FEE2E2" : "#E4F1F0",
                        color: r.reqType === "delete" ? "#B91C1C" : BRAND.accent }}>
@@ -5720,9 +5729,15 @@ function RequestDetailModal({ r, controls, onClose, canAct, canCancel, acting, c
         </span>
         <span className="text-xs px-3 py-1 rounded-full font-semibold"
               style={{ backgroundColor: S.bg, color: S.fg }}>{S.label}</span>
+        {canCancel && (
+          <button onClick={onCancelReq} disabled={acting}
+                  className="ml-auto text-xs px-3 py-1 rounded-full font-medium flex items-center gap-1.5 border border-slate-300 text-slate-600 hover:border-red-300 hover:text-red-600 hover:bg-red-50 disabled:opacity-40">
+            <Undo2 size={12} /> {t("approval.cancelBtn")}
+          </button>
+        )}
       </div>
 
-      <div className="bg-slate-50 rounded-lg px-4 py-2.5 text-xs text-slate-700">
+      <div className="bg-slate-50 rounded-lg px-4 py-2 text-xs text-slate-700">
         <Row label={t("approval.hRequester")}>{personByEmail(r.requester, lang, users)}</Row>
         <Row label={t("approval.hRequestedAt")}>{formatDateTime(r.created, lang)}</Row>
         {r.payload?.reason && (
@@ -5839,14 +5854,6 @@ function RequestDetailModal({ r, controls, onClose, canAct, canCancel, acting, c
               {acting && <Loader2 size={14} className="animate-spin" />}{t("approval.approve")}
             </button>
           </div>
-        </div>
-      )}
-      {canCancel && (
-        <div className="flex justify-end mt-4">
-          <button onClick={onCancelReq} disabled={acting}
-                  className="text-sm px-3.5 py-1.5 rounded-full font-medium flex items-center gap-1.5 border border-slate-300 text-slate-600 hover:border-red-300 hover:text-red-600 hover:bg-red-50 disabled:opacity-40">
-            <Undo2 size={14} /> {t("approval.cancelBtn")}
-          </button>
         </div>
       )}
     </Modal>
