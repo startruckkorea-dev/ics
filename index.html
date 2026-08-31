@@ -117,6 +117,7 @@ import {
   Clock,
   CheckCircle2,
   XCircle,
+  MinusCircle,
   FileCheck2,
   FileSpreadsheet,
 } from "lucide-react";
@@ -732,9 +733,8 @@ const STR = {
       stepApproved: "승인", stepRejected: "반려", stepWaiting: "대기 중",
       stepLocked: "대기(잠김)",
       pdfBtn: "PDF 출력",
-      skipTitle: "결재선에서 생략된 단계",
-      skipSelf: "요청자 본인이라 생략",
-      skipDup: "뒤 단계 결재자와 같은 사람이라 생략",
+      skipSelf: "요청자 본인이므로 생략",
+      skipDup: "중복 결재로 생략",
       trailTitle: "결재 현황",
       rejectedBy: "반려 처리", approvedBy: "승인 의견", noReason: "(사유 없음)",
       rejectNeedsReason: "반려하려면 사유를 입력해 주세요.",
@@ -1125,9 +1125,8 @@ const STR = {
       stepApproved: "Approved", stepRejected: "Rejected", stepWaiting: "Pending",
       stepLocked: "Locked",
       pdfBtn: "Export PDF",
-      skipTitle: "Steps skipped in the approval line",
-      skipSelf: "skipped — the requester cannot approve their own request",
-      skipDup: "skipped — same person as a later step",
+      skipSelf: "skipped — requester",
+      skipDup: "skipped — duplicate approver",
       trailTitle: "Approval status",
       rejectedBy: "Rejected by", approvedBy: "Approval comment", noReason: "(no reason given)",
       rejectNeedsReason: "Please enter a reason to reject.",
@@ -5739,28 +5738,6 @@ function RequestDetailModal({ r, controls, onClose, canAct, canCancel, acting, c
         <div className="bg-red-50 rounded-lg p-3 mt-3 text-xs text-red-700">{t("approval.deleteNotice")}</div>
       )}
 
-      {/* 생략된 단계 안내. 결재선이 3단계가 아니라 2단계인 이유를 남겨 둔다.
-          같은 사람이 두 차수에 걸치면 뒤 단계만 남기는데(buildApprovalSteps),
-          이 안내가 없으면 나중에 보는 사람은 결재선이 잘못 만들어진 줄 안다. */}
-      {(r.payload?.skipped || []).length > 0 && (
-        <div className="mt-3 rounded-lg px-3 py-2.5 text-xs"
-             style={{ backgroundColor: "#F0F6FF", border: "1px solid #C7E0F4", color: "#1B3A6B" }}>
-          <p className="font-semibold">{t("approval.skipTitle")}</p>
-          {r.payload.skipped.map((sk, i) => (
-            <p key={i} className="mt-1">
-              · {sk.role === "MC" || sk.role === "LM1" ? t("approval.stepLm1")
-                : sk.role === "LM2" ? t("approval.stepLm2")
-                : sk.role === "ICS_CONTACT" ? t("approval.stepContact")
-                : t("approval.stepFinal")}
-              {" — "}
-              <span title={sk.approver}>{nameOfEmail(sk.approver)}</span>
-              {" · "}
-              {sk.reason === "self" ? t("approval.skipSelf") : t("approval.skipDup")}
-            </p>
-          ))}
-        </div>
-      )}
-
       {/* 단계별 처리 내역. ACC Voucher 의 「결재 이력」 과 같은 형식으로 맞춘다.
             n차 역할(굵게)          [상태 배지]
             이름 · 이메일
@@ -5813,6 +5790,26 @@ function RequestDetailModal({ r, controls, onClose, canAct, canCancel, acting, c
               </div>
             );
           })}
+          {/* 생략된 단계는 결재 현황 안에 이어서 둔다. 별도 상자로 위에 두면
+              「결재선이 몇 단계인가」 를 두 곳에서 읽게 된다.
+              실제 단계와 같은 틀 안에 있되, 옅은 글씨로 구분한다. */}
+          {(r.payload?.skipped || []).length > 0 && (
+            <div className="px-3 py-2.5 bg-slate-50/60">
+              {r.payload.skipped.map((sk, i) => (
+                <p key={i} className="text-[11px] text-slate-400 flex items-center gap-1.5">
+                  <MinusCircle size={11} className="flex-shrink-0" />
+                  <span className="font-medium">
+                    {sk.role === "MC" || sk.role === "LM1" ? t("approval.stepLm1")
+                      : sk.role === "LM2" ? t("approval.stepLm2")
+                      : sk.role === "ICS_CONTACT" ? t("approval.stepContact")
+                      : t("approval.stepFinal")}
+                  </span>
+                  <span title={sk.approver}>{nameOfEmail(sk.approver)}</span>
+                  <span>{sk.reason === "self" ? t("approval.skipSelf") : t("approval.skipDup")}</span>
+                </p>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
