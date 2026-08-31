@@ -5565,12 +5565,11 @@ async function exportRequestPdf(bodyId, fileName, title) {
     alert("PDF 라이브러리를 불러오지 못했습니다. 네트워크를 확인해 주세요.");
     return false;
   }
+
   // 스크롤을 접어 전체 내용을 한 번에 뜬다. 끝나면 원래대로 되돌린다.
   const prevMax = el.style.maxHeight, prevOv = el.style.overflow;
   el.style.maxHeight = "none"; el.style.overflow = "visible";
-
   // html2canvas 는 truncate(overflow:hidden + nowrap)를 그대로 그려 이메일이 잘린다.
-  // 화면에서는 자리를 아껴야 하지만 출력물에서는 전체가 보여야 하므로 잠시 푼다.
   const clipped = [...el.querySelectorAll(".truncate")];
   clipped.forEach((n) => n.classList.remove("truncate"));
   // 「요청 취소」 같은 조작 버튼은 출력물에 남을 이유가 없다.
@@ -5586,29 +5585,58 @@ async function exportRequestPdf(bodyId, fileName, title) {
   }
 
   try {
-    const cvs = await html2canvas(el, { scale: 2, useCORS: true, backgroundColor: "#fff", scrollY: 0 });
-    const png = cvs.toDataURL("image/png");
+    const cvs = await html2canvas(el, { scale: 2, useCORS: true, backgroundColor: "#fff", scrollY: 0, windowWidth: 900 });
+
+    // ACC Voucher(buildPdfDocFromSegments)와 같은 방식으로 앉힌다.
+    // 예전에는 이미지 한 장을 통째로 놓고 여백으로 가렸는데, 그러면 내용이 아래로 밀리고
+    // 여러 장일 때 경계가 어긋난다. 캔버스를 페이지 높이만큼 잘라 각 장에 정확히 놓는다.
     const { PDFDocument } = PDFLib;
     const doc = await PDFDocument.create();
-    const img = await doc.embedPng(png);
-    // A4 세로 595 x 842pt. 좌우 24pt 여백.
-    const W = 595, H = 842, M = 24, usable = W - M * 2;
-    const scale = usable / img.width;
-    const imgH = img.height * scale;
-    // 한 장을 넘으면 이미지를 잘라 여러 장에 나눠 앉힌다.
-    const pageH = H - M * 2;
-    let drawn = 0;
-    while (drawn < imgH) {
-      const page = doc.addPage([W, H]);
-      page.drawImage(img, { x: M, y: H - M - imgH + drawn, width: usable, height: imgH });
-      drawn += pageH;
-      // 다음 장에 이어 그리기 위해 남은 높이만큼만 반복한다.
-      if (drawn < imgH) {
-        // 아래쪽 여백을 흰색으로 덮어 다음 장 내용이 비치지 않게 한다.
-        page.drawRectangle({ x: 0, y: 0, width: W, height: M, color: PDFLib.rgb(1, 1, 1) });
-        page.drawRectangle({ x: 0, y: H - M, width: W, height: M, color: PDFLib.rgb(1, 1, 1) });
-      }
+    const now = new Date(new Date().getTime() + 9 * 3600 * 1000);
+    const ds = now.getUTCFullYear() + "-" + String(now.getUTCMonth() + 1).padStart(2, "0") + "-"
+      + String(now.getUTCDate()).padStart(2, "0") + " "
+      + String(now.getUTCHours()).padStart(2, "0") + ":" + String(now.getUTCMinutes()).padStart(2, "0");
+
+    const dataUrlToUint8 = async (u) => new Uint8Array(await (await fetch(u)).arrayBuffer());
+
+    // 상단 배너. ACC 와 같은 남색 그라데이션에 왼쪽 화면 이름, 오른쪽 출력일시.
+    async function makeHeaderBytes(text) {
+      const hc = document.createElement("canvas"); hc.width = 1190; hc.height = 28;
+      const hx = hc.getContext("2d");
+      const g = hx.createLinearGradient(0, 0, hc.width, 0);
+      g.addColorStop(0, "#0f2744"); g.addColorStop(1, "#0a4a8a");
+      hx.fillStyle = g; hx.fillRect(0, 0, hc.width, hc.height);
+      hx.fillStyle = "#fff"; hx.font = '500 13px "Malgun Gothic",sans-serif'; hx.textBaseline = "middle";
+      hx.fillText(text, 14, 13);
+      hx.textAlign = "right"; hx.font = '400 12px "Malgun Gothic",sans-serif';
+      hx.fillStyle = "rgba(255,255,255,.6)";
+      hx.fillText("출력일시: " + ds, hc.width - 14, 13);
+      return dataUrlToUint8(hc.toDataURL("image/png"));
     }
+
+    const A4W = 595, A4H = 842, marginPt = 34, hdrH = 22;
+    const printW = A4W - marginPt * 2;
+    const printableH = A4H - marginPt * 2 - hdrH;
+    const pxPerPt = cvs.width / A4W;
+    const sliceH = Math.round(printableH * pxPerPt);
+    const pages = Math.max(1, Math.ceil(cvs.height / sliceH));
+    const hdrBytes = await makeHeaderBytes("STK ICS · 결재 요청 상세");
+
+    for (let p = 0; p < pages; p++) {
+      const page = doc.addPage([A4W, A4H]);
+      const hdrImg = await doc.embedPng(hdrBytes);
+      page.drawImage(hdrImg, { x: 0, y: A4H - hdrH, width: A4W, height: hdrH });
+      const srcY = p * sliceH;
+      const hPx = Math.min(sliceH, cvs.height - srcY);
+      const hPt = hPx / pxPerPt;
+      const sc = document.createElement("canvas");
+      sc.width = cvs.width; sc.height = hPx;
+      sc.getContext("2d").drawImage(cvs, 0, srcY, cvs.width, hPx, 0, 0, cvs.width, hPx);
+      const sb = await dataUrlToUint8(sc.toDataURL("image/jpeg", 0.92));
+      const si = await doc.embedJpg(sb);
+      page.drawImage(si, { x: marginPt, y: A4H - hdrH - marginPt - hPt, width: printW, height: hPt });
+    }
+
     const bytes = await doc.save();
     const blob = new Blob([bytes], { type: "application/pdf" });
     const url = URL.createObjectURL(blob);
