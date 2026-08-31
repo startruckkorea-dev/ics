@@ -730,7 +730,11 @@ const STR = {
       commentPlaceholder: "의견을 입력하세요. (반려 시 사유를 남겨 주세요)",
       approve: "승인", reject: "반려",
       stepLm1: "1차 MC", stepLm2: "1차 MC", stepContact: "2차 ICS Admin", stepFinal: "3차 CFO",
-      stepApproved: "승인", stepRejected: "반려", stepWaiting: "대기 중",
+      // ACC Voucher 의 결재 이력과 같은 말을 쓴다.
+      //   대기 / 대기(잠김) / 승인 / 반려
+      // 「대기 중」 은 짝인 「대기(잠김)」 과 어울리지 않고, 나중에 Power Automate 용
+      // 결재 리스트를 만들 때 Status 컬럼 값(대기)과도 어긋난다.
+      stepApproved: "승인", stepRejected: "반려", stepWaiting: "대기",
       stepLocked: "대기(잠김)",
       pdfBtn: "PDF 출력",
       skipSelf: "요청자 본인이므로 생략",
