@@ -3054,6 +3054,8 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
               dept: form.dept, cat: form.cat, name: form.name, desc: form.desc,
               accessor: form.accessor, reviewer: form.reviewer,
               frequency: form.frequency, importance: form.importance,
+              // 생략된 결재 단계. 세 상신 경로 모두에서 같은 기준으로 담는다.
+              skipped: (steps.skipped || []).map((sk) => ({ role: sk.role, approver: sk.approver, reason: sk.reason })),
             }),
             Steps: JSON.stringify(steps), Step: 1, Status: "pending",
           });
@@ -3107,7 +3109,10 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
         await icsCreateItem(ICS_LISTS.changeRequests, {
           Title: c.code, Year: c.year, ReqType: "delete",
           RequesterEmail: currentUser.email,
-          Payload: JSON.stringify({}),
+          // 삭제 요청도 결재선이 생략될 수 있다. 사유를 함께 남긴다.
+          Payload: JSON.stringify({
+            skipped: (steps.skipped || []).map((sk) => ({ role: sk.role, approver: sk.approver, reason: sk.reason })),
+          }),
           Steps: JSON.stringify(steps), Step: 1, Status: "pending",
         });
         addLog(currentUser.email, "request_delete_control", c.code, c.name, c.nameEn);
@@ -5511,7 +5516,7 @@ function RequestTable({ rows, controls, kind, onPick }) {
 // 결재 상세를 PDF 로 뜬다. GW(Goodwill-Approval) exportModalPdf 와 같은 방식으로
 // html2canvas 로 화면을 그림으로 뜬 뒤 pdf-lib 로 A4 에 앉힌다.
 // 화면에 보이는 그대로가 증빙이 되므로 별도 서식을 만들지 않는다.
-async function exportRequestPdf(bodyId, fileName) {
+async function exportRequestPdf(bodyId, fileName, title) {
   const el = document.getElementById(bodyId);
   if (!el) return false;
   if (typeof html2canvas !== "function" || typeof PDFLib === "undefined") {
@@ -5522,6 +5527,23 @@ async function exportRequestPdf(bodyId, fileName) {
   // 스크롤을 접어 전체 내용을 한 번에 뜬다. 끝나면 원래대로 되돌린다.
   const prevMax = el.style.maxHeight, prevOv = el.style.overflow;
   el.style.maxHeight = "none"; el.style.overflow = "visible";
+
+  // html2canvas 는 truncate(overflow:hidden + nowrap)를 그대로 그려 이메일이 잘린다.
+  // 화면에서는 자리를 아껴야 하지만 출력물에서는 전체가 보여야 하므로 잠시 푼다.
+  const clipped = [...el.querySelectorAll(".truncate")];
+  clipped.forEach((n) => n.classList.remove("truncate"));
+  // 「요청 취소」 같은 조작 버튼은 출력물에 남을 이유가 없다.
+  const hidden = [...el.querySelectorAll("button")];
+  hidden.forEach((n) => { n.dataset.pdfPrev = n.style.display; n.style.display = "none"; });
+  // 제목은 팝업 머리글에 있어 본문 캡처에 들어오지 않는다. 잠시 본문 맨 위에 끼운다.
+  let head = null;
+  if (title) {
+    head = document.createElement("div");
+    head.style.cssText = "font-size:15px;font-weight:700;color:#1e293b;margin:0 0 14px;padding-bottom:10px;border-bottom:2px solid #e2e8f0";
+    head.textContent = title;
+    el.insertBefore(head, el.firstChild);
+  }
+
   try {
     const cvs = await html2canvas(el, { scale: 2, useCORS: true, backgroundColor: "#fff", scrollY: 0 });
     const png = cvs.toDataURL("image/png");
@@ -5558,7 +5580,11 @@ async function exportRequestPdf(bodyId, fileName) {
     alert("PDF 를 만들지 못했습니다. 다시 시도해 주세요.");
     return false;
   } finally {
+    // 화면을 원래대로 되돌린다. 하나라도 남으면 이후 화면이 어긋난다.
     el.style.maxHeight = prevMax; el.style.overflow = prevOv;
+    clipped.forEach((n) => n.classList.add("truncate"));
+    hidden.forEach((n) => { n.style.display = n.dataset.pdfPrev || ""; delete n.dataset.pdfPrev; });
+    if (head && head.parentNode) head.parentNode.removeChild(head);
   }
 }
 
@@ -5597,7 +5623,7 @@ function RequestDetailModal({ r, controls, onClose, canAct, canCancel, acting, c
     setPdfBusy(true);
     // 파일명에 통제 코드와 요청일을 넣어 여러 건을 받아도 구분된다.
     const d = (r.created || "").slice(0, 10) || "unknown";
-    await exportRequestPdf(bodyId, `ICS_${r.code}_${d}.pdf`);
+    await exportRequestPdf(bodyId, `ICS_${r.code}_${d}.pdf`, `${r.code} · ${name}`);
     setPdfBusy(false);
   }
 
