@@ -26,7 +26,11 @@
 <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js" nonce="MjM5ODM2NTI1MCwxODc5NDk5OTgz"></script>
 <style>
-  html, body { margin: 0; padding: 0; height: 100%; background: #F5F6F8; }
+  /* GW(Goodwill-Approval)와 같은 글꼴. 로그인·로딩 화면에만 Segoe UI 를 지정해 두어
+     앱 본문은 Tailwind 기본 글꼴 스택을 쓰고 있었다 — 두 화면의 글자 모양이 달랐다.
+     APS 다른 시스템도 모두 body 에 Segoe UI 를 둔다. */
+  html, body { margin: 0; padding: 0; height: 100%; background: #F5F6F8;
+               font-family: 'Segoe UI', sans-serif; }
   #root { height: 100%; }
   #loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
     font-family: 'Segoe UI', sans-serif; color: #64748B; font-size: 14px; }
@@ -853,6 +857,7 @@ const STR = {
       trailTitle: "결재 현황",
       rejectedBy: "반려 처리", approvedBy: "승인 의견", noReason: "(사유 없음)",
       rejectNeedsReason: "반려하려면 사유를 입력해 주세요.",
+      rejectAskReason: "반려 사유를 입력해 주세요.\n요청자에게 그대로 전달됩니다.",
       inProgress: "진행 중", done: "승인 완료", rejected: "반려",
       rejectReason: "반려 사유",
       // APS 18개 시스템이 모두 「철회」 를 쓴다(ACC Voucher 는 SharePoint 에도 '철회' 로 저장).
@@ -1250,6 +1255,7 @@ const STR = {
       trailTitle: "Approval status",
       rejectedBy: "Rejected by", approvedBy: "Approval comment", noReason: "(no reason given)",
       rejectNeedsReason: "Please enter a reason to reject.",
+      rejectAskReason: "Please enter the reason for rejection.\nIt will be shown to the requester.",
       inProgress: "In progress", done: "Approved", rejected: "Rejected",
       rejectReason: "Reason",
       cancelBtn: "Withdraw request", cancelled: "Withdrawn",
@@ -5427,11 +5433,23 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
 
   async function act(r, approved) {
     if (isArchived) return;
-    // 화면에서 버튼을 막아 두었지만 여기서도 한 번 더 본다.
     // 반려 사유는 요청자가 무엇을 고쳐야 할지 아는 유일한 단서다.
-    if (!approved && !(comment[r.spId] || "").trim()) {
-      alert(t("approval.rejectNeedsReason"));
-      return;
+    // 의견란을 비워 둔 채 반려를 누르면 여기서 직접 받는다 —
+    // 버튼을 막아 두기만 하면 「왜 안 눌리지」 하고 헤매게 된다.
+    if (!approved) {
+      let reason = (comment[r.spId] || "").trim();
+      if (!reason) {
+        const typed = window.prompt(t("approval.rejectAskReason"), "");
+        if (typed === null) return;            // 취소를 누르면 아무 일도 하지 않는다
+        reason = String(typed).trim();
+        if (!reason) {
+          alert(t("approval.rejectNeedsReason"));
+          return;
+        }
+        // 입력한 사유를 의견란에도 채워 둔다. 아래 저장에서 그대로 쓰인다.
+        setComment((prev) => ({ ...prev, [r.spId]: reason }));
+        comment[r.spId] = reason;
+      }
     }
     setActing(r.spId);
     try {
@@ -6069,12 +6087,6 @@ function RequestDetailModal({ r, controls, onClose, canAct, canCancel, acting, c
           {/* 안내를 입력란 위로 올렸다. 버튼 옆 회색 글씨로 두었더니
               「왜 반려가 눌리지 않는가」 를 다 누른 뒤에야 읽게 됐다.
               쓰기 전에 보이도록 입력란 바로 위, 붉은 글씨로 둔다. */}
-          {!(comment || "").trim() && (
-            <p className="flex items-center gap-1.5 text-xs font-medium mb-1.5" style={{ color: "#B91C1C" }}>
-              <AlertTriangle size={13} className="flex-shrink-0" />
-              {t("approval.rejectNeedsReason")}
-            </p>
-          )}
           <textarea
             className={`${inputCls}`}
             rows={2}
@@ -6083,9 +6095,12 @@ function RequestDetailModal({ r, controls, onClose, canAct, canCancel, acting, c
             placeholder={t("approval.commentPlaceholder")}
           />
           <div className="flex items-center justify-end gap-2 mt-3">
-            <button onClick={() => onAct(false)} disabled={acting || !(comment || "").trim()}
-                    title={!(comment || "").trim() ? t("approval.rejectNeedsReason") : ""}
-                    className="px-4 py-2 text-sm rounded-lg border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-40">
+            {/* 반려는 되돌릴 수 없는 처리다. 승인 버튼과 같은 무게로 보이도록
+                테두리만 있던 것을 채운 빨강으로 바꾼다.
+                사유가 비어 있어도 누를 수 있게 두고, 누르면 act() 가 사유를 물어본다. */}
+            <button onClick={() => onAct(false)} disabled={acting}
+                    className="px-4 py-2 text-sm rounded-lg font-semibold text-white disabled:opacity-40"
+                    style={{ backgroundColor: "#B91C1C" }}>
               {t("approval.reject")}
             </button>
             <button onClick={() => onAct(true)} disabled={acting}
