@@ -5514,7 +5514,7 @@ function RequestTable({ rows, controls, kind, onPick }) {
             const st = r.steps[r.step - 1];
             // 내 결재 대기는 「내가 몇 번째인지」가, 내가 올린 요청은 「누가 잡고 있는지」가 궁금하다.
             const stage = r.status !== "pending" ? t("approvalHistory.stageDone")
-              : st ? `${r.step}/${r.steps.length} ${stepLabel(st)}` : "-";
+              : st ? `(${r.step}/${r.steps.length}) ${stepLabel(st)}` : "-";
             const who = r.status === "pending" && st ? nameOfEmail(st.approver) : "";
             return (
               <tr key={r.spId} onClick={() => onPick(r)} className="hover:bg-slate-50 cursor-pointer">
@@ -5631,7 +5631,10 @@ async function exportRequestPdf(bodyId, fileName, title) {
     const marginX = 34, marginTop = 12, marginBottom = 28;
     const printW = A4W - marginX * 2;
     const printableH = A4H - hdrH - marginTop - marginBottom;
-    const pxPerPt = cvs.width / A4W;
+    // 이미지는 printW(527pt) 폭으로 그려진다. 배율을 A4W(595pt) 기준으로 잡으면
+    // 세로가 595/527 = 13% 늘어나 글자와 여백이 모두 커지고 내용이 아래로 밀린다.
+    // 그려 넣는 폭과 같은 기준을 써야 비율이 맞는다.
+    const pxPerPt = cvs.width / printW;
     const sliceH = Math.round(printableH * pxPerPt);
     const pages = Math.max(1, Math.ceil(cvs.height / sliceH));
     const hdrBytes = await makeHeaderBytes("STK ICS · 결재 요청 상세");
@@ -6057,7 +6060,7 @@ function ApprovalHistoryPage({ controls }) {
     if (r.status !== "pending") return { text: t("approvalHistory.stageDone"), who: "" };
     const st = r.steps[r.step - 1];
     if (!st) return { text: "-", who: "" };
-    return { text: `${r.step}/${r.steps.length} ${stepLabel(st)}`, who: nameOfEmail(st.approver) };
+    return { text: `(${r.step}/${r.steps.length}) ${stepLabel(st)}`, who: nameOfEmail(st.approver) };
   }
   // 마지막으로 처리된 단계의 시각. 진행 중이면 아직 없다.
   function decidedAt(r) {
