@@ -5602,6 +5602,28 @@ async function exportRequestPdf(bodyId, fileName, title) {
   // 「요청 취소」 같은 조작 버튼은 출력물에 남을 이유가 없다.
   const hidden = [...el.querySelectorAll("button")];
   hidden.forEach((n) => { n.dataset.pdfPrev = n.style.display; n.style.display = "none"; });
+
+  // 알약 배지는 html2canvas 가 글자를 상자 바닥에 그린다.
+  // PDF 를 6배로 확대해 다섯 번 쟀는데 CSS 를 어떻게 바꿔도 결과가 같았다.
+  //   py-1 → 위 12.9·아래 0.5 · leading-[24px] → 12.1·0.0
+  //   pt4/pb6+leading-none → 10.0·0.8 · 안쪽 span → 11.0·0.5
+  // 배지 높이는 CSS 값과 정확히 일치했다. 상자는 맞고 글자 위치만 틀린다.
+  // 같은 PDF 안에서 표 셀·결재 현황의 글자는 정상이다 — 배경과 세로 padding 이 있는
+  // 알약 배지에서만 어긋난다.
+  // 그래서 캡처하는 순간에만 배경과 여백을 걷어내고 색 글자로 남긴다.
+  // 결재 현황의 「대기」·「대기(잠김)」 이 이미 그 방식이고 정상으로 나온다.
+  const flat = [...el.querySelectorAll(".rounded-full")].filter((n) => {
+    const s = getComputedStyle(n);
+    return s.backgroundColor && s.backgroundColor !== "rgba(0, 0, 0, 0)" && s.backgroundColor !== "transparent";
+  });
+  flat.forEach((n) => {
+    n.dataset.pdfBg = n.style.backgroundColor;
+    n.dataset.pdfPad = n.style.padding;
+    n.dataset.pdfW = n.style.fontWeight;
+    n.style.backgroundColor = "transparent";
+    n.style.padding = "0";
+    n.style.fontWeight = "700";
+  });
   // 캡처 대상(el)은 화면용 여백 px-6 py-5 를 갖고 있다. 그대로 뜨면 그 20px 이
   // 이미지 안에 들어가고, PDF 여백 34pt 와 배너 22pt 위에 또 쌓여 내용이 아래로 밀린다.
   // 캡처하는 동안만 위아래 여백을 걷어낸다. 좌우는 표가 가장자리에 붙지 않게 남긴다.
@@ -5696,6 +5718,12 @@ async function exportRequestPdf(bodyId, fileName, title) {
     el.style.padding = prevPad;
     clipped.forEach((n) => n.classList.add("truncate"));
     hidden.forEach((n) => { n.style.display = n.dataset.pdfPrev || ""; delete n.dataset.pdfPrev; });
+    flat.forEach((n) => {
+      n.style.backgroundColor = n.dataset.pdfBg || "";
+      n.style.padding = n.dataset.pdfPad || "";
+      n.style.fontWeight = n.dataset.pdfW || "";
+      delete n.dataset.pdfBg; delete n.dataset.pdfPad; delete n.dataset.pdfW;
+    });
     if (head && head.parentNode) head.parentNode.removeChild(head);
   }
 }
@@ -5774,17 +5802,15 @@ function RequestDetailModal({ r, controls, onClose, canAct, canCancel, acting, c
       {/* 구분·상태 배지와 요청 취소를 한 줄에 둔다. 취소 버튼을 맨 아래 두었더니
           긴 비교표를 다 지나쳐야 보여, 취소할 수 있다는 것을 모르고 지나쳤다. */}
       <div className="flex items-center gap-2 mb-3">
-        <span className="text-xs px-3 py-[5px] rounded-full font-semibold inline-block"
+        {/* 화면용 모양은 단순하게 둔다. PDF 정렬은 exportRequestPdf 가 캡처 직전에
+            배경과 여백을 걷어내는 방식으로 해결한다(그 함수 주석 참고). */}
+        <span className="text-xs px-3 py-1 rounded-full font-semibold"
               style={{ backgroundColor: r.reqType === "delete" ? "#FEE2E2" : "#E4F1F0",
                        color: r.reqType === "delete" ? "#B91C1C" : BRAND.accent }}>
-          <span className="block leading-none">
-            {r.reqType === "delete" ? t("approval.typeDelete") : t("approval.typeEdit")}
-          </span>
+          {r.reqType === "delete" ? t("approval.typeDelete") : t("approval.typeEdit")}
         </span>
-        <span className="text-xs px-3 py-[5px] rounded-full font-semibold inline-block"
-              style={{ backgroundColor: S.bg, color: S.fg }}>
-          <span className="block leading-none">{S.label}</span>
-        </span>
+        <span className="text-xs px-3 py-1 rounded-full font-semibold"
+              style={{ backgroundColor: S.bg, color: S.fg }}>{S.label}</span>
         {canCancel && (
           <button onClick={onCancelReq} disabled={acting}
                   className="ml-auto text-xs px-3 pt-[4px] pb-[6px] leading-none rounded-full font-medium inline-flex items-center gap-1.5 border border-slate-300 text-slate-600 hover:border-red-300 hover:text-red-600 hover:bg-red-50 disabled:opacity-40">
