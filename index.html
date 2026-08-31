@@ -753,6 +753,8 @@ const STR = {
       submitBtn: "제출", editBtn: "수정", withdrawBtn: "제출 철회",
       reqBtn: "항목 수정 요청", reqPending: "수정 결재 중",
       reqTitle: "통제 항목 수정 요청", reqSubmit: "결재 상신",
+      reqNoChange: "바뀐 내용이 없습니다.\n통제명·통제영역·통제 설명 중 하나 이상을 고친 뒤 상신해 주세요.",
+      reqNoChangeHint: "아직 바뀐 내용이 없습니다. 통제명·통제영역·통제 설명 중 하나 이상을 고쳐 주세요.",
       reqHint: "통제명·통제영역·설명 수정을 요청합니다.",
       reqLineTitle: "결재선 (Approval Line)",
       reqMcLabel: "1차 결재자 (1st Approver · MC)",
@@ -1152,6 +1154,8 @@ const STR = {
       submitBtn: "Submit", editBtn: "Edit", withdrawBtn: "Withdraw",
       reqBtn: "Request change", reqPending: "Change in approval",
       reqTitle: "Control item change request", reqSubmit: "Submit for approval",
+      reqNoChange: "Nothing has changed.\nPlease edit the control name, component or description before submitting.",
+      reqNoChangeHint: "Nothing has changed yet. Please edit the control name, component or description.",
       reqHint: "Request changes to the control name, component, or description.",
       reqLineTitle: "Approval line",
       reqMcLabel: "1st approver (MC)",
@@ -3684,6 +3688,16 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
     });
   }
 
+  // 폼에서 바뀐 것이 있는지. 상신 버튼을 막고 안내를 띄우는 데 쓴다.
+  // submitRequest 안에서도 같은 기준으로 한 번 더 본다 — 버튼만 막으면 콘솔로 우회된다.
+  const reqChanged = !reqForm ? false : (
+    (reqForm.name || "").trim() !== (reqForm.control.name || "").trim() ||
+    (reqForm.nameEn || "").trim() !== (reqForm.control.nameEn || "").trim() ||
+    (reqForm.desc || "").trim() !== (reqForm.control.desc || "").trim() ||
+    (reqForm.descEn || "").trim() !== (reqForm.control.descEn || "").trim() ||
+    reqForm.cat !== reqForm.control.cat
+  );
+
   // 1차 MC 후보 — employee_search.xlsx 의 H열에 등장하는 사람만, 요청자 본인은 제외.
   const _mcQ = mcQuery.trim().toLowerCase();
   // 기본은 H열 기준 MC 후보. MC 가 부재중이면 전 임직원에서 직접 고를 수 있다.
@@ -3708,6 +3722,22 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
       alert(lang === "en"
         ? "Approval line could not be determined. Please contact IT."
         : "결재선을 확인할 수 없습니다. IT로 문의해 주세요.");
+      return;
+    }
+
+    // 바꾼 것이 하나도 없으면 상신하지 않는다.
+    // 결재자 세 명이 「무엇이 달라졌는지」 를 찾다가 아무것도 없는 것을 확인하고
+    // 반려하는 일이 생긴다. 상신 전에 여기서 잡는다.
+    // 비교 대상은 이 폼에서 실제로 고칠 수 있는 다섯 가지뿐이다.
+    // 부서·담당자·검토자·점검 빈도·중요도는 이 화면에서 바꿀 수 없어 비교하지 않는다.
+    const unchanged =
+      name === (c.name || "").trim() &&
+      (reqForm.nameEn || "").trim() === (c.nameEn || "").trim() &&
+      (reqForm.desc || "").trim() === (c.desc || "").trim() &&
+      (reqForm.descEn || "").trim() === (c.descEn || "").trim() &&
+      reqForm.cat === c.cat;
+    if (unchanged) {
+      alert(t("self.reqNoChange"));
       return;
     }
     setReqSaving(true);
@@ -4118,11 +4148,18 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
           <div className="bg-slate-50 rounded-lg px-4 py-3 mt-2 text-xs text-slate-500">
             {t("self.reqNotice")}
           </div>
+          {/* 무엇이 막고 있는지 버튼 옆이 아니라 위에 둔다. 누르기 전에 보여야 한다. */}
+          {!reqChanged && (
+            <p className="flex items-center gap-1.5 text-xs font-medium mt-3" style={{ color: "#B45309" }}>
+              <AlertTriangle size={13} className="flex-shrink-0" />
+              {t("self.reqNoChangeHint")}
+            </p>
+          )}
           <div className="flex justify-end gap-2 mt-5">
             <button onClick={() => setReqForm(null)} className="px-4 py-2 text-sm text-slate-500 rounded-lg hover:bg-slate-50">
               {t("common.cancel")}
             </button>
-            <button onClick={submitRequest} disabled={reqSaving || !(reqForm.name || "").trim() || !reqForm.mc}
+            <button onClick={submitRequest} disabled={reqSaving || !(reqForm.name || "").trim() || !reqForm.mc || !reqChanged}
                     className="px-4 py-2 text-sm text-white rounded-lg disabled:opacity-40 flex items-center gap-1.5"
                     style={{ backgroundColor: BRAND.accent }}>
               {reqSaving && <Loader2 size={14} className="animate-spin" />}{t("self.reqSubmit")}
