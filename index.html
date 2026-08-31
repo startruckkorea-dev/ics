@@ -350,12 +350,21 @@ function personByEmail(email, lang, users = INITIAL_USERS) {
 const ICS_APPR_STATUS = { wait: "대기", locked: "대기(잠김)", approved: "승인", rejected: "반려", withdrawn: "철회" };
 
 // 상신 직후 결재자 수만큼 행을 만든다. 1차는 「대기」, 나머지는 「대기(잠김)」.
-async function icsApprovalsCreate(reqSpId, reqNoStr, code, name, requester, steps) {
+async function icsApprovalsCreate(createdReq, code, name, requester, steps) {
   try {
+    // 요청 번호는 화면(reqNo)과 같은 규칙으로 만든다.
+    // 날짜는 SharePoint 가 돌려준 생성 시각을 쓴다 — new Date() 를 쓰면
+    // 자정 전후에 상신했을 때 화면의 번호와 하루가 어긋난다.
+    const reqSpId = createdReq && createdReq.id;
+    const created = (createdReq && createdReq.createdDateTime) || new Date().toISOString();
+    const reqNoStr = `ICS-${String(created).slice(0, 10)}_ID-${reqSpId}`;
     for (let i = 0; i < steps.length; i++) {
       const st = steps[i];
       await icsCreateItem(ICS_LISTS.approvals, {
-        Title: `${code}_${i + 1}`,
+        // ACC Voucher 와 같은 규칙 — 전표번호_차수. ICS 는 요청번호_차수다.
+        // 통제 코드를 쓰면 한 통제에 여러 요청이 올 때 Title 이 겹친다.
+        // Flow 가 메일 제목·본문에 이 값을 그대로 쓰므로 건을 특정할 수 있어야 한다.
+        Title: `${reqNoStr}_${i + 1}`,
         RequestID: String(reqSpId),
         ReqNo: reqNoStr,
         ControlCode: code,
@@ -3166,7 +3175,7 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
             Steps: JSON.stringify(steps), Step: 1, Status: "pending",
           });
           // Power Automate 메일용 결재행을 함께 남긴다(화면 로직과 무관).
-          await icsApprovalsCreate(createdReq && createdReq.id, `ICS-${new Date().toISOString().slice(0,10)}_ID-${createdReq && createdReq.id}`,
+          await icsApprovalsCreate(createdReq,
             target.code, target.name, currentUser.email, steps);
           addLog(currentUser.email, "request_edit_control", target.code, form.name, form.name);
           setForm(null);
@@ -3224,7 +3233,7 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
           }),
           Steps: JSON.stringify(steps), Step: 1, Status: "pending",
         });
-        await icsApprovalsCreate(createdReq && createdReq.id, `ICS-${new Date().toISOString().slice(0,10)}_ID-${createdReq && createdReq.id}`,
+        await icsApprovalsCreate(createdReq,
           c.code, c.name, currentUser.email, steps);
         addLog(currentUser.email, "request_delete_control", c.code, c.name, c.nameEn);
         showToast(lang === "en"
@@ -3723,7 +3732,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
         }),
         Steps: JSON.stringify(steps), Step: 1, Status: "pending",
       });
-      await icsApprovalsCreate(createdReq && createdReq.id, `ICS-${new Date().toISOString().slice(0,10)}_ID-${createdReq && createdReq.id}`,
+      await icsApprovalsCreate(createdReq,
         c.code, name, currentUser.email, steps);
       addLog(currentUser.email, "request_edit_control", c.code, name, name);
       setChangeReqs((prev) => ({ ...prev, [c.code]: { code: c.code, status: "pending" } }));
