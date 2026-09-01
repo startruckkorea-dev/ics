@@ -8914,8 +8914,18 @@ function showLoginErr(msg) {
  * 응답 판정은 호출부에 그대로 맡긴다. 각자의 !res.ok 처리와 오류 메시지를
  * 건드리지 않기 위해서다. 이 함수는 재시도만 담당한다.
  */
-const ICS_RETRY_MAX = 2;      // 최초 1회 + 재시도 2회 = 최대 3회 시도
-const ICS_RETRY_BUDGET = 4000; // 한 호출이 재시도로 쓸 수 있는 총 대기 시간(ms)
+// 부팅 때 여섯 가지를 한꺼번에 요청한다(마스터 설정·UI 문구·통제 항목·확정 이력·
+// 카테고리 권한·부서). 그중 둘은 엑셀 본문(:/content)이라 응답이 크고, 몰리면
+// 429(스로틀)가 나기 쉽다.
+//
+// 예전에는 2회·예산 4초였다. 대기가 600 + 1400 = 2초라 두 번이면 끝이고,
+// 서버가 Retry-After 로 3초만 요구해도 예산을 넘겨 즉시 포기했다.
+// 그래서 로그인 화면에 「사용자 설정을 불러오지 못했습니다」 가 자주 떴다.
+//
+// aps 와 같은 수준(5회·8초)으로 올린다. 첫 대기를 400ms 로 줄여, 한 번에 성공하는
+// 평소에는 오히려 빨라진다. 상한이 있으므로 오래 멈추지도 않는다.
+const ICS_RETRY_MAX = 5;      // 최초 1회 + 재시도 5회
+const ICS_RETRY_BUDGET = 8000; // 한 호출이 재시도로 쓸 수 있는 총 대기 시간(ms)
 
 async function icsFetch(url, options = {}) {
   const method = String(options.method || "GET").toUpperCase();
@@ -8929,7 +8939,7 @@ async function icsFetch(url, options = {}) {
       res = await fetch(url, options);
     } catch (netErr) {
       // 네트워크가 끊긴 경우. 요청이 서버에 닿았는지 알 수 없어 멱등 호출만 다시 보낸다.
-      const wait = attempt === 0 ? 600 : 1400;
+      const wait = Math.min(400 * Math.pow(2, attempt), 3000);   // 400 → 800 → 1600 → 3000
       if (!idem || attempt >= ICS_RETRY_MAX || spent + wait > ICS_RETRY_BUDGET) throw netErr;
       console.warn(`[ICS] 네트워크 오류 재시도 ${attempt + 1}/${ICS_RETRY_MAX} (${wait}ms 후) ${method} ${String(url).slice(0, 120)}`);
       spent += wait;
@@ -8940,8 +8950,11 @@ async function icsFetch(url, options = {}) {
     const retriable = res.status === 429 || (idem && (res.status === 503 || res.status === 504));
     if (!retriable || attempt >= ICS_RETRY_MAX) return res;
     const ra = parseInt(res.headers.get("Retry-After") || "0", 10);
-    const wait = ra > 0 ? ra * 1000 : (attempt === 0 ? 600 : 1400);
-    if (spent + wait > ICS_RETRY_BUDGET) {
+    let wait = ra > 0 ? ra * 1000 : Math.min(400 * Math.pow(2, attempt), 3000);
+    // 서버가 「10초 뒤에 오라」 고 해도 그대로 기다리지 않는다. 예산 남은 만큼만 기다린다 —
+    // 예전에는 예산을 넘으면 곧바로 포기했는데, 조금 기다렸다 다시 보내면 되는 경우가 많다.
+    if (spent + wait > ICS_RETRY_BUDGET) wait = ICS_RETRY_BUDGET - spent;
+    if (wait <= 0) {
       console.warn(`[ICS] ${res.status} — 대기 예산(${ICS_RETRY_BUDGET}ms)을 넘어 재시도하지 않습니다 (Retry-After ${ra || "없음"}) ${method} ${String(url).slice(0, 120)}`);
       return res;
     }
