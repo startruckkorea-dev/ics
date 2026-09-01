@@ -642,7 +642,7 @@ const STR = {
       fsa: "FSA 최종 자가평가",
       fsaReview: "FSA 2차검토",
       history: "평가 이력 · 리포트",
-      approval: "결재 승인", todoTip: "내가 처리할 건",
+      approval: "결재 승인", todoTip: "내가 처리할 건", noAccess: "접근 권한 없음",
       settings: "부서 및 ISA · FSA사용자 권한",
       categoryAccess: "카테고리 접근 권한",
       permissions: "권한 관리",
@@ -1044,7 +1044,7 @@ const STR = {
       fsa: "FSA Final Self-Assessment",
       fsaReview: "FSA 2nd Review",
       history: "History & Reports",
-      approval: "Change Approvals", todoTip: "Items waiting for you",
+      approval: "Change Approvals", todoTip: "Items waiting for you", noAccess: "No access",
       settings: "Dept. & ISA/FSA User Access",
       categoryAccess: "Category Access",
       permissions: "Access Control",
@@ -8640,30 +8640,57 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
 
               {/* 평가 4단계도 같은 모양으로 둔다. 어느 화면에 있든 처리할 건이
                   몇 건인지 보이고, 누르면 그 화면으로 이동한다.
-                  권한이 없는 단계는 아이콘을 내지 않는다 — 눌러도 못 들어간다. */}
+                  권한이 없어도 아이콘은 그대로 둔다 — 사이드바 메뉴와 같은 방식이다.
+                  자리가 늘 같아야 「내 것이 몇 개였더라」 하고 세지 않는다.
+                  대신 흐리게 두고 배지 대신 자물쇠를 달아, 누르면 사이드바와
+                  똑같은 안내를 띄운다. */}
               {[
                 { key: "self",      icon: ClipboardList,  n: todoCounts.self },
                 { key: "review",    icon: ClipboardCheck, n: todoCounts.review },
                 { key: "fsa",       icon: ShieldCheck,    n: todoCounts.fsa },
                 { key: "fsaReview", icon: CheckCircle2,   n: todoCounts.fsaReview },
-              ].filter((x) => hasCategoryAccess(currentUser, x.key)).map(({ key, icon: Ico, n }) => (
-                <button
-                  key={key}
-                  onClick={() => setPage(key)}
-                  title={`${t(`nav.${key}`)} · ${t("nav.todoTip")}`}
-                  className="relative flex items-center justify-center w-9 h-9 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 transition-colors"
-                >
-                  <Ico size={17} style={{ color: n > 0 ? "#DC2626" : "#94A3B8" }} />
-                  <span
-                    className="absolute -top-1.5 -right-1.5 text-[10px] font-bold rounded-full px-1 min-w-[17px] h-[17px] flex items-center justify-center"
-                    style={ n > 0
-                      ? { backgroundColor: "#DC2626", color: "#fff", boxShadow: "0 0 0 2px #fff" }
-                      : { backgroundColor: "#E2E8F0", color: "#94A3B8", boxShadow: "0 0 0 2px #fff" } }
+              ].map(({ key, icon: Ico, n }) => {
+                const ok = hasCategoryAccess(currentUser, key);
+                return (
+                  <button
+                    key={key}
+                    onClick={() => {
+                      if (!ok) {
+                        alert(lang === "en"
+                          ? "You don't have access to this category. Please contact your BU Admin."
+                          : "이 카테고리에 접근 권한이 없습니다. BU Admin에게 문의해주세요.");
+                        return;
+                      }
+                      setPage(key);
+                    }}
+                    title={ok ? `${t(`nav.${key}`)} · ${t("nav.todoTip")}`
+                             : `${t(`nav.${key}`)} · ${t("nav.noAccess")}`}
+                    className="relative flex items-center justify-center w-9 h-9 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 transition-colors"
+                    style={ ok ? undefined : { opacity: 0.45 } }
                   >
-                    {n > 99 ? "99+" : n}
-                  </span>
-                </button>
-              ))}
+                    <Ico size={17} style={{ color: ok && n > 0 ? "#DC2626" : "#94A3B8" }} />
+                    {ok ? (
+                      <span
+                        className="absolute -top-1.5 -right-1.5 text-[10px] font-bold rounded-full px-1 min-w-[17px] h-[17px] flex items-center justify-center"
+                        style={ n > 0
+                          ? { backgroundColor: "#DC2626", color: "#fff", boxShadow: "0 0 0 2px #fff" }
+                          : { backgroundColor: "#E2E8F0", color: "#94A3B8", boxShadow: "0 0 0 2px #fff" } }
+                      >
+                        {n > 99 ? "99+" : n}
+                      </span>
+                    ) : (
+                      // 숫자 자리에 자물쇠. 0 을 띄우면 「처리할 것이 없다」 로 읽혀
+                      // 권한이 없다는 사실이 가려진다.
+                      <span
+                        className="absolute -top-1.5 -right-1.5 rounded-full w-[17px] h-[17px] flex items-center justify-center"
+                        style={{ backgroundColor: "#E2E8F0", boxShadow: "0 0 0 2px #fff" }}
+                      >
+                        <Lock size={9} style={{ color: "#94A3B8" }} />
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
               {/* 이니셜 원형 아바타는 뺐다. 바로 옆에 이름이 그대로 있어
                   같은 정보를 두 번 보여 주는 셈이고, 상단에 아이콘이 늘면서
                   가로가 좁아졌다. */}
