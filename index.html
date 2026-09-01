@@ -8666,9 +8666,12 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
                     title={ok ? `${t(`nav.${key}`)} · ${t("nav.todoTip")}`
                              : `${t(`nav.${key}`)} · ${t("nav.noAccess")}`}
                     className="relative flex items-center justify-center w-9 h-9 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 transition-colors"
-                    style={ ok ? undefined : { opacity: 0.45 } }
+                    // 예전에는 버튼 전체를 opacity .45 로 죽였다. 그러면 자물쇠까지
+                    // 함께 흐려져 무엇이 달린 건지 알아볼 수 없었다.
+                    // 아이콘만 연하게 두고 자물쇠는 또렷하게 남긴다.
+                    style={ ok ? undefined : { backgroundColor: "#F8FAFC", borderColor: "#E2E8F0" } }
                   >
-                    <Ico size={17} style={{ color: ok && n > 0 ? "#DC2626" : "#94A3B8" }} />
+                    <Ico size={17} style={{ color: !ok ? "#CBD5E1" : (n > 0 ? "#DC2626" : "#94A3B8") }} />
                     {ok ? (
                       <span
                         className="absolute -top-1.5 -right-1.5 text-[10px] font-bold rounded-full px-1 min-w-[17px] h-[17px] flex items-center justify-center"
@@ -8683,9 +8686,9 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
                       // 권한이 없다는 사실이 가려진다.
                       <span
                         className="absolute -top-1.5 -right-1.5 rounded-full w-[17px] h-[17px] flex items-center justify-center"
-                        style={{ backgroundColor: "#E2E8F0", boxShadow: "0 0 0 2px #fff" }}
+                        style={{ backgroundColor: "#64748B", boxShadow: "0 0 0 2px #fff" }}
                       >
-                        <Lock size={9} style={{ color: "#94A3B8" }} />
+                        <Lock size={10} strokeWidth={2.5} style={{ color: "#fff" }} />
                       </span>
                     )}
                   </button>
