@@ -642,7 +642,7 @@ const STR = {
       fsa: "FSA 최종 자가평가",
       fsaReview: "FSA 2차검토",
       history: "평가 이력 · 리포트",
-      approval: "결재 승인",
+      approval: "결재 승인", todoTip: "내가 처리할 건",
       settings: "부서 및 ISA · FSA사용자 권한",
       categoryAccess: "카테고리 접근 권한",
       permissions: "권한 관리",
@@ -1044,7 +1044,7 @@ const STR = {
       fsa: "FSA Final Self-Assessment",
       fsaReview: "FSA 2nd Review",
       history: "History & Reports",
-      approval: "Change Approvals",
+      approval: "Change Approvals", todoTip: "Items waiting for you",
       settings: "Dept. & ISA/FSA User Access",
       categoryAccess: "Category Access",
       permissions: "Access Control",
@@ -1637,7 +1637,27 @@ const MENU_GROUPS = [
   ] },
 ];
 
-function Sidebar({ page, setPage, currentUser, approvalCount = 0 }) {
+// 평가 4단계에서 「지금 내가 처리할 건」 이 몇 건인지 센다.
+// 각 화면이 목록을 거르는 기준과 똑같이 맞춘다 — 배지 숫자와 화면 건수가 다르면
+// 배지를 믿을 수 없게 된다.
+//   ISA 1차   내가 담당자이고, 작성 전이거나 반려된 것
+//   ISA 2차   내가 검토자이고, 1차가 제출된 것
+//   FSA 최종  내가 담당자이고 ISA 가 끝났으며, FSA 작성 전이거나 반려된 것
+//   FSA 2차   내가 검토자이고, FSA 가 제출된 것
+function countMyTodos(controls, currentUser, isMyReview) {
+  const me = (currentUser?.email || "").toLowerCase();
+  const mine = (controls || []).filter((c) => (c.accessor || "").toLowerCase() === me);
+  const rev  = (controls || []).filter((c) => isMyReview(c));
+  return {
+    self:      mine.filter((c) => c.status === "not_started" || c.status === "returned").length,
+    review:    rev.filter((c) => c.status === "submitted_self").length,
+    fsa:       mine.filter((c) => c.status === "completed"
+                              && (c.fsaStatus === "not_started" || c.fsaStatus === "returned" || !c.fsaStatus)).length,
+    fsaReview: rev.filter((c) => c.fsaStatus === "submitted_self").length,
+  };
+}
+
+function Sidebar({ page, setPage, currentUser, approvalCount = 0, todoCounts = {} }) {
   const { lang, t } = useLang();
   const { users, departments } = useAppData();
   return (
@@ -1693,19 +1713,28 @@ function Sidebar({ page, setPage, currentUser, approvalCount = 0 }) {
                   >
                     <Icon size={17} className="flex-shrink-0 mt-0.5" />
                     <span className="leading-snug flex-1">{t(`nav.${item.key}`)}</span>
-                    {item.key === "approval" && (
-                      // 처리할 건이 없어도 0 을 보여 준다. 배지가 사라지면
-                      // 「없는 것」인지 「아직 안 읽어온 것」인지 구분되지 않는다.
-                      <span
-                        className="flex-shrink-0 text-[11px] font-semibold rounded-full px-1.5 min-w-[18px] text-center"
-                        style={ approvalCount > 0
-                          ? { backgroundColor: "#DC2626", color: "#fff" }
-                          : { backgroundColor: "rgba(255,255,255,.16)", color: "rgba(255,255,255,.6)" } }
-                        title={t("approval.myTurn")}
-                      >
-                        {approvalCount > 99 ? "99+" : approvalCount}
-                      </span>
-                    )}
+                    {/* 결재 승인과 평가 4단계에 「내가 처리할 건수」 를 붙인다.
+                        0 이어도 보여 준다 — 배지가 사라지면 「없는 것」인지
+                        「아직 안 읽어온 것」인지 구분되지 않는다.
+                        권한이 없는 메뉴에는 붙이지 않는다. 들어갈 수 없는 화면의
+                        숫자를 보여 주면 왜 못 들어가는지만 더 헷갈린다. */}
+                    {(() => {
+                      const n = { approval: approvalCount, self: todoCounts.self,
+                                  review: todoCounts.review, fsa: todoCounts.fsa,
+                                  fsaReview: todoCounts.fsaReview }[item.key];
+                      if (n === undefined || !allowed) return null;
+                      return (
+                        <span
+                          className="flex-shrink-0 text-[11px] font-semibold rounded-full px-1.5 min-w-[18px] text-center"
+                          style={ n > 0
+                            ? { backgroundColor: "#DC2626", color: "#fff" }
+                            : { backgroundColor: "rgba(255,255,255,.16)", color: "rgba(255,255,255,.6)" } }
+                          title={t("nav.todoTip")}
+                        >
+                          {n > 99 ? "99+" : n}
+                        </span>
+                      );
+                    })()}
                   </button>
                 );
               })}
@@ -8354,10 +8383,21 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
   useEffect(() => { setIcsApprovalsNotifier(showToast); }, []);
 
   const controlsForYear = useMemo(() => controls.filter((c) => c.year === selectedYear), [controls, selectedYear]);
+
+
   const logForYear = useMemo(() => log.filter((l) => l.year === selectedYear), [log, selectedYear]);
   const controlsForActiveYear = useMemo(() => controls.filter((c) => c.year === activeYear), [controls, activeYear]);
 
   const currentUser = users.find((u) => u.id === currentUserId) || users[0];
+
+  // 평가 4단계의 「내가 처리할 건수」. 통제 목록이 바뀔 때만 다시 센다.
+  // 검토자 판정은 각 화면과 같은 기준(reviewer 이메일 일치)을 쓴다.
+  const todoCounts = useMemo(() => {
+    const me = (currentUser.email || "").toLowerCase();
+    return countMyTodos(controlsForYear, currentUser,
+      (c) => (c.reviewer || "").toLowerCase() === me);
+  }, [controlsForYear, currentUser]);
+
   const isAdmin = currentUser.role === "admin";
   const allowedDepts = getAllowedDepts(currentUser, permissions, departments);
   const accessorDepts = permissions[currentUser.email]?.deptsAccessor || [];
@@ -8539,7 +8579,8 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
             </div>
           </div>
         )}
-        <Sidebar page={page} setPage={setPage} currentUser={currentUser} approvalCount={approvalCount} />
+        <Sidebar page={page} setPage={setPage} currentUser={currentUser}
+                 approvalCount={approvalCount} todoCounts={todoCounts} />
 
         <div className="flex-1 flex flex-col min-w-0">
           <div className="h-14 flex-shrink-0 bg-white border-b border-slate-100 flex items-center justify-between px-6">
@@ -8596,6 +8637,33 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
                   {approvalCount > 99 ? "99+" : approvalCount}
                 </span>
               </button>
+
+              {/* 평가 4단계도 같은 모양으로 둔다. 어느 화면에 있든 처리할 건이
+                  몇 건인지 보이고, 누르면 그 화면으로 이동한다.
+                  권한이 없는 단계는 아이콘을 내지 않는다 — 눌러도 못 들어간다. */}
+              {[
+                { key: "self",      icon: ClipboardList,  n: todoCounts.self },
+                { key: "review",    icon: ClipboardCheck, n: todoCounts.review },
+                { key: "fsa",       icon: ShieldCheck,    n: todoCounts.fsa },
+                { key: "fsaReview", icon: CheckCircle2,   n: todoCounts.fsaReview },
+              ].filter((x) => hasCategoryAccess(currentUser, x.key)).map(({ key, icon: Ico, n }) => (
+                <button
+                  key={key}
+                  onClick={() => setPage(key)}
+                  title={`${t(`nav.${key}`)} · ${t("nav.todoTip")}`}
+                  className="relative flex items-center justify-center w-9 h-9 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 transition-colors"
+                >
+                  <Ico size={17} style={{ color: n > 0 ? "#DC2626" : "#94A3B8" }} />
+                  <span
+                    className="absolute -top-1.5 -right-1.5 text-[10px] font-bold rounded-full px-1 min-w-[17px] h-[17px] flex items-center justify-center"
+                    style={ n > 0
+                      ? { backgroundColor: "#DC2626", color: "#fff", boxShadow: "0 0 0 2px #fff" }
+                      : { backgroundColor: "#E2E8F0", color: "#94A3B8", boxShadow: "0 0 0 2px #fff" } }
+                  >
+                    {n > 99 ? "99+" : n}
+                  </span>
+                </button>
+              ))}
               <div className="flex items-center gap-2 text-sm text-slate-500">
                 <div className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center text-xs font-medium text-slate-600">
                   {pName(currentUser.name, lang, users)[0]}
