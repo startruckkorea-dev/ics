@@ -8664,10 +8664,10 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
                   </span>
                 </button>
               ))}
+              {/* 이니셜 원형 아바타는 뺐다. 바로 옆에 이름이 그대로 있어
+                  같은 정보를 두 번 보여 주는 셈이고, 상단에 아이콘이 늘면서
+                  가로가 좁아졌다. */}
               <div className="flex items-center gap-2 text-sm text-slate-500">
-                <div className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center text-xs font-medium text-slate-600">
-                  {pName(currentUser.name, lang, users)[0]}
-                </div>
                 <div className="leading-tight">
                   <div>{pName(currentUser.name, lang, users)}</div>
                   <div className="text-[11px] text-slate-400">{t(`roles.${currentUser.role}`)}</div>
