@@ -32,6 +32,20 @@
   html, body { margin: 0; padding: 0; height: 100%; background: #F5F6F8;
                font-family: 'Segoe UI', sans-serif; }
   #root { height: 100%; }
+  /* 사이드바 스크롤바 — 브라우저 기본(굵은 회색)이 남색 메뉴 옆에서 튀어 보였다(09-10).
+     6px 얇은 막대, 반투명 흰색, 마우스를 올렸을 때만 진해진다. 트랙은 투명. Firefox 는 thin. */
+  nav.ics-side-nav { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.18) transparent; }
+  nav.ics-side-nav::-webkit-scrollbar { width: 6px; }
+  nav.ics-side-nav::-webkit-scrollbar-track { background: transparent; }
+  nav.ics-side-nav::-webkit-scrollbar-thumb { background: rgba(255,255,255,.18); border-radius: 6px; }
+  nav.ics-side-nav:hover::-webkit-scrollbar-thumb { background: rgba(255,255,255,.34); }
+  nav.ics-side-nav::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.5); }
+  /* 본문·모달 스크롤도 같은 톤(밝은 배경용) */
+  .ics-main-scroll { scrollbar-width: thin; scrollbar-color: #CBD5E1 transparent; }
+  .ics-main-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+  .ics-main-scroll::-webkit-scrollbar-track { background: transparent; }
+  .ics-main-scroll::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
+  .ics-main-scroll::-webkit-scrollbar-thumb:hover { background: #94A3B8; background-clip: padding-box; }
   #loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
     font-family: 'Segoe UI', sans-serif; color: #64748B; font-size: 14px; }
   #login-screen{display:flex;align-items:center;justify-content:center;min-height:100vh;background:linear-gradient(145deg,#0f2744 0%,#101B34 100%);font-family:'Segoe UI',sans-serif}
@@ -1670,7 +1684,7 @@ function Sidebar({ page, setPage, currentUser, approvalCount = 0, todoCounts = {
         <p className="text-[13px] font-medium text-slate-300 tracking-tight mt-3 text-center">{t("tagline")}</p>
       </div>
 
-      <nav className="flex-1 px-3 py-4 overflow-y-auto">
+      <nav className="ics-side-nav flex-1 px-3 py-4 overflow-y-auto">
         {MENU_GROUPS.map((group, gi) => {
           const items = group.items.filter((item) => {
             if (item.hiddenFor && item.hiddenFor.includes(currentUser.role)) return false;
@@ -8725,7 +8739,7 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
             </div>
           )}
 
-          <div className="flex-1 overflow-y-auto p-6">
+          <div className="ics-main-scroll flex-1 overflow-y-auto p-6">
             <div className="max-w-[1600px] mx-auto">
             {page === "dashboard" && <Dashboard controls={controlsForYear} goTo={goTo} isAdmin={isAdmin} allowedDepts={allowedDepts} />}
             {page === "learn" && (
