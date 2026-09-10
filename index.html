@@ -5831,211 +5831,253 @@ const MB_STAR_B64 = "iVBORw0KGgoAAAANSUhEUgAAAY0AAAGNCAYAAADtpy3RAAAACXBIWXMAAA7
 
 const FINAL_PDF_T = {
   ko: {
-    hdr: "STK ICS · 내부회계관리제도 최종 결과 보고서", footer: "CONFIDENTIAL · Star Truck Korea 내부통제관리시스템(ICS) · 본 문서는 시스템 데이터로 자동 생성되었습니다",
-    coverEyebrow: "STAR TRUCK KOREA · INTERNAL CONTROL SYSTEM", coverTitle: "내부회계관리제도 운영실태\n최종 결과 보고서",
-    coverSub: (y) => `${y} 회계연도 · 부서별 통제 항목 자가평가(ISA) 및 최종 자가평가(FSA) 결과`,
-    docNo: "문서번호", version: "판", generated: "생성일시", preparedBy: "작성", confirmStatus: "경영진 확인",
-    confirmedBoth: "CFO · RD 확인 완료", confirmedPartial: (r) => `${r} 확인 · 나머지 대기`, notConfirmed: "미확인(작성 중)",
-    s1: "1. 개요", s1Body: [
-      "본 보고서는 「주식회사 등의 외부감사에 관한 법률」(신외부감사법)에 따른 내부회계관리제도(K-SOX) 운영실태 평가 결과를 회계연도 기준으로 요약한 것이다.",
-      "평가는 COSO Internal Control – Integrated Framework 의 5가지 구성요소(통제환경 · 위험평가 · 통제활동 · 정보 및 의사소통 · 모니터링)를 기준으로 부서별 통제 항목에 대해 수행되었다.",
-      "평가 절차는 두 단계로 진행되었다. ① ISA(Initial Self-Assessment): 담당자(Accessor)의 1차 자가평가와 검토자(Reviewer)의 2차 검토 ② FSA(Final Self-Assessment): 담당자의 최종 자가평가와 2차 검토. 각 단계의 리스크 등급은 양호 · 주의 · 위험 · 미평가로 기록된다.",
-      "본 보고서의 수치는 STK ICS 시스템에 기록된 평가 데이터를 생성 시점 기준으로 집계한 것이며, 통제 항목의 추가·변경은 별도의 변경 결재 이력으로 관리된다.",
+    hdrL: "STAR TRUCK KOREA · 내부통제관리시스템(ICS)", hdrR: (no) => `${no}`,
+    footer: "CONFIDENTIAL — 본 문서는 STK ICS 에 기록된 평가 데이터로 생성되었으며 내부 통제 목적 외 사용을 금합니다.",
+    coverCo: "STAR TRUCK KOREA CO., LTD.", coverTitle: "내부회계관리제도 운영실태\n최종 결과 보고서",
+    coverSub: (y) => `${y} 회계연도 · 통제 항목 자가평가(ISA) 및 최종 자가평가(FSA) 결과`,
+    docNo: "문서번호", version: "판", generated: "생성일시", preparedBy: "작성", scope: "대상", scopeVal: (d, c) => `${d}개 부서 · 통제 항목 ${c}건`,
+    confirmStatus: "경영진 확인", confirmedBoth: "CFO · 대표이사 확인 완료", confirmedPartial: (r) => `${r} 확인 · 나머지 대기`, notConfirmed: "미확인 (작성 중)",
+    distribution: "배포: CFO · 대표이사 · 감사(위원회) · 내부통제 담당",
+    s1: "1. 개요", s1Items: [
+      ["목적", "「주식회사 등의 외부감사에 관한 법률」에 따른 내부회계관리제도(K-SOX)의 회계연도 운영실태 평가 결과를 경영진과 감사(위원회)에 보고한다."],
+      ["평가 기준", "COSO Internal Control – Integrated Framework 의 5가지 구성요소(통제환경 · 위험평가 · 통제활동 · 정보 및 의사소통 · 모니터링)."],
+      ["평가 절차", "① ISA(Initial Self-Assessment): 담당자(Accessor) 1차 자가평가 → 검토자(Reviewer) 2차 검토  ② FSA(Final Self-Assessment): 담당자 최종 자가평가 → 검토자 2차 검토. 각 단계는 양호 · 주의 · 위험 · 미평가로 기록한다."],
+      ["데이터 기준", "STK ICS 시스템에 기록된 평가 데이터를 생성 시점 기준으로 집계하였다. 통제 항목의 추가 · 변경 · 삭제는 변경 결재(MC → ICS Admin → CFO)를 거치며 8장에 기재한다."],
+      ["최종본 판정", "CFO 와 대표이사가 시스템에서 확인하면 문서번호가 FINAL 로 바뀐다. 그 전 판은 DRAFT 로 표기된다."],
     ],
-    s2: "2. 평가 결과 요약", kTotal: "전체 통제 항목", kDepts: "평가 대상 부서", kIsa: "ISA 완료율", kFsa: "FSA 완료율", kGreen: "양호", kOrange: "주의", kRed: "위험", kNone: "미평가",
-    s3: "3. 부서 × 통제영역 리스크 매트릭스", s3Note: "셀의 숫자는 통제 항목 수, 아래 작은 숫자는 등급별 건수(양호 · 주의 · 위험 · 미평가 순). 셀 색은 해당 셀의 최고 리스크 등급.",
-    colDept: "부서", s4: "4. 주의 · 위험 통제 항목", s4None: "주의 또는 위험으로 분류된 통제 항목이 없습니다.",
-    colCode: "코드", colCat: "통제영역", colName: "통제 항목", colIsa: "ISA 등급", colFsa: "FSA 등급", colReviewer: "검토자", colComment: "검토 의견",
-    s5: "5. 부서별 평가 진행 현황", colItems: "항목 수", colIsaDone: "ISA 완료", colFsaDone: "FSA 완료", colRate: "완료율(FSA)", colRisk: "주의/위험",
-    s6: "6. 결론 및 경영진 확인", s6Body: (st) => st.red === 0 && st.orange === 0
-      ? "평가 대상 통제 항목 중 「위험」 또는 「주의」로 분류된 항목은 없다. 미평가 항목은 회계연도 종료 전까지 평가를 완료하고, 결과는 본 보고서의 다음 판에 반영한다."
-      : `평가 대상 통제 항목 중 「위험」 ${st.red}건, 「주의」 ${st.orange}건이 식별되었다. 해당 항목은 4장에 상세를 기재하였으며, 담당 부서는 개선 조치 계획을 수립하고 검토자는 이행 여부를 후속 점검한다.`,
-    signCfo: "CFO", signRd: "Representative Director (RD)", signName: "성명", signEmail: "계정", signAt: "확인 일시", signPending: "확인 대기", signLine: "(서명)",
-    disclaimer: "본 보고서는 STK 내부통제관리시스템(ICS)에 기록된 평가 데이터를 근거로 자동 생성되었으며, 생성 이후의 변경 사항은 반영되지 않는다. 최종본 여부는 CFO 및 RD 의 시스템 확인 기록으로 판단한다.",
-    unit: "건", page: (p, n) => `${p} / ${n}`,
+    s2: "2. 평가 결과 요약", kpi: ["전체 통제 항목", "평가 대상 부서", "검토자 수", "ISA 완료(완료율)", "FSA 완료(완료율)", "양호", "주의", "위험", "미평가", "변경 결재(진행/승인/반려)"],
+    s2Narr: (s) => [
+      `${s.year} 회계연도 평가 대상 통제 항목은 ${s.depts}개 부서 ${s.total}건이다.`,
+      `ISA 는 ${s.isaDone}건(${s.isaRate}%), FSA 는 ${s.fsaDone}건(${s.fsaRate}%)이 완료되었다.` + (s.isaSub || s.fsaSub ? ` 2차 검토 대기는 ISA ${s.isaSub}건 · FSA ${s.fsaSub}건이다.` : ""),
+      s.red || s.orange ? `리스크 등급은 위험 ${s.red}건 · 주의 ${s.orange}건 · 양호 ${s.green}건이며, 위험 · 주의 항목은 6장에 상세를 기재하였다.` : `현재까지 위험 또는 주의로 분류된 통제 항목은 없으며, 미평가 ${s.none}건은 회계연도 종료 전 완료 예정이다.`,
+      s.reqTotal ? `통제 항목 변경 결재는 총 ${s.reqTotal}건(승인 ${s.reqApproved} · 진행 ${s.reqPending} · 반려 ${s.reqRejected})이다.` : "이 회계연도에 접수된 통제 항목 변경 결재는 없다.",
+    ],
+    s3: "3. 평가 범위", s3a: "3.1 부서 × 구성요소별 통제 항목 수", s3b: "3.2 수행 빈도별 통제 항목 수", colDept: "부서", colTotal: "합계", colFreq: "수행 빈도", colCount: "항목 수", colShare: "비중",
+    s4: "4. 평가 진행 현황", s4a: "4.1 ISA(1차 자가평가 · 2차 검토)", s4b: "4.2 FSA(최종 자가평가 · 2차 검토)",
+    stNot: "평가 전", stSub: "1차 완료 · 2차 대기", stRet: "반려 · 수정요청", stDone: "완료", colRate: "완료율",
+    s5: "5. 리스크 평가 결과", s5Note: "숫자는 통제 항목 수. 셀 색은 해당 셀의 최고 등급이며, 아래 작은 글씨는 등급별 건수(양호/주의/위험/미평가).", s5b: "5.1 등급 분포", colRisk: "등급",
+    s6: "6. 주의 · 위험 통제 항목 상세", s6None: "주의 또는 위험으로 분류된 통제 항목이 없다.",
+    colCode: "코드", colCat: "구성요소", colName: "통제 항목", colIsa: "ISA", colFsa: "FSA", colAccessor: "담당자", colReviewer: "검토자", colComment: "검토 의견",
+    s7: "7. 검토자별 현황", colItems: "담당 항목", colIsaDone: "ISA 검토 완료", colFsaDone: "FSA 검토 완료", colPending: "검토 대기", colFlag: "주의/위험",
+    s8: "8. 통제 항목 변경 결재 현황", s8None: "이 회계연도에 접수된 변경 결재가 없다.", colType: "유형", colRequester: "신청자", colRequested: "신청일", colStage: "현재 단계", colStatus: "상태", colDecided: "최종 처리", typeEdit: "수정", typeDelete: "삭제", stPending: "진행 중", stApproved: "승인", stRejected: "반려", stageDone: "완료",
+    s9: "9. 결론 및 경영진 확인", s9Body: (s) => s.red === 0 && s.orange === 0
+      ? "평가 대상 통제 항목 중 「위험」 또는 「주의」로 분류된 항목은 없다. 미평가 항목은 회계연도 종료 전까지 평가를 완료하고 그 결과를 본 보고서의 다음 판에 반영한다. 경영진은 아래 확인란에 따라 본 보고서의 결과를 확인한다."
+      : `평가 대상 통제 항목 중 「위험」 ${s.red}건, 「주의」 ${s.orange}건이 식별되었다. 해당 부서는 개선 조치 계획을 수립하고 검토자는 이행 여부를 후속 점검하며, 결과는 다음 판에 반영한다. 경영진은 아래 확인란에 따라 본 보고서의 결과를 확인한다.`,
+    signCfo: "CFO", signRd: "대표이사 (Representative Director)", signName: "성명", signEmail: "계정", signAt: "시스템 확인 일시", signPending: "확인 대기", signLine: "(서명)",
+    appx: "부록 A. 통제 항목 전체 목록", appxNote: (n) => `총 ${n}건 · 코드순`, colFreqS: "빈도", colIsaSt: "ISA 상태", colIsaRk: "ISA 등급", colFsaSt: "FSA 상태", colFsaRk: "FSA 등급",
+    page: (p, n) => `${p} / ${n}`, total: "합계", units: "건",
   },
   en: {
-    hdr: "STK ICS · Internal Control Final Assessment Report", footer: "CONFIDENTIAL · Star Truck Korea Internal Control System (ICS) · Automatically generated from system data",
-    coverEyebrow: "STAR TRUCK KOREA · INTERNAL CONTROL SYSTEM", coverTitle: "Internal Control over Financial Reporting\nFinal Assessment Report",
-    coverSub: (y) => `Fiscal Year ${y} · Initial (ISA) and Final (FSA) Self-Assessment Results by Department`,
-    docNo: "Document No.", version: "Version", generated: "Generated", preparedBy: "Prepared by", confirmStatus: "Management confirmation",
-    confirmedBoth: "Confirmed by CFO and RD", confirmedPartial: (r) => `Confirmed by ${r} · remaining pending`, notConfirmed: "Not yet confirmed (working draft)",
-    s1: "1. Overview", s1Body: [
-      "This report summarizes the results of the annual assessment of Internal Control over Financial Reporting (K-SOX) required under the Act on External Audit of Stock Companies.",
-      "The assessment was performed on departmental control items against the five components of the COSO Internal Control – Integrated Framework: Control Environment, Risk Assessment, Control Activities, Information & Communication, and Monitoring Activities.",
-      "The procedure has two phases. (1) ISA – Initial Self-Assessment by the control owner (Accessor) followed by a second-level review (Reviewer). (2) FSA – Final Self-Assessment by the owner followed by a second-level review. Each phase records a risk rating of Good, Caution, Critical, or Not assessed.",
-      "Figures in this report are aggregated from assessment data recorded in the STK ICS system as of the generation time. Additions and changes to control items are governed by a separate change-approval history.",
+    hdrL: "STAR TRUCK KOREA · Internal Control System (ICS)", hdrR: (no) => `${no}`,
+    footer: "CONFIDENTIAL — Generated from assessment data recorded in STK ICS. Not for use outside internal-control purposes.",
+    coverCo: "STAR TRUCK KOREA CO., LTD.", coverTitle: "Internal Control over Financial Reporting\nFinal Assessment Report",
+    coverSub: (y) => `Fiscal Year ${y} · Initial (ISA) and Final (FSA) Self-Assessment Results`,
+    docNo: "Document No.", version: "Version", generated: "Generated", preparedBy: "Prepared by", scope: "Scope", scopeVal: (d, c) => `${d} departments · ${c} control items`,
+    confirmStatus: "Management confirmation", confirmedBoth: "Confirmed by CFO and Representative Director", confirmedPartial: (r) => `Confirmed by ${r} · remaining pending`, notConfirmed: "Not yet confirmed (working draft)",
+    distribution: "Distribution: CFO · Representative Director · Audit Committee · Internal Control Officer",
+    s1: "1. Overview", s1Items: [
+      ["Purpose", "To report to management and the Audit Committee the results of the annual assessment of Internal Control over Financial Reporting (K-SOX) required under the Act on External Audit of Stock Companies."],
+      ["Criteria", "The five components of the COSO Internal Control – Integrated Framework: Control Environment, Risk Assessment, Control Activities, Information & Communication, Monitoring Activities."],
+      ["Procedure", "(1) ISA – Initial Self-Assessment by the control owner (Accessor), then second-level review by the Reviewer. (2) FSA – Final Self-Assessment by the owner, then second-level review. Each step is rated Good, Caution, Critical, or Not assessed."],
+      ["Data basis", "Aggregated from assessment data recorded in STK ICS as of the generation time. Additions, changes and deletions of control items go through change approval (MC → ICS Admin → CFO) and are listed in Section 8."],
+      ["Final version", "The document number changes to FINAL once both the CFO and the Representative Director confirm in the system; earlier versions are marked DRAFT."],
     ],
-    s2: "2. Summary of Results", kTotal: "Total control items", kDepts: "Departments assessed", kIsa: "ISA completion", kFsa: "FSA completion", kGreen: "Good", kOrange: "Caution", kRed: "Critical", kNone: "Not assessed",
-    s3: "3. Risk Matrix — Department × COSO Component", s3Note: "The number in each cell is the count of control items; the small figures below are counts by rating (Good · Caution · Critical · Not assessed). Cell colour shows the highest risk rating in that cell.",
-    colDept: "Department", s4: "4. Control Items Rated Caution or Critical", s4None: "No control items are rated Caution or Critical.",
-    colCode: "Code", colCat: "Component", colName: "Control item", colIsa: "ISA rating", colFsa: "FSA rating", colReviewer: "Reviewer", colComment: "Review comment",
-    s5: "5. Assessment Progress by Department", colItems: "Items", colIsaDone: "ISA done", colFsaDone: "FSA done", colRate: "Completion (FSA)", colRisk: "Caution/Critical",
-    s6: "6. Conclusion and Management Confirmation", s6Body: (st) => st.red === 0 && st.orange === 0
-      ? "No control item in scope is rated Critical or Caution. Items not yet assessed are to be completed before fiscal year-end and reflected in the next version of this report."
-      : `${st.red} control item(s) rated Critical and ${st.orange} rated Caution were identified. Details are listed in Section 4; the responsible departments shall prepare remediation plans and the reviewers shall follow up on implementation.`,
-    signCfo: "CFO", signRd: "Representative Director (RD)", signName: "Name", signEmail: "Account", signAt: "Confirmed at", signPending: "Pending", signLine: "(Signature)",
-    disclaimer: "This report was generated automatically from assessment data recorded in the STK Internal Control System (ICS); changes made after generation are not reflected. Whether this is the final version is determined by the CFO and RD confirmation records in the system.",
-    unit: "", page: (p, n) => `${p} / ${n}`,
+    s2: "2. Summary of Results", kpi: ["Total control items", "Departments in scope", "Reviewers", "ISA completed (rate)", "FSA completed (rate)", "Good", "Caution", "Critical", "Not assessed", "Change approvals (pending/approved/rejected)"],
+    s2Narr: (s) => [
+      `The FY${s.year} assessment covers ${s.total} control items across ${s.depts} departments.`,
+      `ISA has been completed for ${s.isaDone} items (${s.isaRate}%) and FSA for ${s.fsaDone} items (${s.fsaRate}%).` + (s.isaSub || s.fsaSub ? ` Items awaiting second-level review: ISA ${s.isaSub}, FSA ${s.fsaSub}.` : ""),
+      s.red || s.orange ? `Risk ratings: Critical ${s.red}, Caution ${s.orange}, Good ${s.green}. Critical and Caution items are detailed in Section 6.` : `No control item is currently rated Critical or Caution; ${s.none} items not yet assessed are scheduled for completion before fiscal year-end.`,
+      s.reqTotal ? `Control-item change approvals total ${s.reqTotal} (approved ${s.reqApproved}, pending ${s.reqPending}, rejected ${s.reqRejected}).` : "No control-item change approvals were filed in this fiscal year.",
+    ],
+    s3: "3. Scope of Assessment", s3a: "3.1 Control items by department and COSO component", s3b: "3.2 Control items by frequency", colDept: "Department", colTotal: "Total", colFreq: "Frequency", colCount: "Items", colShare: "Share",
+    s4: "4. Assessment Progress", s4a: "4.1 ISA (initial self-assessment · second-level review)", s4b: "4.2 FSA (final self-assessment · second-level review)",
+    stNot: "Not started", stSub: "Self-assessed · awaiting review", stRet: "Returned", stDone: "Completed", colRate: "Completion",
+    s5: "5. Risk Assessment Results", s5Note: "Numbers are counts of control items. Cell colour is the highest rating in the cell; the small figures are counts by rating (Good/Caution/Critical/Not assessed).", s5b: "5.1 Rating distribution", colRisk: "Rating",
+    s6: "6. Control Items Rated Caution or Critical", s6None: "No control items are rated Caution or Critical.",
+    colCode: "Code", colCat: "Component", colName: "Control item", colIsa: "ISA", colFsa: "FSA", colAccessor: "Owner", colReviewer: "Reviewer", colComment: "Review comment",
+    s7: "7. Status by Reviewer", colItems: "Items", colIsaDone: "ISA reviewed", colFsaDone: "FSA reviewed", colPending: "Awaiting review", colFlag: "Caution/Critical",
+    s8: "8. Control-Item Change Approvals", s8None: "No change approvals were filed in this fiscal year.", colType: "Type", colRequester: "Requester", colRequested: "Filed", colStage: "Current step", colStatus: "Status", colDecided: "Decided", typeEdit: "Edit", typeDelete: "Delete", stPending: "Pending", stApproved: "Approved", stRejected: "Rejected", stageDone: "Done",
+    s9: "9. Conclusion and Management Confirmation", s9Body: (s) => s.red === 0 && s.orange === 0
+      ? "No control item in scope is rated Critical or Caution. Items not yet assessed will be completed before fiscal year-end and reflected in the next version. Management confirms the results of this report in the boxes below."
+      : `${s.red} control item(s) rated Critical and ${s.orange} rated Caution were identified. The responsible departments shall prepare remediation plans, reviewers shall follow up on implementation, and results will be reflected in the next version. Management confirms the results of this report in the boxes below.`,
+    signCfo: "Chief Financial Officer (CFO)", signRd: "Representative Director (RD)", signName: "Name", signEmail: "Account", signAt: "Confirmed in system at", signPending: "Pending", signLine: "(Signature)",
+    appx: "Appendix A. Complete List of Control Items", appxNote: (n) => `${n} items · by code`, colFreqS: "Freq.", colIsaSt: "ISA status", colIsaRk: "ISA rating", colFsaSt: "FSA status", colFsaRk: "FSA rating",
+    page: (p, n) => `${p} / ${n}`, total: "Total", units: "",
   },
 };
 
 async function exportFinalReportPdf(lang, ctx) {
-  const T = FINAL_PDF_T[lang] || FINAL_PDF_T.ko;
+  const L = lang === "en" ? "en" : "ko"; const T = FINAL_PDF_T[L];
   if (typeof html2canvas !== "function" || typeof PDFLib === "undefined") { alert("PDF 라이브러리를 불러오지 못했습니다. 네트워크를 확인해 주세요."); return false; }
   const { controls, departments, users, activeYear, yearConfirmation, currentUser } = ctx;
   const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-  const rl = (r) => (RISK_META[r] || RISK_META.none);
-  const riskLabel = (r) => rl(r)[lang === "en" ? "en" : "ko"];
-  const now = new Date(Date.now() + 9 * 3600 * 1000);
-  const p2 = (n) => String(n).padStart(2, "0");
+  const rl = (r) => RISK_META[r] || RISK_META.none; const rlab = (r) => rl(r)[L];
+  const stLab = (s) => ({ not_started: T.stNot, submitted_self: T.stSub, returned: T.stRet, completed: T.stDone })[s] || T.stNot;
+  const now = new Date(Date.now() + 9 * 3600 * 1000); const p2 = (n) => String(n).padStart(2, "0");
   const ds = `${now.getUTCFullYear()}-${p2(now.getUTCMonth() + 1)}-${p2(now.getUTCDate())} ${p2(now.getUTCHours())}:${p2(now.getUTCMinutes())}`;
   const dsFile = ds.replace(/[- :]/g, "").slice(0, 12);
+  const dn = (id) => deptName(id, L, departments); const cn = (id) => catName(id, L);
+  const who = (e) => { const n = personByEmail(e, L, users); return n && n !== e ? n : (typeof nameOfEmail === "function" ? nameOfEmail(e) : e) || e; };
+  const fmtD = (iso) => iso ? formatDateTime(iso, L) : "–";
+  const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
+
+  // ── 변경 결재 (있으면 8장에, 실패하면 빈 목록) ──
+  let requests = [];
+  try { requests = (await loadIcsChangeRequests()).filter((r) => !r.year || String(r.year) === String(activeYear)); } catch (e) { console.warn("[ICS] 변경 결재 로드 실패(보고서 8장 생략):", e.message); }
 
   // ── 집계 ──
-  const counts = { green: 0, orange: 0, red: 0, none: 0 };
-  controls.forEach((c) => { counts[finalRisk(c)] = (counts[finalRisk(c)] || 0) + 1; });
   const total = controls.length;
-  const isaDone = controls.filter((c) => c.status === "completed").length;
-  const fsaDone = controls.filter((c) => c.fsaStatus === "completed").length;
-  const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
+  const risk = { green: 0, orange: 0, red: 0, none: 0 }; controls.forEach((c) => { risk[finalRisk(c)] += 1; });
+  const isaBy = { not_started: 0, submitted_self: 0, returned: 0, completed: 0 }, fsaBy = { ...isaBy };
+  controls.forEach((c) => { isaBy[c.status in isaBy ? c.status : "not_started"] += 1; fsaBy[c.fsaStatus in fsaBy ? c.fsaStatus : "not_started"] += 1; });
   const deptsInScope = departments.filter((d) => controls.some((c) => c.dept === d.id));
-  const dn = (id) => deptName(id, lang, departments);
-  const cn = (id) => catName(id, lang);
-  const matrix = deptsInScope.map((d) => ({ dept: d, cells: CATEGORIES.map((cat) => {
-    const items = controls.filter((c) => c.dept === d.id && c.cat === cat.id);
-    if (!items.length) return { count: 0 };
-    const by = { green: 0, orange: 0, red: 0, none: 0 }; items.forEach((c) => { by[finalRisk(c)] += 1; });
-    return { count: items.length, risk: matrixCellRisk(items), by };
-  }) }));
-  const flagged = controls.filter((c) => ["red", "orange"].includes(finalRisk(c)))
-    .sort((a, b) => (finalRisk(a) === "red" ? 0 : 1) - (finalRisk(b) === "red" ? 0 : 1) || String(a.code).localeCompare(String(b.code)));
-  const deptRows = deptsInScope.map((d) => { const its = controls.filter((c) => c.dept === d.id);
-    return { name: dn(d.id), n: its.length, isa: its.filter((c) => c.status === "completed").length, fsa: its.filter((c) => c.fsaStatus === "completed").length,
-      flag: its.filter((c) => ["red", "orange"].includes(finalRisk(c))).length }; });
+  const reviewers = [...new Set(controls.map((c) => String(c.reviewer || "").toLowerCase()).filter(Boolean))];
+  const flagged = controls.filter((c) => ["red", "orange"].includes(finalRisk(c))).sort((a, b) => (finalRisk(a) === "red" ? 0 : 1) - (finalRisk(b) === "red" ? 0 : 1) || String(a.code).localeCompare(String(b.code)));
+  const reqBy = { pending: 0, approved: 0, rejected: 0 }; requests.forEach((r) => { reqBy[r.status in reqBy ? r.status : "pending"] += 1; });
   const conf = yearConfirmation || {};
   const confText = conf.cfo && conf.rd ? T.confirmedBoth : (conf.cfo || conf.rd) ? T.confirmedPartial(conf.cfo ? "CFO" : "RD") : T.notConfirmed;
-  const version = conf.cfo && conf.rd ? "FINAL" : "DRAFT";
-  const docNo = `ICS-FY${activeYear}-${version}-${dsFile.slice(0, 8)}`;
+  const version = conf.cfo && conf.rd ? "FINAL" : "DRAFT"; const docNo = `ICS-FY${activeYear}-${version}-${dsFile.slice(0, 8)}`;
   const me = currentUser ? `${currentUser.name || ""} (${currentUser.email || ""})` : "";
+  const S = { year: activeYear, depts: deptsInScope.length, total, isaDone: isaBy.completed, fsaDone: fsaBy.completed, isaRate: pct(isaBy.completed, total), fsaRate: pct(fsaBy.completed, total), isaSub: isaBy.submitted_self, fsaSub: fsaBy.submitted_self, ...risk, reqTotal: requests.length, reqApproved: reqBy.approved, reqPending: reqBy.pending, reqRejected: reqBy.rejected };
 
-  // ── HTML 조립 (세그먼트 단위로 캡처해 페이지에 앉힌다 — 표 행이 페이지 경계에서 잘리지 않게) ──
-  const F = lang === "en" ? '"Segoe UI","Malgun Gothic",sans-serif' : '"Malgun Gothic","Segoe UI",sans-serif';
-  const h2 = (t) => `<div style="font-size:15px;font-weight:700;color:#0f2744;margin:0 0 8px;padding:6px 10px;background:#eef3f9;border-left:4px solid #1b3a6b">${esc(t)}</div>`;
-  const th = (t, extra = "") => `<th style="background:#1b3a6b;color:#fff;font-weight:600;font-size:11px;padding:6px 7px;text-align:left;border:1px solid #16315c;${extra}">${esc(t)}</th>`;
-  const td = (t, extra = "") => `<td style="font-size:11px;padding:5px 7px;border:1px solid #d6dde8;vertical-align:top;${extra}">${t}</td>`;
-  const badge = (r) => `<span style="display:inline-block;padding:1px 7px;border-radius:9px;font-size:10.5px;font-weight:700;color:${rl(r).text};background:${rl(r).bg}">${esc(riskLabel(r))}</span>`;
-  const kpi = (label, val, color) => `<div style="flex:1;min-width:120px;border:1px solid #d6dde8;border-radius:8px;padding:10px 12px;background:#fff"><div style="font-size:10.5px;color:#64748b;margin-bottom:4px">${esc(label)}</div><div style="font-size:22px;font-weight:700;color:${color || "#0f2744"}">${val}</div></div>`;
+  // ── 서식 헬퍼 (절제된 감사 보고서 톤) ──
+  const NAVY = "#14213D", INK = "#1F2937", MUTE = "#6B7280", RULE = "#D1D5DB", HEAD = "#F3F4F6";
+  const F = L === "en" ? '"Segoe UI","Malgun Gothic",Arial,sans-serif' : '"Malgun Gothic","Segoe UI",sans-serif';
+  const H2 = (t) => `<div style="font-size:14.5px;font-weight:700;color:${NAVY};margin:2px 0 10px;padding-bottom:5px;border-bottom:1.5px solid ${NAVY}">${esc(t)}</div>`;
+  const H3 = (t) => `<div style="font-size:11.5px;font-weight:700;color:${INK};margin:10px 0 6px">${esc(t)}</div>`;
+  const P = (t) => `<p style="font-size:10.5px;line-height:1.75;color:${INK};margin:0 0 5px;text-align:justify">${esc(t)}</p>`;
+  const NOTE = (t) => `<p style="font-size:9.5px;line-height:1.6;color:${MUTE};margin:0 0 6px">${esc(t)}</p>`;
+  const TBL = (cols, rows, opts = {}) => { // cols: [{t, w, r(ight)}] ; rows: [[cell html...]]
+    const cg = cols.map((c) => `<col style="width:${c.w}">`).join("");
+    const th = cols.map((c) => `<th style="background:${HEAD};color:${NAVY};font-size:9.5px;font-weight:700;padding:5px 6px;text-align:${c.r ? "right" : c.c ? "center" : "left"};border-top:1.2px solid ${NAVY};border-bottom:1px solid ${RULE}">${esc(c.t)}</th>`).join("");
+    const tr = rows.map((r, i) => `<tr>${r.map((v, j) => `<td style="font-size:9.8px;line-height:1.45;padding:4px 6px;color:${INK};border-bottom:1px solid #E5E7EB;text-align:${cols[j] && cols[j].r ? "right" : cols[j] && cols[j].c ? "center" : "left"};vertical-align:top;${opts.nowrap && opts.nowrap.includes(j) ? "white-space:nowrap;" : ""}${r.__tot ? "" : ""}">${v}</td>`).join("")}</tr>`).join("");
+    return `<table style="width:100%;border-collapse:collapse;table-layout:fixed"><colgroup>${cg}</colgroup><thead><tr>${th}</tr></thead><tbody>${tr}</tbody></table>`;
+  };
+  const totRow = (cells) => cells.map((v) => `<b style="color:${NAVY}">${v}</b>`);
+  const dot = (r) => `<span style="color:${rl(r).color};font-size:11px;line-height:1">●</span>`;
+  const riskCell = (r) => `${dot(r)} <span style="color:${rl(r).text};font-weight:600">${esc(rlab(r))}</span>`;
+  const catTitle = (c) => c[L];
+
   const segs = [];
+  const seg = (html) => segs.push(html);
   // 표지
-  segs.push(`<div style="padding:70px 30px 40px;text-align:center">
-    <div style="font-size:11px;letter-spacing:.18em;color:#64748b;margin-bottom:26px">${esc(T.coverEyebrow)}</div>
-    <div style="font-size:30px;font-weight:800;color:#0f2744;line-height:1.35;white-space:pre-line">${esc(T.coverTitle)}</div>
-    <div style="width:64px;height:4px;background:#1b3a6b;margin:22px auto"></div>
-    <div style="font-size:13px;color:#334155">${esc(T.coverSub(activeYear))}</div>
-    <table style="margin:52px auto 0;border-collapse:collapse;font-size:11.5px;min-width:420px">
-      <tr><td style="padding:6px 14px;color:#64748b;text-align:right;border-bottom:1px solid #e2e8f0">${esc(T.docNo)}</td><td style="padding:6px 14px;font-weight:600;color:#0f2744;text-align:left;border-bottom:1px solid #e2e8f0">${esc(docNo)}</td></tr>
-      <tr><td style="padding:6px 14px;color:#64748b;text-align:right;border-bottom:1px solid #e2e8f0">${esc(T.version)}</td><td style="padding:6px 14px;font-weight:600;text-align:left;border-bottom:1px solid #e2e8f0;color:${version === "FINAL" ? "#166a43" : "#a6631e"}">${version}</td></tr>
-      <tr><td style="padding:6px 14px;color:#64748b;text-align:right;border-bottom:1px solid #e2e8f0">${esc(T.generated)}</td><td style="padding:6px 14px;text-align:left;border-bottom:1px solid #e2e8f0">${ds} (KST)</td></tr>
-      <tr><td style="padding:6px 14px;color:#64748b;text-align:right;border-bottom:1px solid #e2e8f0">${esc(T.preparedBy)}</td><td style="padding:6px 14px;text-align:left;border-bottom:1px solid #e2e8f0">${esc(me)}</td></tr>
-      <tr><td style="padding:6px 14px;color:#64748b;text-align:right">${esc(T.confirmStatus)}</td><td style="padding:6px 14px;text-align:left;font-weight:600;color:${conf.cfo && conf.rd ? "#166a43" : "#a6631e"}">${esc(confText)}</td></tr>
+  seg(`<div style="padding:26px 0 0">
+    <div style="font-size:10px;letter-spacing:.22em;color:${MUTE};font-weight:600">${esc(T.coverCo)}</div>
+    <div style="height:1.5px;background:${NAVY};width:100%;margin:10px 0 60px"></div>
+    <div style="font-size:31px;font-weight:800;color:${NAVY};line-height:1.32;white-space:pre-line;letter-spacing:-.01em">${esc(T.coverTitle)}</div>
+    <div style="font-size:12.5px;color:${INK};margin:18px 0 0">${esc(T.coverSub(activeYear))}</div>
+    <table style="border-collapse:collapse;font-size:10.5px;margin:64px 0 0;width:70%">
+      ${[[T.docNo, `<b>${esc(docNo)}</b>`], [T.version, `<b style="color:${version === "FINAL" ? "#166A43" : "#A6631E"}">${version}</b>`], [T.generated, `${ds} (KST)`], [T.preparedBy, esc(me)], [T.scope, esc(T.scopeVal(deptsInScope.length, total))], [T.confirmStatus, `<span style="color:${conf.cfo && conf.rd ? "#166A43" : "#A6631E"};font-weight:600">${esc(confText)}</span>`]]
+        .map(([k, v]) => `<tr><td style="padding:7px 0;color:${MUTE};width:130px;border-bottom:1px solid #E5E7EB">${esc(k)}</td><td style="padding:7px 0;color:${INK};border-bottom:1px solid #E5E7EB">${v}</td></tr>`).join("")}
     </table>
-    <div style="margin-top:70px;font-size:10px;color:#94a3b8">Star Truck Korea Co., Ltd. · Internal Control System</div>
+    <div style="font-size:9.5px;color:${MUTE};margin-top:70px">${esc(T.distribution)}</div>
   </div>`);
-  // 1. 개요
-  segs.push(`<div>${h2(T.s1)}${T.s1Body.map((p) => `<p style="font-size:11.5px;line-height:1.7;color:#334155;margin:0 0 7px;text-align:justify">${esc(p)}</p>`).join("")}</div>`);
-  // 2. 요약
-  segs.push(`<div>${h2(T.s2)}<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
-    ${kpi(T.kTotal, total)}${kpi(T.kDepts, deptsInScope.length)}${kpi(T.kIsa, pct(isaDone, total) + "%")}${kpi(T.kFsa, pct(fsaDone, total) + "%")}</div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">${kpi(T.kGreen, counts.green, rl("green").color)}${kpi(T.kOrange, counts.orange, rl("orange").color)}${kpi(T.kRed, counts.red, rl("red").color)}${kpi(T.kNone, counts.none, rl("none").color)}</div></div>`);
-  // 3. 매트릭스
-  segs.push(`<div>${h2(T.s3)}<p style="font-size:10.5px;color:#64748b;margin:0 0 6px">${esc(T.s3Note)}</p>
-    <table style="width:100%;border-collapse:collapse;table-layout:fixed"><colgroup><col style="width:26%">${CATEGORIES.map(() => '<col>').join("")}</colgroup>
-    <tr>${th(T.colDept)}${CATEGORIES.map((c) => th(c[lang === "en" ? "en" : "ko"], "text-align:center")).join("")}</tr>
-    ${matrix.map((row) => `<tr>${td(`<b>${esc(row.dept[lang === "en" ? "en" : "ko"] || row.dept.ko || row.dept.id)}</b>`)}${row.cells.map((cell) => cell.count ? td(`<div style="text-align:center"><span style="display:inline-block;min-width:30px;padding:1px 6px;border:1.5px solid ${rl(cell.risk).color};border-radius:6px;font-weight:700;color:${rl(cell.risk).text}">${cell.count}</span><div style="font-size:9.5px;margin-top:2px;color:#64748b">${["green", "orange", "red", "none"].filter((k) => cell.by[k]).map((k) => `<span style="color:${rl(k).color};font-weight:700">●</span>${cell.by[k]}`).join(" ")}</div></div>`) : td('<div style="text-align:center;color:#cbd5e1">–</div>')).join("")}</tr>`).join("")}
-    </table></div>`);
-  // 4. 주의·위험 항목
-  segs.push(`<div>${h2(T.s4 + ` (${flagged.length})`)}${flagged.length ? `<table style="width:100%;border-collapse:collapse;table-layout:fixed"><colgroup><col style="width:9%"><col style="width:13%"><col style="width:11%"><col style="width:25%"><col style="width:9%"><col style="width:9%"><col style="width:24%"></colgroup>
-    <tr>${th(T.colCode)}${th(T.colDept)}${th(T.colCat)}${th(T.colName)}${th(T.colIsa, "text-align:center")}${th(T.colFsa, "text-align:center")}${th(T.colComment)}</tr>
-    ${flagged.map((c) => `<tr>${td(`<span style="font-family:Consolas,monospace">${esc(c.code)}</span>`)}${td(esc(dn(c.dept)))}${td(esc(cn(c.cat)))}${td(esc(cName(c, lang)))}${td(`<div style="text-align:center">${badge(finalRisk(c))}</div>`)}${td(`<div style="text-align:center">${c.fsaStatus === "completed" ? badge(c.fsaReviewRisk || c.fsaRisk || "none") : `<span style="color:#94a3b8">–</span>`}</div>`)}${td(esc(String(c.reviewComment || c.fsaComment || c.selfComment || "").replace(/<[^>]*>/g, "")).slice(0, 220))}</tr>`).join("")}</table>` : `<p style="font-size:11.5px;color:#64748b;padding:8px 4px">${esc(T.s4None)}</p>`}</div>`);
-  // 5. 부서별 진행
-  segs.push(`<div>${h2(T.s5)}<table style="width:100%;border-collapse:collapse"><tr>${th(T.colDept)}${th(T.colItems, "text-align:right")}${th(T.colIsaDone, "text-align:right")}${th(T.colFsaDone, "text-align:right")}${th(T.colRate, "text-align:right")}${th(T.colRisk, "text-align:right")}</tr>
-    ${deptRows.map((r) => `<tr>${td(esc(r.name))}${td(r.n, "text-align:right")}${td(r.isa, "text-align:right")}${td(r.fsa, "text-align:right")}${td(pct(r.fsa, r.n) + "%", "text-align:right")}${td(r.flag ? `<b style="color:${rl("red").color}">${r.flag}</b>` : "0", "text-align:right")}</tr>`).join("")}
-    <tr>${td(`<b>${lang === "en" ? "Total" : "합계"}</b>`, "background:#f8fafc")}${td(`<b>${total}</b>`, "text-align:right;background:#f8fafc")}${td(`<b>${isaDone}</b>`, "text-align:right;background:#f8fafc")}${td(`<b>${fsaDone}</b>`, "text-align:right;background:#f8fafc")}${td(`<b>${pct(fsaDone, total)}%</b>`, "text-align:right;background:#f8fafc")}${td(`<b>${counts.red + counts.orange}</b>`, "text-align:right;background:#f8fafc")}</tr></table></div>`);
-  // 6. 결론·확인
-  const signBox = (title, info) => { const u = info ? personByEmail(info.by, lang, users) : ""; return `<div style="flex:1;border:1px solid #d6dde8;border-radius:8px;padding:12px 14px;min-height:118px">
-    <div style="font-size:12px;font-weight:700;color:#0f2744;margin-bottom:8px">${esc(title)}</div>
-    <div style="font-size:11px;color:#334155;line-height:1.8"><span style="color:#64748b">${esc(T.signName)}:</span> ${info ? esc(u) : `<span style="color:#a6631e">${esc(T.signPending)}</span>`}<br>
-    <span style="color:#64748b">${esc(T.signEmail)}:</span> ${info ? esc(info.by) : "–"}<br>
-    <span style="color:#64748b">${esc(T.signAt)}:</span> ${info ? esc(formatDateTime(info.at, lang)) : "–"}</div>
-    <div style="margin-top:14px;border-top:1px solid #94a3b8;width:60%;padding-top:3px;font-size:9.5px;color:#94a3b8">${esc(T.signLine)}</div></div>`; };
-  segs.push(`<div>${h2(T.s6)}<p style="font-size:11.5px;line-height:1.7;color:#334155;margin:0 0 12px;text-align:justify">${esc(T.s6Body({ red: counts.red, orange: counts.orange }))}</p>
-    <div style="display:flex;gap:12px">${signBox(T.signCfo, conf.cfo)}${signBox(T.signRd, conf.rd)}</div>
-    <p style="font-size:10px;color:#64748b;line-height:1.6;margin:14px 0 0;padding:8px 10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px">${esc(T.disclaimer)}</p></div>`);
+  // 1 개요
+  seg(`<div>${H2(T.s1)}<table style="width:100%;border-collapse:collapse">${T.s1Items.map(([k, v]) => `<tr><td style="width:96px;padding:6px 8px 6px 0;font-size:10.5px;font-weight:700;color:${NAVY};vertical-align:top;border-bottom:1px solid #E5E7EB">${esc(k)}</td><td style="padding:6px 0;font-size:10.5px;line-height:1.7;color:${INK};text-align:justify;border-bottom:1px solid #E5E7EB">${esc(v)}</td></tr>`).join("")}</table></div>`);
+  // 2 요약
+  const kv = [[T.kpi[0], total], [T.kpi[1], deptsInScope.length], [T.kpi[2], reviewers.length], [T.kpi[3], `${isaBy.completed} (${S.isaRate}%)`], [T.kpi[4], `${fsaBy.completed} (${S.fsaRate}%)`],
+    [T.kpi[5], `${dot("green")} ${risk.green}`], [T.kpi[6], `${dot("orange")} ${risk.orange}`], [T.kpi[7], `${dot("red")} ${risk.red}`], [T.kpi[8], `${dot("none")} ${risk.none}`], [T.kpi[9], `${reqBy.pending} / ${reqBy.approved} / ${reqBy.rejected}`]];
+  seg(`<div>${H2(T.s2)}<table style="width:100%;border-collapse:collapse;margin-bottom:10px"><tr>${[0, 1].map((col) => `<td style="width:50%;vertical-align:top;padding:0 ${col ? 0 : 14}px 0 ${col ? 14 : 0}px"><table style="width:100%;border-collapse:collapse">${kv.slice(col * 5, col * 5 + 5).map(([k, v]) => `<tr><td style="padding:6px 0;font-size:10.5px;color:${MUTE};border-bottom:1px solid #E5E7EB">${esc(k)}</td><td style="padding:6px 0;font-size:13px;font-weight:700;color:${NAVY};text-align:right;border-bottom:1px solid #E5E7EB">${v}</td></tr>`).join("")}</table></td>`).join("")}</tr></table>${T.s2Narr(S).map(P).join("")}</div>`);
+  // 3 범위
+  const rows3a = deptsInScope.map((d) => { const its = controls.filter((c) => c.dept === d.id); return [esc(dn(d.id)), ...CATEGORIES.map((cat) => { const n = its.filter((c) => c.cat === cat.id).length; return n ? String(n) : `<span style="color:#CBD5E1">–</span>`; }), `<b>${its.length}</b>`]; });
+  rows3a.push(totRow([T.total, ...CATEGORIES.map((cat) => String(controls.filter((c) => c.cat === cat.id).length)), String(total)]));
+  const freqRows = FREQUENCY_OPTIONS.map((f) => { const n = controls.filter((c) => c.frequency === f.id).length; return [esc(f[L]), String(n), `${pct(n, total)}%`]; }).filter((r) => r[1] !== "0");
+  const other = total - FREQUENCY_OPTIONS.reduce((s, f) => s + controls.filter((c) => c.frequency === f.id).length, 0); if (other) freqRows.push([L === "en" ? "Unspecified" : "미지정", String(other), `${pct(other, total)}%`]);
+  freqRows.push(totRow([T.total, String(total), "100%"]));
+  seg(`<div>${H2(T.s3)}${H3(T.s3a)}${TBL([{ t: T.colDept, w: "26%" }, ...CATEGORIES.map((c) => ({ t: catTitle(c), w: "12%", r: true })), { t: T.colTotal, w: "14%", r: true }], rows3a)}
+    ${H3(T.s3b)}<div style="width:60%">${TBL([{ t: T.colFreq, w: "50%" }, { t: T.colCount, w: "25%", r: true }, { t: T.colShare, w: "25%", r: true }], freqRows)}</div></div>`);
+  // 4 진행 현황
+  const progRows = (key) => { const rows = deptsInScope.map((d) => { const its = controls.filter((c) => c.dept === d.id); const b = { not_started: 0, submitted_self: 0, returned: 0, completed: 0 }; its.forEach((c) => { const s = c[key]; b[s in b ? s : "not_started"] += 1; }); return [esc(dn(d.id)), String(its.length), String(b.not_started), String(b.submitted_self), String(b.returned), String(b.completed), `${pct(b.completed, its.length)}%`]; });
+    const bb = key === "status" ? isaBy : fsaBy; rows.push(totRow([T.total, String(total), String(bb.not_started), String(bb.submitted_self), String(bb.returned), String(bb.completed), `${pct(bb.completed, total)}%`])); return rows; };
+  const progCols = [{ t: T.colDept, w: "28%" }, { t: T.colItems, w: "10%", r: true }, { t: T.stNot, w: "12%", r: true }, { t: T.stSub, w: "18%", r: true }, { t: T.stRet, w: "12%", r: true }, { t: T.stDone, w: "10%", r: true }, { t: T.colRate, w: "10%", r: true }];
+  seg(`<div>${H2(T.s4)}${H3(T.s4a)}${TBL(progCols, progRows("status"))}</div>`);
+  seg(`<div>${H3(T.s4b)}${TBL(progCols, progRows("fsaStatus"))}</div>`);
+  // 5 리스크 매트릭스
+  const mrows = deptsInScope.map((d) => [esc(dn(d.id)), ...CATEGORIES.map((cat) => { const its = controls.filter((c) => c.dept === d.id && c.cat === cat.id); if (!its.length) return `<span style="color:#CBD5E1">–</span>`; const by = { green: 0, orange: 0, red: 0, none: 0 }; its.forEach((c) => { by[finalRisk(c)] += 1; }); const top = matrixCellRisk(its);
+    return `<div style="text-align:center"><span style="font-weight:700;color:${rl(top).text}">${dot(top)} ${its.length}</span><div style="font-size:8.5px;color:${MUTE};margin-top:1px">${[["green", "G"], ["orange", "C"], ["red", "R"], ["none", "N"]].filter(([k]) => by[k]).map(([k, s]) => `<span style="color:${rl(k).color}">${L === "en" ? s : rlab(k).slice(0, 1)}</span>${by[k]}`).join(" · ")}</div></div>`; })]);
+  const distRows = ["green", "orange", "red", "none"].map((r) => [riskCell(r), String(risk[r]), `${pct(risk[r], total)}%`]); distRows.push(totRow([T.total, String(total), "100%"]));
+  seg(`<div>${H2(T.s5)}${NOTE(T.s5Note)}${TBL([{ t: T.colDept, w: "26%" }, ...CATEGORIES.map((c) => ({ t: catTitle(c), w: "14.8%", c: true }))], mrows)}
+    ${H3(T.s5b)}<div style="width:55%">${TBL([{ t: T.colRisk, w: "50%" }, { t: T.colCount, w: "25%", r: true }, { t: T.colShare, w: "25%", r: true }], distRows)}</div></div>`);
+  // 6 주의·위험 상세
+  seg(`<div>${H2(`${T.s6} (${flagged.length})`)}${flagged.length ? TBL([{ t: T.colCode, w: "10%" }, { t: T.colDept, w: "13%" }, { t: T.colCat, w: "11%" }, { t: T.colName, w: "22%" }, { t: T.colIsa, w: "9%" }, { t: T.colFsa, w: "9%" }, { t: T.colReviewer, w: "12%" }, { t: T.colComment, w: "14%" }],
+    flagged.map((c) => [`<span style="font-family:Consolas,monospace;font-size:9px">${esc(c.code)}</span>`, esc(dn(c.dept)), esc(cn(c.cat)), esc(cName(c, L)), riskCell(finalRisk(c)), c.fsaStatus === "completed" ? riskCell(c.fsaReviewRisk || "none") : `<span style="color:${MUTE}">–</span>`, esc(who(c.reviewer)), esc(String(c.reviewComment || c.fsaComment || c.selfComment || "").replace(/<[^>]*>/g, "").slice(0, 160))])) : P(T.s6None)}</div>`);
+  // 7 검토자별
+  const rvRows = reviewers.map((e) => { const its = controls.filter((c) => String(c.reviewer || "").toLowerCase() === e); return [esc(who(e)), `<span style="color:${MUTE};font-size:9px">${esc(e)}</span>`, String(its.length), String(its.filter((c) => c.status === "completed").length), String(its.filter((c) => c.fsaStatus === "completed").length), String(its.filter((c) => c.status === "submitted_self" || c.fsaStatus === "submitted_self").length), String(its.filter((c) => ["red", "orange"].includes(finalRisk(c))).length)]; }).sort((a, b) => Number(b[2]) - Number(a[2]));
+  seg(`<div>${H2(T.s7)}${reviewers.length ? TBL([{ t: T.colReviewer, w: "20%" }, { t: T.colEmail || (L === "en" ? "Account" : "계정"), w: "28%" }, { t: T.colItems, w: "11%", r: true }, { t: T.colIsaDone, w: "12%", r: true }, { t: T.colFsaDone, w: "12%", r: true }, { t: T.colPending, w: "9%", r: true }, { t: T.colFlag, w: "8%", r: true }], rvRows) : P("–")}</div>`);
+  // 8 변경 결재
+  const stepName = (st) => !st ? "–" : (st.role === "LM1" || st.role === "MC") ? (L === "en" ? "1st MC" : "1차 MC") : st.role === "LM2" ? (L === "en" ? "1st MC" : "1차 MC") : st.role === "ICS_CONTACT" ? (L === "en" ? "2nd ICS Admin" : "2차 ICS Admin") : (L === "en" ? "3rd CFO" : "3차 CFO");
+  const reqRows = requests.sort((a, b) => String(b.created || "").localeCompare(String(a.created || ""))).map((r) => { const steps = Array.isArray(r.steps) ? r.steps : []; const last = [...steps].reverse().find((st) => st.status && st.status !== "pending"); const cur = r.status === "pending" ? steps[(r.step || 1) - 1] : null;
+    const stTxt = r.status === "approved" ? `<span style="color:#166A43;font-weight:600">${T.stApproved}</span>` : r.status === "rejected" ? `<span style="color:#8F2822;font-weight:600">${T.stRejected}</span>` : `<span style="color:#A6631E;font-weight:600">${T.stPending}</span>`;
+    return [`<span style="font-family:Consolas,monospace;font-size:9px">${esc(r.code)}</span>`, r.reqType === "delete" ? T.typeDelete : T.typeEdit, esc(who(r.requester)), r.created ? esc(fmtD(r.created).slice(0, 10)) : "–", cur ? `(${r.step}/${steps.length}) ${stepName(cur)} · ${esc(who(cur.approver))}` : T.stageDone, stTxt, last ? `${esc(who(last.approver))} · ${esc(fmtD(last.date).slice(0, 16))}` : "–"]; });
+  seg(`<div>${H2(`${T.s8} (${requests.length})`)}${requests.length ? TBL([{ t: T.colCode, w: "11%" }, { t: T.colType, w: "7%" }, { t: T.colRequester, w: "15%" }, { t: T.colRequested, w: "11%" }, { t: T.colStage, w: "24%" }, { t: T.colStatus, w: "9%" }, { t: T.colDecided, w: "23%" }], reqRows) : P(T.s8None)}</div>`);
+  // 9 결론·확인
+  const sign = (title, info) => `<td style="width:50%;vertical-align:top;padding:0 8px 0 0"><div style="border:1px solid ${RULE};padding:12px 14px;min-height:112px"><div style="font-size:11px;font-weight:700;color:${NAVY};margin-bottom:8px">${esc(title)}</div>
+    <table style="border-collapse:collapse;font-size:10px;color:${INK}"><tr><td style="color:${MUTE};padding:2px 10px 2px 0">${esc(T.signName)}</td><td>${info ? esc(who(info.by)) : `<span style="color:#A6631E">${esc(T.signPending)}</span>`}</td></tr><tr><td style="color:${MUTE};padding:2px 10px 2px 0">${esc(T.signEmail)}</td><td>${info ? esc(info.by) : "–"}</td></tr><tr><td style="color:${MUTE};padding:2px 10px 2px 0">${esc(T.signAt)}</td><td>${info ? esc(fmtD(info.at)) : "–"}</td></tr></table>
+    <div style="margin-top:16px;border-top:1px solid ${INK};width:58%;padding-top:3px;font-size:9px;color:${MUTE}">${esc(T.signLine)}</div></div></td>`;
+  seg(`<div>${H2(T.s9)}${P(T.s9Body(S))}<table style="width:100%;border-collapse:collapse;margin-top:8px"><tr>${sign(T.signCfo, conf.cfo)}${sign(T.signRd, conf.rd)}</tr></table></div>`);
+  // 부록 A — 전체 목록 (28행씩 잘라 각 덩어리가 페이지 안에 들어가게, 머리글은 덩어리마다 반복)
+  const all = [...controls].sort((a, b) => String(a.code).localeCompare(String(b.code)));
+  const appxCols = [{ t: T.colCode, w: "9%" }, { t: T.colDept, w: "12%" }, { t: T.colCat, w: "9%" }, { t: T.colName, w: "24%" }, { t: T.colFreqS, w: "7%" }, { t: T.colAccessor, w: "9%" }, { t: T.colReviewer, w: "9%" }, { t: T.colIsaSt, w: "7%" }, { t: T.colIsaRk, w: "7%" }, { t: T.colFsaSt, w: "7%" }];
+  const appxRow = (c) => [`<span style="font-family:Consolas,monospace;font-size:8.5px">${esc(c.code)}</span>`, esc(dn(c.dept)), esc(cn(c.cat)), esc(cName(c, L)), esc(freqLabel(c.frequency, L) || ""), esc(who(c.accessor)), esc(who(c.reviewer)), esc(stLab(c.status)), riskCell(finalRisk(c)), esc(stLab(c.fsaStatus))];
+  for (let i = 0; i < all.length; i += 26) seg(`<div>${i === 0 ? H2(T.appx) + NOTE(T.appxNote(all.length)) : ""}${TBL(appxCols, all.slice(i, i + 26).map(appxRow))}</div>`);
+  if (!all.length) seg(`<div>${H2(T.appx)}${P("–")}</div>`);
 
-  // ── 오프스크린에 그려 세그먼트별 캡처 ──
+  // ── 캡처·조판 ──
   const host = document.createElement("div");
-  host.style.cssText = `position:absolute;left:-10000px;top:0;width:900px;background:#fff;font-family:${F};color:#0f172a`;
-  host.innerHTML = segs.map((s) => `<div class="pdf-seg" style="padding:6px 18px 12px;background:#fff">${s}</div>`).join("");
+  host.style.cssText = `position:absolute;left:-10000px;top:0;width:820px;background:#fff;font-family:${F};color:${INK};-webkit-font-smoothing:antialiased`;
+  host.innerHTML = segs.map((s) => `<div class="pdf-seg" style="padding:2px 0 14px;background:#fff">${s}</div>`).join("");
   document.body.appendChild(host);
   try {
-    const { PDFDocument, rgb } = PDFLib;
-    const doc = await PDFDocument.create();
-    const A4W = 595, A4H = 842, hdrH = 22, marginX = 34, marginBottom = 30, printW = A4W - marginX * 2;
-    const printableH = A4H - hdrH - marginBottom - 6;
+    const { PDFDocument, rgb } = PDFLib; const doc = await PDFDocument.create();
+    const A4W = 595, A4H = 842, marginX = 40, top = 52, bottom = 40, printW = A4W - marginX * 2; const printableH = A4H - top - bottom;
     const u8 = async (u) => new Uint8Array(await (await fetch(u)).arrayBuffer());
-    // 상단 배너
-    const hc = document.createElement("canvas"); hc.width = 1190; hc.height = 28; const hx = hc.getContext("2d");
-    const g = hx.createLinearGradient(0, 0, 1190, 0); g.addColorStop(0, "#0f2744"); g.addColorStop(1, "#0a4a8a"); hx.fillStyle = g; hx.fillRect(0, 0, 1190, 28);
-    hx.fillStyle = "#fff"; hx.font = `500 13px ${F}`; hx.textBaseline = "middle"; hx.fillText(T.hdr, 14, 13);
-    hx.textAlign = "right"; hx.font = `400 12px ${F}`; hx.fillStyle = "rgba(255,255,255,.65)"; hx.fillText(`${docNo} · ${ds} KST`, 1176, 13);
-    const hdrImg = await doc.embedPng(await u8(hc.toDataURL("image/png")));
-    // 삼각별 워터마크 (SCC 승인 문서와 같은 이미지·농도)
-    let star = null; try { star = await doc.embedPng(Uint8Array.from(atob(MB_STAR_B64), (c) => c.charCodeAt(0))); } catch (e) { console.warn("[ICS] 워터마크 이미지 로드 실패:", e.message); }
+    let star = null; try { star = await doc.embedPng(Uint8Array.from(atob(MB_STAR_B64), (c) => c.charCodeAt(0))); } catch (e) {}
     const pages = []; let cur = null, yPt = 0;
-    const newPage = () => { cur = doc.addPage([A4W, A4H]); pages.push(cur); cur.drawImage(hdrImg, { x: 0, y: A4H - hdrH, width: A4W, height: hdrH });
-      yPt = A4H - hdrH - 6; };
+    const newPage = () => { cur = doc.addPage([A4W, A4H]); pages.push(cur); yPt = A4H - top; };
     newPage();
     const segEls = [...host.querySelectorAll(".pdf-seg")];
     for (let si = 0; si < segEls.length; si++) {
-      const cvs = await html2canvas(segEls[si], { scale: 2, useCORS: true, backgroundColor: "#fff", scrollY: 0, windowWidth: 900 });
-      const pxPerPt = cvs.width / printW; const totalPt = cvs.height / pxPerPt;
-      // 표지는 항상 한 장, 그 다음 세그먼트는 새 페이지에서 시작
-      if (si === 1) newPage();
+      // scale 1.35 · JPEG 0.8 — A4 폭 기준 약 140dpi. 2.0/0.92 이던 첫 판(3장 787KB) 대비 장당 용량 절반 이하.
+      const cvs = await html2canvas(segEls[si], { scale: 1.35, useCORS: true, backgroundColor: "#fff", scrollY: 0, windowWidth: 820 });
+      const pxPerPt = cvs.width / printW; const segPt = cvs.height / pxPerPt;
+      if (si === 1) newPage();                                   // 표지 다음은 새 페이지
+      else if (si > 1 && segPt > (yPt - bottom) && segPt <= printableH) newPage();   // 통째로 들어갈 수 있으면 넘겨서 안 자른다
       let srcY = 0;
       while (srcY < cvs.height) {
-        let avail = yPt - marginBottom;
-        const remainPt = (cvs.height - srcY) / pxPerPt;
-        if (remainPt > avail && avail < printableH * 0.35 && yPt < A4H - hdrH - 6) { newPage(); avail = yPt - marginBottom; }
+        const avail = yPt - bottom; const remainPt = (cvs.height - srcY) / pxPerPt;
+        if (avail < 60) { newPage(); continue; }
         const takePt = Math.min(remainPt, avail); const takePx = Math.round(takePt * pxPerPt);
         const sc = document.createElement("canvas"); sc.width = cvs.width; sc.height = takePx;
         sc.getContext("2d").drawImage(cvs, 0, srcY, cvs.width, takePx, 0, 0, cvs.width, takePx);
-        const img = await doc.embedJpg(await u8(sc.toDataURL("image/jpeg", 0.92)));
-        cur.drawImage(img, { x: marginX, y: yPt - takePt, width: printW, height: takePt });
+        cur.drawImage(await doc.embedJpg(await u8(sc.toDataURL("image/jpeg", 0.8))), { x: marginX, y: yPt - takePt, width: printW, height: takePt });
         yPt -= takePt; srcY += takePx;
         if (srcY < cvs.height) newPage();
       }
-      yPt -= 10;
+      yPt -= 6;
     }
-    // 워터마크는 본문 이미지(불투명 흰 배경) 위에 얹어야 보인다 — 페이지가 다 채워진 뒤 마지막에 그린다.
-    // 꼬리말: 페이지 번호 + CONFIDENTIAL
+    // 머리글·꼬리말·워터마크 — 얇은 회색 글씨와 0.5pt 괘선. 워터마크는 본문 위에 얹는다(흰 배경에 가려지지 않게).
     for (let i = 0; i < pages.length; i++) {
-      if (star) { const s = Math.min(A4W, A4H) * 0.5; pages[i].drawImage(star, { x: A4W / 2 - s / 2, y: A4H / 2 - s / 2, width: s, height: s, opacity: 0.07 }); }
-      const fc = document.createElement("canvas"); fc.width = 1190; fc.height = 30; const fx = fc.getContext("2d");
-      fx.fillStyle = "#fff"; fx.fillRect(0, 0, 1190, 30); fx.fillStyle = "#94a3b8"; fx.font = `400 11px ${F}`; fx.textBaseline = "middle";
-      fx.fillText(T.footer, 68, 15); fx.textAlign = "right"; fx.fillStyle = "#64748b"; fx.font = `600 11px ${F}`; fx.fillText(T.page(i + 1, pages.length), 1122, 15);
-      const fi = await doc.embedPng(await u8(fc.toDataURL("image/png")));
-      pages[i].drawImage(fi, { x: 0, y: 8, width: A4W, height: 15 });
-      pages[i].drawLine({ start: { x: marginX, y: 26 }, end: { x: A4W - marginX, y: 26 }, thickness: 0.5, color: rgb(0.85, 0.88, 0.92) });
+      const pg = pages[i];
+      if (star) { const s = Math.min(A4W, A4H) * 0.5; pg.drawImage(star, { x: A4W / 2 - s / 2, y: A4H / 2 - s / 2, width: s, height: s, opacity: 0.07 }); }
+      const c = document.createElement("canvas"); c.width = 1190; c.height = 26; const x = c.getContext("2d");
+      x.fillStyle = "#fff"; x.fillRect(0, 0, 1190, 26); x.textBaseline = "middle"; x.fillStyle = "#6B7280"; x.font = `500 11px ${F}`; x.fillText(T.hdrL, 80, 13);
+      x.textAlign = "right"; x.font = `400 11px ${F}`; x.fillText(`${docNo}  ·  ${ds} KST`, 1110, 13);
+      pg.drawImage(await doc.embedPng(await u8(c.toDataURL("image/png"))), { x: 0, y: A4H - 34, width: A4W, height: 13 });
+      pg.drawLine({ start: { x: marginX, y: A4H - 38 }, end: { x: A4W - marginX, y: A4H - 38 }, thickness: 0.5, color: rgb(0.82, 0.84, 0.87) });
+      const f = document.createElement("canvas"); f.width = 1190; f.height = 26; const fx = f.getContext("2d");
+      fx.fillStyle = "#fff"; fx.fillRect(0, 0, 1190, 26); fx.textBaseline = "middle"; fx.fillStyle = "#9CA3AF"; fx.font = `400 10px ${F}`; fx.fillText(T.footer, 80, 13);
+      fx.textAlign = "right"; fx.fillStyle = "#6B7280"; fx.font = `600 11px ${F}`; fx.fillText(T.page(i + 1, pages.length), 1110, 13);
+      pg.drawLine({ start: { x: marginX, y: 30 }, end: { x: A4W - marginX, y: 30 }, thickness: 0.5, color: rgb(0.82, 0.84, 0.87) });
+      pg.drawImage(await doc.embedPng(await u8(f.toDataURL("image/png"))), { x: 0, y: 14, width: A4W, height: 13 });
     }
-    const bytes = await doc.save();
+    const bytes = await doc.save({ useObjectStreams: true });
     const blob = new Blob([bytes], { type: "application/pdf" }); const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = `STK_ICS_Final_Report_FY${activeYear}_${lang.toUpperCase()}_${dsFile}.pdf`; a.click();
+    const a = document.createElement("a"); a.href = url; a.download = `STK_ICS_Final_Report_FY${activeYear}_${L.toUpperCase()}_${dsFile}.pdf`; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
     return true;
   } catch (e) {
     console.warn("[ICS] 최종 보고서 PDF 실패:", e && e.message);
-    alert(lang === "en" ? "Could not generate the PDF. Please try again." : "PDF 를 만들지 못했습니다. 다시 시도해 주세요.");
+    alert(L === "en" ? "Could not generate the PDF. Please try again." : "PDF 를 만들지 못했습니다. 다시 시도해 주세요.");
     return false;
   } finally { host.remove(); }
 }
