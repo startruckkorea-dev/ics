@@ -5906,8 +5906,10 @@ const FINAL_PDF_T = {
   },
 };
 
-async function exportFinalReportPdf(lang, ctx) {
+async function exportFinalReportPdf(lang, ctx, onProgress) {
   const L = lang === "en" ? "en" : "ko"; const T = FINAL_PDF_T[L];
+  const prog = (stage, i, n) => { try { onProgress && onProgress({ stage, i, n }); } catch (e) {} };
+  prog("data", 0, 0);
   if (typeof html2canvas !== "function" || typeof PDFLib === "undefined") { alert("PDF 라이브러리를 불러오지 못했습니다. 네트워크를 확인해 주세요."); return false; }
   const { controls, departments, users, activeYear, yearConfirmation, currentUser } = ctx;
   const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -5923,6 +5925,7 @@ async function exportFinalReportPdf(lang, ctx) {
 
   // ── 변경 결재 (있으면 8장에, 실패하면 빈 목록) ──
   let requests = [];
+  prog("requests", 0, 0);
   try { requests = (await loadIcsChangeRequests()).filter((r) => !r.year || String(r.year) === String(activeYear)); } catch (e) { console.warn("[ICS] 변경 결재 로드 실패(보고서 8장 생략):", e.message); }
 
   // ── 집계 ──
@@ -5949,8 +5952,8 @@ async function exportFinalReportPdf(lang, ctx) {
   const NOTE = (t) => `<p style="font-size:9.5px;line-height:1.6;color:${MUTE};margin:0 0 6px">${esc(t)}</p>`;
   const TBL = (cols, rows, opts = {}) => { // cols: [{t, w, r(ight)}] ; rows: [[cell html...]]
     const cg = cols.map((c) => `<col style="width:${c.w}">`).join("");
-    const th = cols.map((c) => `<th style="background:${HEAD};color:${NAVY};font-size:9.5px;font-weight:700;padding:5px 6px;text-align:${c.r ? "right" : c.c ? "center" : "left"};border-top:1.2px solid ${NAVY};border-bottom:1px solid ${RULE}">${esc(c.t)}</th>`).join("");
-    const tr = rows.map((r, i) => `<tr>${r.map((v, j) => `<td style="font-size:9.8px;line-height:1.45;padding:4px 6px;color:${INK};border-bottom:1px solid #E5E7EB;text-align:${cols[j] && cols[j].r ? "right" : cols[j] && cols[j].c ? "center" : "left"};vertical-align:top;${opts.nowrap && opts.nowrap.includes(j) ? "white-space:nowrap;" : ""}${r.__tot ? "" : ""}">${v}</td>`).join("")}</tr>`).join("");
+    const th = cols.map((c) => `<th style="background:${HEAD};color:${NAVY};font-size:9.5px;font-weight:700;padding:3px 6px 7px;line-height:1.3;text-align:${c.r ? "right" : c.c ? "center" : "left"};border-top:1.2px solid ${NAVY};border-bottom:1px solid ${RULE}">${esc(c.t)}</th>`).join("");
+    const tr = rows.map((r, i) => `<tr>${r.map((v, j) => `<td style="font-size:9.8px;line-height:1.4;padding:2px 6px 7px;color:${INK};border-bottom:1px solid #E5E7EB;text-align:${cols[j] && cols[j].r ? "right" : cols[j] && cols[j].c ? "center" : "left"};vertical-align:top;${opts.nowrap && opts.nowrap.includes(j) ? "white-space:nowrap;" : ""}${r.__tot ? "" : ""}">${v}</td>`).join("")}</tr>`).join("");
     return `<table style="width:100%;border-collapse:collapse;table-layout:fixed"><colgroup>${cg}</colgroup><thead><tr>${th}</tr></thead><tbody>${tr}</tbody></table>`;
   };
   const totRow = (cells) => cells.map((v) => `<b style="color:${NAVY}">${v}</b>`);
@@ -6037,6 +6040,8 @@ async function exportFinalReportPdf(lang, ctx) {
     newPage();
     const segEls = [...host.querySelectorAll(".pdf-seg")];
     for (let si = 0; si < segEls.length; si++) {
+      prog("capture", si + 1, segEls.length);
+      await new Promise((r) => setTimeout(r, 0));   // 진행 표시가 그려질 틈
       // scale 1.35 · JPEG 0.8 — A4 폭 기준 약 140dpi. 2.0/0.92 이던 첫 판(3장 787KB) 대비 장당 용량 절반 이하.
       const cvs = await html2canvas(segEls[si], { scale: 1.35, useCORS: true, backgroundColor: "#fff", scrollY: 0, windowWidth: 820 });
       const pxPerPt = cvs.width / printW; const segPt = cvs.height / pxPerPt;
@@ -6056,12 +6061,15 @@ async function exportFinalReportPdf(lang, ctx) {
       yPt -= 6;
     }
     // 머리글·꼬리말·워터마크 — 얇은 회색 글씨와 0.5pt 괘선. 워터마크는 본문 위에 얹는다(흰 배경에 가려지지 않게).
+    // 머리글 오른쪽에 출력자를 함께 적는다(감사 자료라 누가 뽑았는지가 남아야 한다).
+    const printedBy = currentUser ? `${L === "en" ? "Printed by" : "출력"} ${currentUser.name || ""} (${currentUser.email || ""})` : "";
     for (let i = 0; i < pages.length; i++) {
+      prog("finish", i + 1, pages.length);
       const pg = pages[i];
       if (star) { const s = Math.min(A4W, A4H) * 0.5; pg.drawImage(star, { x: A4W / 2 - s / 2, y: A4H / 2 - s / 2, width: s, height: s, opacity: 0.07 }); }
       const c = document.createElement("canvas"); c.width = 1190; c.height = 26; const x = c.getContext("2d");
       x.fillStyle = "#fff"; x.fillRect(0, 0, 1190, 26); x.textBaseline = "middle"; x.fillStyle = "#6B7280"; x.font = `500 11px ${F}`; x.fillText(T.hdrL, 80, 13);
-      x.textAlign = "right"; x.font = `400 11px ${F}`; x.fillText(`${docNo}  ·  ${ds} KST`, 1110, 13);
+      x.textAlign = "right"; x.font = `400 11px ${F}`; x.fillText(`${docNo}  ·  ${printedBy}  ·  ${ds} KST`, 1110, 13);
       pg.drawImage(await doc.embedPng(await u8(c.toDataURL("image/png"))), { x: 0, y: A4H - 34, width: A4W, height: 13 });
       pg.drawLine({ start: { x: marginX, y: A4H - 38 }, end: { x: A4W - marginX, y: A4H - 38 }, thickness: 0.5, color: rgb(0.82, 0.84, 0.87) });
       const f = document.createElement("canvas"); f.width = 1190; f.height = 26; const fx = f.getContext("2d");
@@ -7103,6 +7111,7 @@ function FinalReportPage({ controls, currentUser, activeYear, yearConfirmation, 
   const [confirmingRole, setConfirmingRole] = useState(null);
   const [detail, setDetail] = useState(null);
   const [pdfBusy, setPdfBusy] = useState(null);   // 공식 PDF 생성 중인 언어 (중복 클릭 방지)
+  const [pdfProg, setPdfProg] = useState(null);   // { stage, i, n } — 생성 진행 표시
 
   const stats = useMemo(() => {
     const counts = { green: 0, orange: 0, red: 0, none: 0 };
@@ -7143,7 +7152,7 @@ function FinalReportPage({ controls, currentUser, activeYear, yearConfirmation, 
         action={(
           <div className="flex items-center gap-2">
             {[["ko", "공식 PDF · KOR"], ["en", "Official PDF · ENG"]].map(([lg, label]) => (
-              <button key={lg} onClick={async () => { setPdfBusy(lg); try { await exportFinalReportPdf(lg, { controls, departments, users, activeYear, yearConfirmation, currentUser }); } finally { setPdfBusy(null); } }}
+              <button key={lg} onClick={async () => { setPdfBusy(lg); setPdfProg({ stage: "data", i: 0, n: 0 }); try { await exportFinalReportPdf(lg, { controls, departments, users, activeYear, yearConfirmation, currentUser }, setPdfProg); } finally { setPdfBusy(null); setPdfProg(null); } }}
                 disabled={!!pdfBusy}
                 className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border transition-colors disabled:opacity-50"
                 style={lg === "ko" ? { backgroundColor: BRAND.accent, color: "#fff", borderColor: BRAND.accent } : { backgroundColor: "#fff", color: BRAND.accent, borderColor: BRAND.accent }}
@@ -7153,6 +7162,30 @@ function FinalReportPage({ controls, currentUser, activeYear, yearConfirmation, 
             ))}
           </div>
         )} />
+
+      {pdfBusy && (() => {
+        const en = pdfBusy === "en"; const pr = pdfProg || { stage: "data", i: 0, n: 0 };
+        const stageText = { data: en ? "Collecting assessment data" : "평가 데이터를 모으는 중", requests: en ? "Loading change approvals" : "변경 결재 이력을 불러오는 중",
+          capture: en ? `Laying out report sections ${pr.i} / ${pr.n}` : `보고서 구간을 조판하는 중 ${pr.i} / ${pr.n}`, finish: en ? `Stamping pages ${pr.i} / ${pr.n}` : `머리글·워터마크를 찍는 중 ${pr.i} / ${pr.n}` }[pr.stage] || "";
+        const pct = pr.stage === "capture" && pr.n ? Math.round((pr.i / pr.n) * 80) : pr.stage === "finish" && pr.n ? 80 + Math.round((pr.i / pr.n) * 20) : pr.stage === "requests" ? 5 : 2;
+        return (
+          <div className="fixed inset-0 z-[80] flex items-center justify-center" style={{ backgroundColor: "rgba(15,23,42,.45)" }}>
+            <div className="bg-white rounded-2xl shadow-2xl w-[420px] max-w-[92vw] p-7">
+              <div className="flex items-center gap-4">
+                <div className="w-11 h-11 rounded-full border-4 border-slate-200 border-t-[#14213D] animate-spin flex-shrink-0" />
+                <div>
+                  <p className="text-sm font-semibold text-slate-800">{en ? "Generating the official PDF" : "공식 PDF를 만들고 있습니다"}</p>
+                  <p className="text-xs text-slate-500 mt-0.5">{stageText}</p>
+                </div>
+              </div>
+              <div className="mt-5 h-2 rounded-full bg-slate-100 overflow-hidden">
+                <div className="h-full rounded-full transition-all duration-300" style={{ width: `${pct}%`, backgroundColor: "#14213D" }} />
+              </div>
+              <p className="text-[11px] text-slate-400 mt-2">{en ? "This usually takes 10–30 seconds. The download starts automatically." : "보통 10~30초 걸립니다. 완료되면 다운로드가 자동으로 시작됩니다."}</p>
+            </div>
+          </div>
+        );
+      })()}
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
