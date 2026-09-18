@@ -786,6 +786,12 @@ const STR = {
       subtitleAdmin: "전체 통제 항목의 1차 평가 현황입니다.",
       subtitleUser: "님이 담당하는 통제 항목을 자가평가합니다.",
       needsAction: "평가 필요", submitted: "제출 완료",
+      openDetail: "클릭하면 상세 내용을 볼 수 있습니다",
+      submitting: "자가평가를 제출하는 중입니다",
+      submittingHint: "완료될 때까지 창을 닫거나 새로고침하지 마세요.",
+      stepPrepare: "평가 내용을 확인하는 중…",
+      stepUpload: "첨부파일 업로드",
+      stepSave: "평가 내용을 저장하는 중…",
       writeBtn: "자가평가 작성", rejectReasonTitle: "검토자 반려 사유",
       lockedByRequest: "수정 요청이 결재 중입니다. 결재가 완료되거나 요청을 철회하면 자가평가를 작성할 수 있습니다.",
       riskLevel: "리스크 수준 선택", commentPlaceholder: "평가 근거 및 특이사항을 입력하세요.",
@@ -1188,6 +1194,12 @@ const STR = {
       subtitleAdmin: "1st-round assessment status for all control items.",
       subtitleUser: ", here are the control items assigned to you.",
       needsAction: "Needs assessment", submitted: "Submitted",
+      openDetail: "Click to view details",
+      submitting: "Submitting your self-assessment",
+      submittingHint: "Please keep this window open until it finishes.",
+      stepPrepare: "Checking the assessment…",
+      stepUpload: "Uploading attachment",
+      stepSave: "Saving the assessment…",
       writeBtn: "Write assessment", rejectReasonTitle: "Reviewer's return reason",
       lockedByRequest: "A change request is under approval. You can write the assessment once it is decided or the request is cancelled.",
       riskLevel: "Select risk level", commentPlaceholder: "Enter your rationale and any notable findings.",
@@ -3703,6 +3715,7 @@ function AssessmentFilterBar({ f, t, minItems }) {
 }
 
 function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived, showToast, allowedDepts, usingSharePointData }) {
+  // 제출 완료 카드를 누르면 통제 상세를 띄운다(다른 화면과 같은 Modal·ControlDetailBody).
   const { lang, t } = useLang();
   const { departments, users } = useAppData();
   const [editing, setEditing] = useState(null);
@@ -3861,6 +3874,8 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
   }
 
   const [saving, setSaving] = useState(null);
+  const [savingStep, setSavingStep] = useState("");     // 제출 진행 팝업에 보여 줄 현재 단계
+  const [detail, setDetail] = useState(null);           // 제출 완료 카드 상세
 
   async function submit(c) {
     // 화면에서 버튼을 막아 두었지만 여기서도 서버에 다시 묻는다.
@@ -3887,6 +3902,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
     // 리스크 수준은 선택 사항이다. 비워두면 대시보드에 「미평가」로 집계된다.
     const today = new Date().toISOString();  // SharePoint 저장값과 동일한 ISO — 표시 시점에 formatDateTime 이 KST 로 변환
     setSaving(c.id);
+    setSavingStep(t("self.stepPrepare"));
     setEditing(null);
     try {
       // 1) 요청 항목이 아직 없으면 먼저 만들어서 SharePoint 아이템 ID를 확보 (첨부파일 업로드 폴더명으로 사용)
@@ -3907,14 +3923,19 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
 
       // 2) 아직 업로드 안 된(webUrl 없는) 첨부만 실제 업로드, 이미 업로드된 것은 그대로 재사용
       const finalAttachments = [];
+      const _toUpload = (draft.attachments || []).filter((a) => !a.webUrl && a.file).length;
+      let _uploaded = 0;
       for (const att of draft.attachments || []) {
         if (att.webUrl) {
           finalAttachments.push({ name: att.name, webUrl: att.webUrl });
         } else if (att.file) {
+          _uploaded += 1;
+          setSavingStep(`${t("self.stepUpload")} (${_uploaded} / ${_toUpload}) · ${att.file.name}`);
           const uploaded = await icsUploadAttachment(spId, att.file);
           finalAttachments.push({ name: att.file.name, webUrl: uploaded.webUrl });
         }
       }
+      setSavingStep(t("self.stepSave"));
       const attachedFilesField = finalAttachments.map((a) => `${a.name}|${a.webUrl}`).join(";");
 
       // 3-0) 점검빈도·중요도가 폼에서 변경되었으면 통제 항목(ICS_Controls)에 먼저 반영한다.
@@ -3950,6 +3971,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
       alert("SharePoint 저장에 실패했습니다: " + e.message);
     } finally {
       setSaving(null);
+      setSavingStep("");
     }
   }
 
@@ -4283,7 +4305,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
                         <ClipboardEdit size={13} /> {t("self.reqBtn")}
                       </button>
                     ))}
-                    <StatusBadge status={c.status} kind="isa" />
+                  <StatusBadge status={c.status} kind="isa" />
                   </div>
                 </div>
 
@@ -4358,7 +4380,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm divide-y divide-slate-100">
           {inProgress.map((c) => (
             <div key={c.id} className="p-4">
-              <div className="flex items-start justify-between gap-3 mb-1">
+              <div className="flex items-start justify-between gap-3 mb-1 cursor-pointer" onClick={() => setDetail(c)} title={t("self.openDetail")}>
                 <div>
                   <p className="text-xs text-slate-400 font-mono mb-0.5">{c.code}</p>
                   <p className="font-medium text-slate-800">{cName(c, lang)}</p>
@@ -4386,6 +4408,31 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
           ))}
           {inProgress.length === 0 && <EmptyState text={t("self.noSubmitted")} />}
         </div>
+      </div>
+
+      {detail && (
+        <Modal title={`${detail.code} · ${cName(detail, lang)}`} onClose={() => setDetail(null)} wide>
+          <ControlDetailBody control={detail} />
+        </Modal>
+      )}
+
+      {saving && <SubmitProgressModal step={savingStep} />}
+    </div>
+  );
+}
+
+/* 제출 진행 팝업 — 예전에는 카드 오른쪽 아래에 작은 글씨로 「저장 중입니다…」만 떴다.
+   첨부 업로드가 섞이면 몇 초씩 걸려 눌렸는지 알기 어려웠다. 화면을 덮어 다른 조작을 막고
+   지금 어느 단계인지 보여 준다. 완료되면 목록이 갱신되며 저절로 닫힌다. */
+function SubmitProgressModal({ step }) {
+  const { t } = useLang();
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm px-6 py-7 text-center">
+        <Loader2 size={30} className="animate-spin mx-auto text-blue-600 mb-4" />
+        <p className="font-semibold text-slate-800 mb-1">{t("self.submitting")}</p>
+        <p className="text-sm text-slate-500 min-h-[20px]">{step}</p>
+        <p className="text-xs text-slate-400 mt-4">{t("self.submittingHint")}</p>
       </div>
     </div>
   );
@@ -4877,7 +4924,7 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
 /* FSA 2차검토 (담당자가 제출한 최종 자가평가를 검토자가 승인/반려)                 */
 /* ------------------------------------------------------------------ */
 
-function FSAReviewPage({ controls, setControls, currentUser, addLog, isArchived, showToast, allowedDepts }) {
+function FSAReviewPage({ controls, setControls, currentUser, addLog, isArchived, showToast, allowedDepts, reviewerDepts = [] }) {
   const { lang, t } = useLang();
   const { departments, users } = useAppData();
   const [editing, setEditing] = useState(null);
@@ -4889,9 +4936,12 @@ function FSAReviewPage({ controls, setControls, currentUser, addLog, isArchived,
   // 이메일은 마스터 표기(대문자 혼입)와 M365 토큰 값이 다를 수 있어 항상 소문자로 맞춰 비교한다.
   const myEmail = (currentUser.email || "").toLowerCase();
   const isMyReview = (c) => (c.reviewer || "").toLowerCase() === myEmail;
-  // 검토도 본인이 2차 검토자(Reviewer)로 배정된 항목만 대상이다.
-  // 부서 접근권한(allowedDepts)은 조회 범위를 정하는 값이라 검토 대상 판단에는 쓰지 않는다.
-  const inScope = controls.filter((c) => isMyReview(c));
+  /* 검토 대상 = 내가 2차 검토자로 배정된 항목 + 권한 관리에서 Reviewer 로 지정받은 부서의 항목.
+     예전에는 배정된 항목만 보여, 부서 Reviewer 권한을 받아도 그 부서 건이 보이지 않았다
+     (담당 검토자가 자리를 비우면 아무도 처리할 수 없었다). 부서 권한으로 들어온 건은
+     화면에 「부서 권한」 표시를 붙여 배정된 건과 구분한다. 조회 범위(allowedDepts)와는 별개다. */
+  const byDeptGrant = (c) => (reviewerDepts || []).includes(c.dept);
+  const inScope = controls.filter((c) => isMyReview(c) || byDeptGrant(c));
   const f = useAssessmentFilter(inScope, lang, users, departments);
   const pending = f.apply(inScope.filter((c) => c.fsaStatus === "submitted_self"));
   const done = f.apply(inScope.filter((c) => c.fsaStatus === "completed" || c.fsaStatus === "returned"));
@@ -4982,7 +5032,12 @@ function FSAReviewPage({ controls, setControls, currentUser, addLog, isArchived,
                     <p className="text-xs text-slate-400 font-mono mb-0.5">{c.code} · {deptName(c.dept, lang, departments)} · {catName(c.cat, lang)}</p>
                     <p className="font-medium text-slate-800">{cName(c, lang)}</p>
                   </div>
-                  <StatusBadge status={c.fsaStatus} kind="fsa" />
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {!isMyReview(c) && (
+                      <span className="text-[11px] px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100 whitespace-nowrap">{lang === "en" ? "Dept. permission" : "부서 권한"}</span>
+                    )}
+                    <StatusBadge status={c.fsaStatus} kind="fsa" />
+                  </div>
                 </div>
                 <div className="bg-slate-50 rounded-lg p-3 mb-3">
                   <div className="flex items-center justify-between mb-1">
@@ -5074,7 +5129,7 @@ function FSAReviewPage({ controls, setControls, currentUser, addLog, isArchived,
 /* 2차 검토                                                             */
 /* ------------------------------------------------------------------ */
 
-function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, showToast, allowedDepts }) {
+function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, showToast, allowedDepts, reviewerDepts = [] }) {
   const { lang, t } = useLang();
   const { departments, users } = useAppData();
   const [editing, setEditing] = useState(null);
@@ -5086,9 +5141,12 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, sh
   // 이메일은 마스터 표기(대문자 혼입)와 M365 토큰 값이 다를 수 있어 항상 소문자로 맞춰 비교한다.
   const myEmail = (currentUser.email || "").toLowerCase();
   const isMyReview = (c) => (c.reviewer || "").toLowerCase() === myEmail;
-  // 검토도 본인이 2차 검토자(Reviewer)로 배정된 항목만 대상이다.
-  // 부서 접근권한(allowedDepts)은 조회 범위를 정하는 값이라 검토 대상 판단에는 쓰지 않는다.
-  const inScope = controls.filter((c) => isMyReview(c));
+  /* 검토 대상 = 내가 2차 검토자로 배정된 항목 + 권한 관리에서 Reviewer 로 지정받은 부서의 항목.
+     예전에는 배정된 항목만 보여, 부서 Reviewer 권한을 받아도 그 부서 건이 보이지 않았다
+     (담당 검토자가 자리를 비우면 아무도 처리할 수 없었다). 부서 권한으로 들어온 건은
+     화면에 「부서 권한」 표시를 붙여 배정된 건과 구분한다. 조회 범위(allowedDepts)와는 별개다. */
+  const byDeptGrant = (c) => (reviewerDepts || []).includes(c.dept);
+  const inScope = controls.filter((c) => isMyReview(c) || byDeptGrant(c));
   const f = useAssessmentFilter(inScope, lang, users, departments);
   const pending = f.apply(inScope.filter((c) => c.status === "submitted_self"));
   const done = f.apply(inScope.filter((c) => c.status === "completed" || c.status === "returned"));
@@ -5172,7 +5230,12 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, sh
                     <p className="text-xs text-slate-400 font-mono mb-0.5">{c.code} · {deptName(c.dept, lang, departments)} · {catName(c.cat, lang)}</p>
                     <p className="font-medium text-slate-800">{cName(c, lang)}</p>
                   </div>
-                  <StatusBadge status={c.status} kind="isa" />
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {!isMyReview(c) && (
+                      <span className="text-[11px] px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100 whitespace-nowrap">{lang === "en" ? "Dept. permission" : "부서 권한"}</span>
+                    )}
+                    <StatusBadge status={c.status} kind="isa" />
+                  </div>
                 </div>
                 <div className="bg-slate-50 rounded-lg p-3 mb-3">
                   <div className="flex items-center justify-between mb-1">
@@ -8716,8 +8779,10 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
   // 검토자 판정은 각 화면과 같은 기준(reviewer 이메일 일치)을 쓴다.
   const todoCounts = useMemo(() => {
     const me = (currentUser.email || "").toLowerCase();
+    // 화면과 같은 기준: 배정된 항목 + Reviewer 권한을 받은 부서의 항목
+    const rDepts = permissions[currentUser.email]?.deptsReviewer || [];
     return countMyTodos(controlsForYear, currentUser,
-      (c) => (c.reviewer || "").toLowerCase() === me);
+      (c) => (c.reviewer || "").toLowerCase() === me || rDepts.includes(c.dept));
   }, [controlsForYear, currentUser]);
 
   const isAdmin = currentUser.role === "admin";
