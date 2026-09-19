@@ -597,6 +597,26 @@ async function icsSaveActor(requestSpId, fieldName, currentUser, assignedEmail) 
   }
 }
 
+/* 평가·검토 의견 한 덩어리.
+   예전에는 목록 카드에 의견 본문만 한 줄로 얹혀 있어, 내용이 「test」 처럼 짧으면 무엇에 대한 글인지
+   알 수 없었다(09-19 사용자 지적). 라벨 + 처리자 + 일시를 함께 보여 준다. */
+function CommentBlock({ label, text, who, when, tone = "slate", lang }) {
+  const t2 = String(text || "").trim();
+  if (!t2) return null;
+  const c = tone === "red"
+    ? { box: "bg-red-50 border-red-100", label: "text-red-700", body: "text-red-700", meta: "text-red-400" }
+    : { box: "bg-slate-50 border-slate-100", label: "text-slate-500", body: "text-slate-600", meta: "text-slate-400" };
+  return (
+    <div className={`rounded-lg border ${c.box} px-3 py-2 mt-1.5`}>
+      <div className="flex items-center justify-between gap-2 mb-0.5">
+        <span className={`text-[11px] font-semibold ${c.label}`}>{label}{who ? <span className="font-normal"> · {who}</span> : null}</span>
+        {when ? <span className={`text-[11px] ${c.meta}`}>{formatDateTime(when, lang)}</span> : null}
+      </div>
+      <p className={`text-sm whitespace-pre-wrap ${c.body}`}>{t2}</p>
+    </div>
+  );
+}
+
 function finalRisk(control) {
   if (control.status === "completed") return control.reviewRisk;
   // 제출 철회/반려로 status가 다시 not_started·returned로 돌아간 경우, 예전에 입력했던 selfRisk 값이
@@ -833,6 +853,7 @@ const STR = {
       subtitleUser: "님이 담당하는 통제 항목을 자가평가합니다.",
       needsAction: "평가 필요", submitted: "제출 완료",
       openDetail: "클릭하면 상세 내용을 볼 수 있습니다",
+      commentLabel: "1차 자가평가 의견",
       processedBy: "실제 처리:",
       submitting: "자가평가를 제출하는 중입니다",
       submittingHint: "완료될 때까지 창을 닫거나 새로고침하지 마세요.",
@@ -884,6 +905,7 @@ const STR = {
       rejectBtn: "반려", rejectReasonLabel: "반려 사유 (수정 요청 내용)",
       rejectReasonPlaceholder: "담당자에게 전달할 반려 사유를 입력하세요.",
       noPending: "검토 대기 중인 항목이 없습니다.", noDone: "검토 이력이 없습니다.",
+      commentLabel: "2차 검토 의견", returnLabel: "2차 검토 반려 사유",
       reviewBtn: "검토하기", noAttachments: "첨부된 샘플링 자료 없음",
       noPendingEdit: "승인 대기 중인 통제 항목 변경이 없습니다.",
       beforeLabel: "변경 전", afterLabel: "변경 후",
@@ -910,6 +932,7 @@ const STR = {
       pending: "검토 대기", done: "검토 완료 · 반려 이력",
       selfAssessmentBy: "최종 자가평가",
       noPending: "검토 대기 중인 최종 자가평가가 없습니다.", noDone: "FSA 검토 이력이 없습니다.",
+      commentLabel: "FSA 2차검토 의견", returnLabel: "FSA 2차검토 반려 사유",
     },
     history: {
       title: "평가 이력 · 리포트",
@@ -1242,6 +1265,7 @@ const STR = {
       subtitleUser: ", here are the control items assigned to you.",
       needsAction: "Needs assessment", submitted: "Submitted",
       openDetail: "Click to view details",
+      commentLabel: "1st self-assessment comment",
       processedBy: "processed by",
       submitting: "Submitting your self-assessment",
       submittingHint: "Please keep this window open until it finishes.",
@@ -1293,6 +1317,7 @@ const STR = {
       rejectBtn: "Return", rejectReasonLabel: "Return reason (revision request)",
       rejectReasonPlaceholder: "Enter the reason to send back to the accessor.",
       noPending: "No items awaiting review.", noDone: "No review history yet.",
+      commentLabel: "2nd review comment", returnLabel: "2nd review return reason",
       reviewBtn: "Review", noAttachments: "No sampling evidence attached",
       noPendingEdit: "No control item changes are awaiting approval.",
       beforeLabel: "Before", afterLabel: "After",
@@ -1319,6 +1344,7 @@ const STR = {
       pending: "Awaiting review", done: "Reviewed / returned history",
       selfAssessmentBy: "Final self-assessment",
       noPending: "No final self-assessments awaiting review.", noDone: "No FSA review history yet.",
+      commentLabel: "FSA 2nd review comment", returnLabel: "FSA 2nd review return reason",
     },
     history: {
       title: "History & Reports",
@@ -4446,8 +4472,16 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
                 </div>
               </div>
               <div>
-                <div className="flex items-center justify-between">
-                  <p className="text-sm text-slate-500 whitespace-pre-wrap">{lang === "en" ? c.selfCommentEn || c.selfComment : c.selfComment}</p>
+                <div className="flex items-start justify-between">
+                  <div className="min-w-0 flex-1">
+                    <CommentBlock
+                      label={t("self.commentLabel")}
+                      text={lang === "en" ? c.selfCommentEn || c.selfComment : c.selfComment}
+                      who={personByEmail(c.accessor, lang, users)}
+                      when={c.selfDate}
+                      lang={lang}
+                    />
+                  </div>
                   {c.status === "submitted_self" && !isArchived && (
                     <button onClick={() => withdrawSubmission(c)} className="text-xs text-red-400 hover:text-red-600 flex items-center gap-1 flex-shrink-0 ml-3">
                       <Undo2 size={12} /> {t("self.withdrawBtn")}
@@ -5161,7 +5195,14 @@ function FSAReviewPage({ controls, setControls, currentUser, addLog, isArchived,
               <div>
                 <p className="text-xs text-slate-400 font-mono mb-0.5">{c.code}</p>
                 <p className="font-medium text-slate-800 mb-1">{cName(c, lang)}</p>
-                <p className="text-sm text-slate-500 whitespace-pre-wrap">{lang === "en" ? c.fsaReviewCommentEn || c.fsaReviewComment : c.fsaReviewComment}</p>
+                <CommentBlock
+                  label={c.fsaStatus === "returned" ? t("fsaReview.returnLabel") : t("fsaReview.commentLabel")}
+                  text={lang === "en" ? c.fsaReviewCommentEn || c.fsaReviewComment : c.fsaReviewComment}
+                  who={c.fsaReviewActor || personByEmail(c.reviewer, lang, users)}
+                  when={c.fsaReviewDate}
+                  tone={c.fsaStatus === "returned" ? "red" : "slate"}
+                  lang={lang}
+                />
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
                 <RiskBadge risk={c.fsaReviewRisk} />
@@ -5381,7 +5422,14 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, sh
               <div>
                 <p className="text-xs text-slate-400 font-mono mb-0.5">{c.code}</p>
                 <p className="font-medium text-slate-800 mb-1">{cName(c, lang)}</p>
-                <p className="text-sm text-slate-500 whitespace-pre-wrap">{lang === "en" ? c.reviewCommentEn || c.reviewComment : c.reviewComment}</p>
+                <CommentBlock
+                  label={c.status === "returned" ? t("review.returnLabel") : t("review.commentLabel")}
+                  text={lang === "en" ? c.reviewCommentEn || c.reviewComment : c.reviewComment}
+                  who={c.reviewActor || personByEmail(c.reviewer, lang, users)}
+                  when={c.reviewDate}
+                  tone={c.status === "returned" ? "red" : "slate"}
+                  lang={lang}
+                />
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
                 <RiskBadge risk={c.reviewRisk} />
