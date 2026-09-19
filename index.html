@@ -200,6 +200,18 @@ let ICS_CATEGORY_ACCESS = {};
 // 사용자가 특정 카테고리에 접근 가능한지 판단.
 // 1) ics_category_access.xlsx에 명시적으로 Y로 등록되어 있으면 항상 허용(역할과 무관하게 추가 부여).
 // 2) 등록이 없으면 역할 기반 기본값을 따른다 (ICS Overview/통제 관리/평가는 전체 공개, 관리자 전용은 Admin, 경영진 전용은 Admin/CFO/RD).
+/* 「관리자 전용」 권한을 가진 사람은 Admin 역할과 같게 본다.
+   관리자 전용 메뉴(설정·통제 항목 관리·권한 관리·카테고리 접근 권한·변경 이력)는 이미 카테고리 접근 권한
+   표로 누가 들어올지 정해 둔다. 그 안에서 다시 Role(Accessor/Reviewer)로 편집·조회를 나누면
+   「권한을 줬는데 조회만 된다」 는 상태가 된다(09-19 사용자 요청). 들어올 수 있으면 그 화면의 내용은 모두 본다.
+   ※ 평가 4개 화면(ISA/FSA)과 경영진 전용은 이 규칙과 무관하다 — 그쪽은 카테고리 체크·역할로만 정해진다. */
+function isIcsAdmin(user) {
+  if (!user) return false;
+  if (user.role === "admin") return true;
+  const grant = ICS_CATEGORY_ACCESS[(user.email || "").toLowerCase()];
+  return !!(grant && grant.adminOnly);
+}
+
 function hasCategoryAccess(user, categoryKey) {
   const grant = ICS_CATEGORY_ACCESS[(user.email || "").toLowerCase()];
   // 평가 관련 4개 화면은 역할(Admin 포함)과 무관하게 ics_category_access.xlsx의 CategoryAccess 시트에
@@ -218,7 +230,7 @@ function hasCategoryAccess(user, categoryKey) {
   // 「통제 관리」 열을 뺐다.
   // 판정과 SharePoint 컬럼(ControlMgmt)은 남겨 둔다 — 기존에 저장된 값을 지우지 않고,
   // 나중에 그 화면을 메뉴로 되살릴 때 그대로 쓰기 위해서다.
-  if (categoryKey === "controlMgmt") return user.role === "admin";
+  if (categoryKey === "controlMgmt") return isIcsAdmin(user);
   if (categoryKey === "executive") return user.role === "admin" || user.role === "cfo" || user.role === "rd";
   return true; // icsOverview — 대시보드·학습은 전 직원 공개
 }
@@ -547,7 +559,8 @@ function getAllowedDepts(user, permissions, departments = INITIAL_DEPARTMENTS) {
   // guest 는 employee_search.xlsx 에는 있으나 ICS 역할이 지정되지 않은 일반 직원이다.
   // 예전에는 조회 전용 계정을 상정해 전 부서를 부여했으나, 지금은 대다수가 guest 라
   // 전사 통제 현황이 열리는 결과가 된다. 다른 역할과 동일하게 배정받은 부서만 본다.
-  if (user.role === "admin") return departments.map((d) => d.id);
+  // 관리자 전용 권한자는 전 부서를 본다(관리자 화면의 부서 필터·목록이 전사 기준이 되도록).
+  if (isIcsAdmin(user)) return departments.map((d) => d.id);
   return permissions[user.email]?.depts || (user.dept ? [user.dept] : []);
 }
 
@@ -1020,7 +1033,7 @@ const STR = {
       title: "카테고리 접근 권한",
       subtitle: "직원별 카테고리 접근 권한을 관리자가 직접 체크박스로 부여·변경할 수 있습니다. 변경 즉시 SharePoint(ICS_CategoryAccess)에 저장되고 활동 로그에도 기록됩니다.",
       colUser: "사용자", colCategory: "카테고리",
-      defaultNote: "기본 권한: ICS Overview(대시보드·학습·결재 승인)는 전체 공개, 관리자 전용은 Admin, 경영진 전용은 Admin/CFO/RD만 기본 접근 가능. 단, ISA 1차 자가평가·ISA 2차 검토·FSA 최종 자가평가·FSA 2차검토 4개 화면은 역할(Admin 포함)과 무관하게 아래 표에 체크된 계정만 접근 가능합니다 (기본 허용 없음). 평가 이력·리포트는 이 4개 중 검토·FSA·FSA검토 중 하나라도 있으면 별도 등록 없이 접근 가능합니다. 결재 승인은 별도 등록 없이 누구나 들어올 수 있으며, 본인에게 배정된 건만 표시됩니다. 「관리자 전용」을 체크하면 화면은 열리지만, 통제 항목 추가·수정·삭제와 전체 부서 조회는 Admin 역할이 있어야 합니다.",
+      defaultNote: "기본 권한: ICS Overview(대시보드·학습·결재 승인)는 전체 공개, 관리자 전용은 Admin, 경영진 전용은 Admin/CFO/RD만 기본 접근 가능. 단, ISA 1차 자가평가·ISA 2차 검토·FSA 최종 자가평가·FSA 2차검토 4개 화면은 역할(Admin 포함)과 무관하게 아래 표에 체크된 계정만 접근 가능합니다 (기본 허용 없음). 평가 이력·리포트는 이 4개 중 검토·FSA·FSA검토 중 하나라도 있으면 별도 등록 없이 접근 가능합니다. 결재 승인은 별도 등록 없이 누구나 들어올 수 있으며, 본인에게 배정된 건만 표시됩니다. 「관리자 전용」을 체크하면 Admin 역할과 동일하게 관리자 메뉴의 모든 내용을 보고 수정할 수 있습니다(통제 항목 추가·수정·삭제, 전체 부서 조회, 권한·카테고리 권한 변경 포함).",
       emptyText: "검색 결과가 없습니다.",
       requestGuideTitle: "카테고리 접근 권한 신청 방법",
       viewOnlyNotice: "이 화면은 조회 전용입니다. 권한 변경은 Admin 계정으로 로그인해서 진행해 주세요.",
@@ -1421,7 +1434,7 @@ const STR = {
       title: "Category Access",
       subtitle: "Admins can grant or change category access per employee directly with checkboxes. Changes save immediately to SharePoint (ICS_CategoryAccess) and are logged.",
       colUser: "User", colCategory: "Category",
-      defaultNote: "Defaults: ICS Overview (Dashboard, Learning, Approvals) is open to everyone. Admin only is Admin by default; Executive is Admin/CFO/RD by default. However, ISA 1st Self-Assessment, ISA 2nd Review, FSA Final Self-Assessment, and FSA 2nd Review are only accessible to accounts checked below, regardless of role (including Admin) — there is no default access. History & Reports is accessible if the account has access to any of Review, FSA, or FSA Review, with no separate entry needed. Approvals requires no entry — anyone can open it, and only items assigned to them are shown. Ticking Admin only opens those screens \u2014 adding, editing, or deleting control items and viewing all departments still require the Admin role.",
+      defaultNote: "Defaults: ICS Overview (Dashboard, Learning, Approvals) is open to everyone. Admin only is Admin by default; Executive is Admin/CFO/RD by default. However, ISA 1st Self-Assessment, ISA 2nd Review, FSA Final Self-Assessment, and FSA 2nd Review are only accessible to accounts checked below, regardless of role (including Admin) — there is no default access. History & Reports is accessible if the account has access to any of Review, FSA, or FSA Review, with no separate entry needed. Approvals requires no entry — anyone can open it, and only items assigned to them are shown. Ticking Admin only grants the same rights as the Admin role for every admin screen \u2014 adding, editing and deleting control items, viewing all departments, and changing role or category permissions.",
       emptyText: "No results found.",
       requestGuideTitle: "How to request category access",
       viewOnlyNotice: "This screen is view-only. Please sign in with an Admin account to change permissions.",
@@ -1997,7 +2010,7 @@ function formatMB(bytes) {
 
 function LearnPage({ currentUser, learnContent, setLearnContent, learnVideos, setLearnVideos, learnImages, setLearnImages, addLog, showToast }) {
   const { lang, t } = useLang();
-  const isAdmin = currentUser.role === "admin";
+  const isAdmin = isIcsAdmin(currentUser);   // 학습 자료 편집도 관리자 전용 권한자에게 허용
   const videoInputRef = useRef(null);
   const imageInputRef = useRef(null);
 
@@ -7586,7 +7599,7 @@ function UserEditRow({ draft, setDraft, departments, t, onSave, onCancel }) {
 function SettingsPage({ currentUser, years, selectedYear, activeYear, startNewYear, controls, permissions, setPermissions, bothConfirmed, goTo, addLog, resetPassword, setResetPassword }) {
   const { lang, t } = useLang();
   const { departments, setDepartments, users, setUsers } = useAppData();
-  const isAdmin = currentUser.role === "admin";
+  const isAdmin = isIcsAdmin(currentUser);   // Admin 역할 또는 「관리자 전용」 권한
   const [confirming, setConfirming] = useState(false);
   const nextYear = String(Number(activeYear) + 1);
 
@@ -7695,7 +7708,7 @@ function SettingsPage({ currentUser, years, selectedYear, activeYear, startNewYe
 function CategoryAccessPage({ currentUser, addLog, showToast }) {
   const { lang, t } = useLang();
   const { users } = useAppData();
-  const isAdmin = currentUser.role === "admin";
+  const isAdmin = isIcsAdmin(currentUser);   // Admin 역할 또는 「관리자 전용」 권한
   const [saved, setSaved] = useState(() => ({ ...ICS_CATEGORY_ACCESS }));
   const [draft, setDraft] = useState(() => ({ ...ICS_CATEGORY_ACCESS }));
   const [search, setSearch] = useState("");
@@ -7736,6 +7749,18 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
       alert(lang === "en" ? "Only admins can change this." : "관리자만 변경할 수 있습니다.");
       return;
     }
+    /* 「관리자 전용」 권한만으로 이 화면에 들어온 사람이 자기 체크를 지우면 되돌릴 화면을 잃는다
+       (Admin 역할 계정이 없으면 SharePoint 목록을 직접 고쳐야 한다). Admin 역할이 아닌 본인 계정의
+       관리자 전용 체크 해제는 막는다 — 권한 관리의 「본인 Admin 역할 잠금」 과 같은 취지. */
+    if (categoryKey === "adminOnly"
+        && email.toLowerCase() === (currentUser.email || "").toLowerCase()
+        && currentUser.role !== "admin"
+        && draft[email.toLowerCase()]?.adminOnly) {
+      alert(lang === "en"
+        ? "You cannot remove your own Admin-only access — you would lose the way back."
+        : "본인 계정의 「관리자 전용」 권한은 스스로 해제할 수 없습니다.\n\n해제하면 이 화면에 다시 들어올 수 없어, 다른 Admin 계정이나 SharePoint 목록에서만 되돌릴 수 있습니다.");
+      return;
+    }
     setDraft((prev) => {
       const current = prev[email] || {};
       const newValue = !current[categoryKey];
@@ -7751,12 +7776,16 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
       alert(lang === "en" ? "Only admins can change this." : "관리자만 변경할 수 있습니다.");
       return;
     }
+    // 열 전체 해제로도 자기 「관리자 전용」 권한이 풀리지 않게 한다(위 toggleCell 과 같은 이유).
+    const selfEmail = (currentUser.email || "").toLowerCase();
+    const keepSelfAdmin = categoryKey === "adminOnly" && currentUser.role !== "admin";
     const visibleEmails = rows.map((u) => u.email.toLowerCase());
     const allChecked = visibleEmails.length > 0 && visibleEmails.every((email) => draft[email]?.[categoryKey]);
     const pairKey = CATEGORY_PAIRS[categoryKey];
     setDraft((prev) => {
       const next = { ...prev };
       visibleEmails.forEach((email) => {
+        if (keepSelfAdmin && email === selfEmail && allChecked) return;   // 본인 관리자 전용 체크는 남긴다
         next[email] = { ...(next[email] || {}), [categoryKey]: !allChecked };
         if (pairKey) next[email][pairKey] = !allChecked;
       });
@@ -8035,7 +8064,7 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
 function PermissionsPage({ permissions, setPermissions, currentUser, addLog, showToast }) {
   const { lang, t } = useLang();
   const { departments, setDepartments, users, setUsers } = useAppData();
-  const isAdmin = currentUser.role === "admin";
+  const isAdmin = isIcsAdmin(currentUser);   // Admin 역할 또는 「관리자 전용」 권한
 
   // ── 부서 추가·수정·삭제 ──
   const [deptForm, setDeptForm] = useState(null);      // { id, ko, en, spId } · id는 신규일 때만 입력 가능
@@ -8798,7 +8827,7 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
       (c) => (c.reviewer || "").toLowerCase() === me || rDepts.includes(c.dept));
   }, [controlsForYear, currentUser]);
 
-  const isAdmin = currentUser.role === "admin";
+  const isAdmin = isIcsAdmin(currentUser);
   const allowedDepts = getAllowedDepts(currentUser, permissions, departments);
   const accessorDepts = permissions[currentUser.email]?.deptsAccessor || [];
   const reviewerDepts = permissions[currentUser.email]?.deptsReviewer || [];
@@ -8929,7 +8958,7 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
   const currentYearConfirmation = yearConfirmations[activeYear] || { cfo: null, rd: null };
   const bothConfirmed = !!(currentYearConfirmation.cfo && currentYearConfirmation.rd);
 
-  const canEditControls = currentUser.role === "admin";
+  const canEditControls = isIcsAdmin(currentUser);
 
   return (
     <LangContext.Provider value={{ lang, t, setLang }}>
