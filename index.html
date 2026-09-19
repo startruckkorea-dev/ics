@@ -551,6 +551,19 @@ function getAllowedDepts(user, permissions, departments = INITIAL_DEPARTMENTS) {
   return permissions[user.email]?.depts || (user.dept ? [user.dept] : []);
 }
 
+/* 헤더에 보여 줄 역할 표기 — 기본 역할 + 권한 관리에서 부서별로 받은 겸직.
+   예) 역할이 Reviewer 인데 IT 부서 Accessor·Admin 을 겸하면 「Reviewer · Accessor · Admin」.
+   중복은 한 번만, 순서는 Accessor → Reviewer → Admin 으로 고정한다. */
+function headerRoleLabel(user, permissions, t) {
+  const base = t(`roles.${user.role}`);
+  const p = permissions?.[user.email] || {};
+  const extra = [];
+  if ((p.deptsAccessor || []).length && user.role !== "accessor") extra.push(t("roles.accessor"));
+  if ((p.deptsReviewer || []).length && user.role !== "reviewer") extra.push(t("roles.reviewer"));
+  if ((p.deptsAdmin || []).length && user.role !== "admin") extra.push(t("roles.admin"));
+  return extra.length ? `${base} · ${extra.join(" · ")}` : base;
+}
+
 function finalRisk(control) {
   if (control.status === "completed") return control.reviewRisk;
   // 제출 철회/반려로 status가 다시 not_started·returned로 돌아간 경우, 예전에 입력했던 selfRisk 값이
@@ -9087,7 +9100,9 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
               <div className="flex items-center gap-2 text-sm text-slate-500">
                 <div className="leading-tight">
                   <div>{pName(currentUser.name, lang, users)}</div>
-                  <div className="text-[11px] text-slate-400">{t(`roles.${currentUser.role}`)}</div>
+                  {/* 역할 하나만 보여 주면 권한 관리에서 부서별로 받은 겸직(Accessor·Reviewer·Admin)이 화면에
+                      드러나지 않아, 권한을 받았는데도 못 받은 것처럼 보였다. 겸직이 있으면 함께 표시한다. */}
+                  <div className="text-[11px] text-slate-400">{headerRoleLabel(currentUser, permissions, t)}</div>
                 </div>
               </div>
               <a
@@ -9161,7 +9176,7 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
             )}
             {page === "review" && (
               hasCategoryAccess(currentUser, "review")
-                ? <ReviewPage controls={controlsForYear} setControls={setControls} currentUser={currentUser} addLog={addLog} isArchived={isArchived} isAdmin={isAdmin} showToast={showToast} allowedDepts={reviewerDepts} />
+                ? <ReviewPage controls={controlsForYear} setControls={setControls} currentUser={currentUser} addLog={addLog} isArchived={isArchived} isAdmin={isAdmin} showToast={showToast} allowedDepts={reviewerDepts} reviewerDepts={reviewerDepts} />
                 : <EmptyState text="Access denied" />
             )}
             {page === "fsa" && (
@@ -9171,7 +9186,7 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
             )}
             {page === "fsaReview" && (
               hasCategoryAccess(currentUser, "fsaReview")
-                ? <FSAReviewPage controls={controlsForYear} setControls={setControls} currentUser={currentUser} addLog={addLog} isArchived={isArchived} showToast={showToast} allowedDepts={reviewerDepts} />
+                ? <FSAReviewPage controls={controlsForYear} setControls={setControls} currentUser={currentUser} addLog={addLog} isArchived={isArchived} showToast={showToast} allowedDepts={reviewerDepts} reviewerDepts={reviewerDepts} />
                 : <EmptyState text="Access denied" />
             )}
             {page === "approval" && (
