@@ -583,18 +583,38 @@ function headerRoleLabel(user, permissions, t) {
    「누가 반려했는지」 를 알 수 없었다. 배정자와 처리자가 다를 때만 기록한다.
    ICS_Requests 에 해당 열이 아직 없을 수 있으므로 본 저장과 분리한다 — 열이 없으면 이 저장만 조용히 실패하고
    승인·반려 자체는 정상으로 남는다. (열: ReviewActor / FsaReviewActor · 한 줄 텍스트) */
-async function icsSaveActor(requestSpId, fieldName, currentUser, assignedEmail) {
+async function icsSaveActor(requestSpId, fieldName, currentUser, assignedEmail, notify) {
   const me = (currentUser?.email || "").toLowerCase();
   const assigned = (assignedEmail || "").toLowerCase();
   if (!requestSpId || !me || me === assigned) return "";
   const value = `${currentUser.name || currentUser.email} <${currentUser.email}>`;
   try {
     await icsUpdateItem(ICS_LISTS.requests, requestSpId, { [fieldName]: value });
+    // 저장 직후 서버 값을 다시 읽어 실제로 들어갔는지 확인한다.
+    // SharePoint 는 모르는 열을 조용히 무시하는 경우가 있어, 200 응답만으로는 저장을 보장할 수 없다.
+    const saved = await icsReadField(ICS_LISTS.requests, requestSpId, fieldName);
+    if (String(saved || "").trim() !== value) {
+      throw new Error(`저장 후 값이 비어 있습니다. ${fieldName} 열이 목록에 있는지, 내부 이름이 정확한지 확인해 주세요.`);
+    }
     return value;
   } catch (e) {
-    console.warn("[ICS] 처리자 기록 건너뜀:", fieldName, e.message);
-    return value;   // 화면에는 보여 준다(새로고침하면 사라질 수 있음)
+    console.warn("[ICS] 처리자 기록 실패:", fieldName, e.message);
+    // 조용히 넘기면 화면에만 보이고 새로고침하면 사라져, 원인을 알 수 없다(09-19).
+    if (typeof notify === "function") notify(`처리자 기록에 실패했습니다.\n\n열: ${fieldName}\n${e.message}`);
+    return value;   // 이번 화면에는 보여 준다
   }
+}
+
+/* 항목의 한 열만 다시 읽는다 (저장 확인용). */
+async function icsReadField(listName, itemId, fieldName) {
+  const token = await getGraphToken();
+  const listId = await getIcsListId(listName);
+  const res = await icsFetch(`${GRAPH}/sites/${_siteId}/lists/${listId}/items/${itemId}/fields?$select=${encodeURIComponent(fieldName)}`, {
+    headers: { Authorization: "Bearer " + token },
+  });
+  if (!res.ok) throw new Error(`열 확인 실패 (${res.status})`);
+  const data = await res.json();
+  return data ? data[fieldName] : "";
 }
 
 /* 평가·검토 의견 한 덩어리.
@@ -5057,7 +5077,7 @@ function FSAReviewPage({ controls, setControls, currentUser, addLog, isArchived,
         FsaReviewCommentEn: draft.comment,
         FsaReviewDate: new Date().toISOString(),
       });
-      const actor = await icsSaveActor(c.requestSpId, "FsaReviewActor", currentUser, c.reviewer);
+      const actor = await icsSaveActor(c.requestSpId, "FsaReviewActor", currentUser, c.reviewer, (m) => alert(m));
       setControls((prev) =>
         prev.map((x) =>
           x.id === c.id ? { ...x, fsaStatus: "completed", fsaReviewRisk: draft.risk, fsaReviewComment: draft.comment, fsaReviewCommentEn: draft.comment, fsaReviewDate: today, fsaReviewActor: actor } : x
@@ -5086,7 +5106,7 @@ function FSAReviewPage({ controls, setControls, currentUser, addLog, isArchived,
         FsaReviewCommentEn: returnComment,
         FsaReviewDate: new Date().toISOString(),
       });
-      const actor = await icsSaveActor(c.requestSpId, "FsaReviewActor", currentUser, c.reviewer);
+      const actor = await icsSaveActor(c.requestSpId, "FsaReviewActor", currentUser, c.reviewer, (m) => alert(m));
       setControls((prev) =>
         prev.map((x) =>
           x.id === c.id ? { ...x, fsaStatus: "returned", fsaReviewRisk: "red", fsaReviewComment: returnComment, fsaReviewCommentEn: returnComment, fsaReviewDate: today, fsaReviewActor: actor } : x
@@ -5271,7 +5291,7 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, sh
         ReviewCommentEn: draft.comment,
         ReviewDate: new Date().toISOString(),
       });
-      const actor = await icsSaveActor(c.requestSpId, "ReviewActor", currentUser, c.reviewer);
+      const actor = await icsSaveActor(c.requestSpId, "ReviewActor", currentUser, c.reviewer, (m) => alert(m));
       setControls((prev) => prev.map((x) => (x.id === c.id ? { ...x, status: "completed", reviewRisk: draft.risk, reviewComment: draft.comment, reviewCommentEn: draft.comment, reviewDate: today, reviewActor: actor } : x)));
       addLog(currentUser.email, "review_complete", c.code, c.name, c.nameEn);
       showToast(lang === "en" ? "Review confirmed." : "검토가 완료되었습니다.");
@@ -5296,7 +5316,7 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, sh
         ReviewCommentEn: returnComment,
         ReviewDate: new Date().toISOString(),
       });
-      const actor = await icsSaveActor(c.requestSpId, "ReviewActor", currentUser, c.reviewer);
+      const actor = await icsSaveActor(c.requestSpId, "ReviewActor", currentUser, c.reviewer, (m) => alert(m));
       setControls((prev) => prev.map((x) => (x.id === c.id ? { ...x, status: "returned", reviewRisk: "red", reviewComment: returnComment, reviewCommentEn: returnComment, reviewDate: today, reviewActor: actor } : x)));
       addLog(currentUser.email, "review_reject", c.code, c.name, c.nameEn);
       showToast(lang === "en" ? "Returned to the accessor." : "담당자에게 반려되었습니다.");
