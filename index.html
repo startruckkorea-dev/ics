@@ -3027,20 +3027,21 @@ function StageCard({ stage, control: c, title, risk, who, actor, when, text, emp
     <div className="rounded-xl border border-slate-200 bg-white overflow-hidden flex">
       <div className="w-1 flex-shrink-0" style={{ backgroundColor: o.fg }} />
       <div className="flex-1 min-w-0">
-        {/* 승인·반려는 줄 맨 오른쪽에 둔다 — APS 결재 이력이 상태를 그 자리에 두어,
-            여러 건을 위아래로 훑을 때 결과가 한 줄로 정렬되어 읽힌다.
-            제목 옆에 붙여 두었더니 단계마다 위치가 들쭉날쭉했다(09-21 지적). */}
+        {/* 머리줄은 단계 이름과 신호등·일시까지만. */}
         <div className="flex items-center gap-2 flex-wrap px-3.5 py-2 border-b border-slate-100">
           <span className="text-[13px] font-bold text-slate-800">{title}</span>
           <div className="ml-auto flex items-center gap-2 flex-shrink-0">
             {risk ? <RiskBadge risk={risk} /> : null}
             {when ? <span className="text-[11px] text-slate-500">{formatDateTime(when, lang)}</span> : null}
-            <span className="text-[11px] font-bold rounded-md px-2 py-0.5"
-                  style={{ color: o.fg, backgroundColor: o.bg }}>{t("detail." + o.key)}</span>
           </div>
         </div>
+        {/* 승인·반려는 구분선 바로 아래, 알약 없이 글자로 둔다(09-21 요청).
+            네 카드가 같은 자리에서 시작하므로 위아래로 훑을 때 결과가 세로로 정렬된다. */}
+        <div className="px-3.5 pt-2.5">
+          <span className="text-[14px] font-bold" style={{ color: o.fg }}>{t("detail." + o.key)}</span>
+        </div>
         {(who || actor) && (
-          <div className="flex items-center gap-2 flex-wrap px-3.5 pt-2">
+          <div className="flex items-center gap-2 flex-wrap px-3.5 pt-1.5">
             {who ? <span className="text-[12px] text-slate-600">{who}</span> : null}
             {actor ? (
               <span className="text-[11px] font-semibold rounded-md px-1.5 py-0.5"
