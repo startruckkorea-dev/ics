@@ -1033,7 +1033,18 @@ const STR = {
       docFilledBadge: "서식 작성됨",
       docSaveFailed: "평가는 저장되었으나 서식(통제기술서·테스트수행)은 저장하지 못했습니다. IT팀에 알려주세요.",
       docNotSet: "-",
-      skipConfirm: "이 통제의 ISA 단계를 생략할까요?\n\n· 점검 빈도가 「연 1회」 인 항목만 생략할 수 있습니다.\n· 생략하면 ISA 2차 검토 없이 FSA 최종 자가평가 대상으로 넘어갑니다.\n· 활동 로그에 생략 기록이 남습니다.\n· FSA 를 시작하기 전까지는 되돌릴 수 있습니다.",
+      skipModalTitle: "ISA 생략",
+      skipConfirmLead: "이 통제의 ISA 단계를 생략하고 FSA 에서 수행합니다.",
+      skipPoint1: "ISA 2차 검토 없이 FSA 최종 자가평가 대상으로 넘어갑니다.",
+      skipPoint2: "활동 로그에 생략 기록이 남습니다.",
+      skipPoint3: "FSA 를 시작하기 전까지는 되돌릴 수 있습니다.",
+      skipGo: "생략하기",
+      skipBlockedTitle: "이 항목은 ISA 를 생략할 수 없습니다",
+      skipBlockedLead: "ISA 생략은 점검 빈도가 「연 1회」 인 통제에만 쓸 수 있습니다.",
+      skipBlockedWhy: "연 1회 통제 중에는 JAN-DEC 전체를 대상으로 해서, ISA 시점에는 점검할 기간이 아직 끝나지 않는 것이 있습니다. 그런 항목만 FSA 로 미룹니다.",
+      skipBlockedNow: "현재 점검 빈도",
+      skipBlockedHow: "이 통제가 실제로 연 1회 수행되는 것이라면, 위 「점검 빈도」 를 연 1회로 바꾼 뒤 다시 눌러 주세요.",
+      skipClose: "닫기",
       skipBadge: "ISA 생략",
       skipBadgeTitle: "연 1회 통제로 ISA 를 생략했습니다. 평가는 FSA 에서 수행합니다.",
       skipDone: "ISA 를 생략했습니다. FSA 최종 자가평가에서 수행해 주세요.",
@@ -1484,7 +1495,18 @@ const STR = {
       docFilledBadge: "Documentation filled",
       docSaveFailed: "The assessment was saved, but the documentation could not be. Please notify IT.",
       docNotSet: "-",
-      skipConfirm: "Skip the ISA stage for this control?\n\n· Only controls with an \"Annually\" frequency can be skipped.\n· It moves straight to FSA without an ISA 2nd review.\n· The skip is recorded in the activity log.\n· You can undo it until FSA begins.",
+      skipModalTitle: "Skip ISA",
+      skipConfirmLead: "The ISA stage will be skipped and the assessment performed at FSA.",
+      skipPoint1: "It moves straight to FSA without an ISA 2nd review.",
+      skipPoint2: "The skip is recorded in the activity log.",
+      skipPoint3: "You can undo it until FSA begins.",
+      skipGo: "Skip ISA",
+      skipBlockedTitle: "This control cannot skip ISA",
+      skipBlockedLead: "Skipping ISA is only available for controls with an \"Annually\" frequency.",
+      skipBlockedWhy: "Some annual controls cover the whole JAN-DEC period, so at ISA time the period has not ended yet. Only those are deferred to FSA.",
+      skipBlockedNow: "Current frequency",
+      skipBlockedHow: "If this control really runs once a year, change the frequency above to \"Annually\" and try again.",
+      skipClose: "Close",
       skipBadge: "ISA skipped",
       skipBadgeTitle: "ISA was skipped for this annual control. It is assessed at FSA.",
       skipDone: "ISA skipped. Please complete it in the FSA final self-assessment.",
@@ -4277,9 +4299,10 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
      함께 반영한다. 첨부·샘플링은 FSA 에서 받으므로 여기서는 비운다. */
   async function skipIsa(c) {
     const freq = draft.frequency ?? c.frequency;
+    // 확인은 폼의 팝업에서 받는다. 여기서는 조건만 다시 본다(화면을 열어 둔 사이에
+    // 다른 곳에서 바뀌었을 수 있다).
     if (freq !== ISA_SKIP_FREQ) return;
     if (c.status === "completed" || c.status === "submitted_self") return;
-    if (!window.confirm(t("self.skipConfirm"))) return;
 
     setSaving(c.id);
     setSavingStep(t("self.stepSave"));
@@ -5147,6 +5170,10 @@ function IsaDocForms({ control, doc, setDoc, recommended }) {
 function SelfAssessForm({ control, draft, setDraft, onCancel, onSubmit, onSkip }) {
   const { lang, t } = useLang();
   const fileInputRef = useRef(null);
+  /* ISA Skip 은 조건에 맞을 때만 버튼을 내보냈더니, 왜 안 보이는지 알 수 없었다.
+     버튼은 항상 두고 누를 때 판단한다 — 조건이 맞으면 확인 팝업, 아니면 이유 팝업
+     (2026-09-21 사용자 요청). */
+  const [skipModal, setSkipModal] = useState("");
   // 점검빈도·중요도는 자가평가 폼에서 수정할 수 있다. 값이 바뀌면 권장 샘플링 건수도 따라 바뀐다.
   const curFreq = draft.frequency ?? control.frequency;
   const curImp = draft.importance ?? control.importance;
@@ -5331,10 +5358,10 @@ function SelfAssessForm({ control, draft, setDraft, onCancel, onSubmit, onSkip }
           폼에서 점검 빈도를 바꾸면 그 값(curFreq)을 따른다. */}
       <div className="flex justify-between items-center gap-2 mt-4 pt-4 border-t border-slate-200">
         <div>
-          {curFreq === ISA_SKIP_FREQ && onSkip && (
+          {onSkip && (
             <button
               type="button"
-              onClick={onSkip}
+              onClick={() => setSkipModal(curFreq === ISA_SKIP_FREQ ? "confirm" : "blocked")}
               title={t("self.skipHint")}
               className="px-3.5 py-2 text-sm font-medium rounded-lg border transition-colors"
               style={{ borderColor: "#CBD3DD", color: "#64748B", backgroundColor: "#fff" }}
@@ -5354,6 +5381,48 @@ function SelfAssessForm({ control, draft, setDraft, onCancel, onSubmit, onSkip }
         </button>
         </div>
       </div>
+
+      {skipModal === "confirm" && (
+        <Modal title={t("self.skipModalTitle")} onClose={() => setSkipModal("")}>
+          <p className="text-sm text-slate-700 mb-3">{t("self.skipConfirmLead")}</p>
+          <ul className="space-y-1.5 mb-4">
+            {[t("self.skipPoint1"), t("self.skipPoint2"), t("self.skipPoint3")].map((x, i) => (
+              <li key={i} className="flex gap-2 text-[13px] text-slate-600">
+                <span className="mt-1.5 w-1 h-1 rounded-full flex-shrink-0" style={{ backgroundColor: BRAND.accent }} />
+                <span>{x}</span>
+              </li>
+            ))}
+          </ul>
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setSkipModal("")}
+                    className="px-4 py-2 text-sm text-slate-500 rounded-lg hover:bg-slate-50">{t("common.cancel")}</button>
+            <button type="button" onClick={() => { setSkipModal(""); onSkip(); }}
+                    className="px-5 py-2 text-sm font-semibold text-white rounded-lg"
+                    style={{ backgroundColor: BRAND.accent }}>{t("self.skipGo")}</button>
+          </div>
+        </Modal>
+      )}
+
+      {skipModal === "blocked" && (
+        <Modal title={t("self.skipBlockedTitle")} onClose={() => setSkipModal("")}>
+          <p className="text-sm text-slate-700 mb-3">{t("self.skipBlockedLead")}</p>
+          {/* 지금 값이 무엇인지 함께 보여 준다 — 「연 1회가 아니다」 만으로는 무엇으로
+              되어 있는지 몰라 다시 확인하러 올라가야 한다. */}
+          <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 mb-3">
+            <span className="text-[12px] text-slate-500">{t("self.skipBlockedNow")}</span>
+            <span className="text-[13px] font-bold text-slate-800">{freqLabel(curFreq, lang)}</span>
+            <span className="text-slate-300">→</span>
+            <span className="text-[13px] font-bold" style={{ color: BRAND.accent }}>{freqLabel(ISA_SKIP_FREQ, lang)}</span>
+          </div>
+          <p className="text-[13px] text-slate-500 leading-relaxed mb-2">{t("self.skipBlockedWhy")}</p>
+          <p className="text-[13px] text-slate-600 leading-relaxed mb-4">{t("self.skipBlockedHow")}</p>
+          <div className="flex justify-end">
+            <button type="button" onClick={() => setSkipModal("")}
+                    className="px-5 py-2 text-sm font-semibold text-white rounded-lg"
+                    style={{ backgroundColor: BRAND.accent }}>{t("self.skipClose")}</button>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
