@@ -2998,16 +2998,18 @@ function StageCard({ stage, control: c, title, risk, who, actor, when, text, emp
   const started = o.key !== "outcomeNone" && o.key !== "outcomeNotSubmitted";
   return (
     /* 바탕을 옅은 회색으로 — 팝업·목록이 모두 흰색이라 카드가 배경에 묻혔다(09-21 지적).
-       머리줄은 흰색으로 남겨 제목과 본문이 나뉘어 보이게 한다. */
+       머리줄은 본문보다 한 단계 진한 회색으로 둔다. 흰색으로 두었더니 카드 위쪽만
+       흰 띠처럼 떠 보였다(09-21 두 번째 지적). */
     <div className="rounded-xl border border-slate-200 overflow-hidden flex" style={{ backgroundColor: "#F6F8FA" }}>
       <div className="w-1 flex-shrink-0" style={{ backgroundColor: o.fg }} />
       <div className="flex-1 min-w-0">
         {/* 머리줄은 단계 이름과 신호등·일시까지만. */}
-        <div className="flex items-center gap-2 flex-wrap px-3.5 py-2 border-b border-slate-200 bg-white">
+        <div className="flex items-center gap-2 flex-wrap px-3.5 py-2 border-b border-slate-200" style={{ backgroundColor: "#ECEFF3" }}>
           <span className="text-[13px] font-bold text-slate-800">{title}</span>
           <div className="ml-auto flex items-center gap-2 flex-shrink-0">
             {risk ? <RiskBadge risk={risk} /> : null}
-            {when ? <span className="text-[11px] text-slate-500">{formatDateTime(when, lang)}</span> : null}
+            {/* 회색 바탕 위에서 옅은 회색 글씨는 잘 안 읽혀 진하게 한다. */}
+            {when ? <span className="text-[11px] font-medium" style={{ color: "#1E293B" }}>{formatDateTime(when, lang)}</span> : null}
           </div>
         </div>
         {/* 구분선 아래 한 줄 — 왼쪽은 사람, 오른쪽 끝은 승인·반려(글자).
