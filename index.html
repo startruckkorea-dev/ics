@@ -328,13 +328,41 @@ function recommendedSample(importanceId, frequencyId) {
    어긋나는 것을 막기 위해서다. 그 값들은 통제 항목에서 가져와 읽기 전용으로 보여 준다.
    통제 방법·통제 유형·수행 주기는 서식상 하나만 고르는 항목이라 라디오로 둔다
    (어설션만 여러 개 고를 수 있다). */
+/* 경영진 주장(Assertion) — 여러 개 고를 수 있다.
+   2026-09-21 회의: 「평가」 → 「평가와 배분」, 「기간귀속」·「분류」 추가.
+   새 두 항목의 코드는 완전성(C)과 겹치지 않도록 CO·CL 로 둔다. */
 const ASSERTION_OPTIONS = [
   { id: "C", ko: "완전성(C)", en: "Completeness (C)" },
   { id: "E", ko: "실재성 및 발생(E)", en: "Existence & Occurrence (E)" },
   { id: "A", ko: "정확성(A)", en: "Accuracy (A)" },
-  { id: "V", ko: "평가(V)", en: "Valuation (V)" },
+  { id: "V", ko: "평가와 배분(V)", en: "Valuation & Allocation (V)" },
   { id: "O", ko: "권리와 의무(O)", en: "Rights & Obligations (O)" },
   { id: "P", ko: "표시와 공시(P)", en: "Presentation & Disclosure (P)" },
+  { id: "CO", ko: "기간귀속(CO)", en: "Cut-off (CO)" },
+  { id: "CL", ko: "분류(CL)", en: "Classification (CL)" },
+];
+/* 「부정(Fraud) 관련 통제」 체크 하나를 세 가지 택일 항목으로 바꿨다(09-21 회의). */
+const RISK_TYPE_OPTIONS = [
+  { id: "fraud", ko: "부정(Fraud)", en: "Fraud" },
+  { id: "error", ko: "일반(Error)", en: "Error" },
+];
+const KEY_CONTROL_OPTIONS = [
+  { id: "key", ko: "Key Control (Y)", en: "Key Control (Y)" },
+  { id: "nonkey", ko: "Non-Key (N)", en: "Non-Key (N)" },
+];
+const CONTROL_LEVEL_OPTIONS = [
+  { id: "elc", ko: "ELC(전사수준통제)", en: "ELC (Entity-level)" },
+  { id: "plc", ko: "PLC(업무수준통제)", en: "PLC (Process-level)" },
+  { id: "itgc", ko: "ITGC(IT 일반통제)", en: "ITGC (IT general)" },
+];
+/* 「무작위(Random) 명시」 체크를 표본추출방식 택일로 바꿨다(09-21 회의). 설명을 함께 보여 준다. */
+const SAMPLING_METHOD_OPTIONS = [
+  { id: "random", ko: "무작위 추출(Random)", en: "Random",
+    dko: "모집단에서 편향 없이 무작위로 선정", den: "Selected at random from the population without bias" },
+  { id: "systematic", ko: "체계적 추출(Systematic)", en: "Systematic",
+    dko: "특정 로직이 있는 경우 (예: 전체 거래 중 매 10번째 건)", den: "Selected by a rule (e.g. every 10th transaction)" },
+  { id: "haphazard", ko: "임의 추출(Haphazard)", en: "Haphazard",
+    dko: "특별한 규칙 없이 담당자가 고름", den: "Picked by the preparer without a specific rule" },
 ];
 const CONTROL_METHOD_OPTIONS = [
   { id: "preventive", ko: "예방적(Preventive)", en: "Preventive" },
@@ -369,11 +397,11 @@ function emptyIsaDoc() {
     ver: 1,
     cd: {
       setCycle: "", docVersion: "", effDate: "",
-      fraud: false, assertions: [], method: "", ctype: "",
+      riskType: "", keyControl: "", level: "", assertions: [], method: "", ctype: "",
       relatedDocs: "", relatedSystems: "", cycle: "",
       performers: [{ role: "", desc: "", dept: "" }],
       processEnv: "", activity: "",
-      testProc: "", evidence: "", random: false, population: "",
+      testProc: "", evidence: "", sampling: "", population: "",
     },
     tp: { setCycle: "", testRef: "", samples: [], resultText: "" },
   };
@@ -385,6 +413,10 @@ function normalizeIsaDoc(raw) {
   const cd = { ...base.cd, ...(raw.cd || {}) };
   cd.assertions = Array.isArray(cd.assertions) ? cd.assertions.filter((x) => ASSERTION_OPTIONS.some((o) => o.id === x)) : [];
   cd.performers = Array.isArray(cd.performers) && cd.performers.length ? cd.performers : base.cd.performers;
+  // 옛 기록 옮기기 — 부정 체크는 리스크 유형 「부정」 으로, 무작위 체크는 표본추출방식 「무작위」 로.
+  if (!cd.riskType && raw.cd && raw.cd.fraud === true) cd.riskType = "fraud";
+  if (!cd.sampling && raw.cd && raw.cd.random === true) cd.sampling = "random";
+  delete cd.fraud; delete cd.random;
   const tp = { ...base.tp, ...(raw.tp || {}) };
   tp.samples = Array.isArray(tp.samples) ? tp.samples : [];
   return { ver: 1, cd, tp };
@@ -397,7 +429,7 @@ function isaDocFilled(doc) {
     cd.processEnv, cd.activity, cd.testProc, cd.evidence, cd.population,
     tp.setCycle, tp.testRef, tp.resultText];
   if (texts.some((v) => String(v || "").trim())) return true;
-  if (cd.fraud || cd.random || cd.method || cd.ctype || cd.cycle || cd.assertions.length) return true;
+  if (cd.riskType || cd.keyControl || cd.level || cd.sampling || cd.method || cd.ctype || cd.cycle || cd.assertions.length) return true;
   if (cd.performers.some((p) => String(p.role || p.desc || p.dept || "").trim())) return true;
   return tp.samples.some((r) => String(r.date || r.ref || r.result || r.comment || "").trim());
 }
@@ -1044,8 +1076,9 @@ const STR = {
       docCorp: "법인명", docDept: "부서", docYear: "회계연도",
       docCode: "코드 번호", docCtrlName: "통제명",
       docSetCycle: "통제 세트(주기)", docVersion: "문서 버전", docEffDate: "시행일",
-      docObjective: "통제 목표", docFraud: "부정(Fraud) 관련 통제",
-      docAssertion: "어설션 (Assertion · 여러 개 선택 가능)",
+      docObjective: "통제 목표",
+      docRiskType: "리스크 유형 (하나만 선택)", docKeyControl: "핵심통제 여부 (하나만 선택)", docLevel: "통제 구분 (하나만 선택)",
+      docAssertion: "경영진 주장 (Assertion · 여러 개 선택 가능)",
       docMethod: "통제 방법 (하나만 선택)", docType: "통제 유형 (하나만 선택)",
       docRelDocs: "관련 문서", docRelSystems: "관련 시스템",
       docCycle: "수행 주기 (하나만 선택)",
@@ -1057,7 +1090,7 @@ const STR = {
       docTestDesign: "테스트 설계",
       docTestProc: "어떻게 — 통제의 운영 효과성을 평가하기 위해 어떤 테스트 절차를 수행합니까?",
       docEvidence: "통제 증빙",
-      docSampleNeed: "필요 표본 수", docRandom: "「무작위(Random)」 명시",
+      docSampleNeed: "필요 표본 수", docSampling: "표본추출방식 (하나만 선택)",
       docPopulation: "표본 모집단 영역/출처",
       docTestRef: "테스트 절차 참조",
       docSamples: "표본 항목", docSampleNo: "번호", docSampleDate: "표본 추출일",
@@ -1516,8 +1549,9 @@ const STR = {
       docCorp: "Entity", docDept: "Department", docYear: "Fiscal year",
       docCode: "Code", docCtrlName: "Control name",
       docSetCycle: "Control set (cycle)", docVersion: "Document version", docEffDate: "Effective date",
-      docObjective: "Control objective", docFraud: "Fraud-related control",
-      docAssertion: "Assertion (choose any)",
+      docObjective: "Control objective",
+      docRiskType: "Risk type (choose one)", docKeyControl: "Key control (choose one)", docLevel: "Control level (choose one)",
+      docAssertion: "Management assertion (choose any)",
       docMethod: "Control method (choose one)", docType: "Control type (choose one)",
       docRelDocs: "Related documents", docRelSystems: "Related systems",
       docCycle: "Performance frequency (choose one)",
@@ -1529,7 +1563,7 @@ const STR = {
       docTestDesign: "Test design",
       docTestProc: "How — which test procedures assess the operating effectiveness?",
       docEvidence: "Control evidence",
-      docSampleNeed: "Required samples", docRandom: "Marked as random",
+      docSampleNeed: "Required samples", docSampling: "Sampling method (choose one)",
       docPopulation: "Sample population / source",
       docTestRef: "Test procedure reference",
       docSamples: "Sample items", docSampleNo: "No.", docSampleDate: "Sampling date",
@@ -3112,7 +3146,9 @@ function IsaDocView({ control: c }) {
           <Row label={t("self.docCode")}>{c.code}</Row>
           <Row label={t("self.docSetCycle")}>{v(cd.setCycle)}</Row>
           <Row label={t("self.docEffDate")}>{v(cd.effDate)}</Row>
-          <Row label={t("self.docFraud")}>{cd.fraud ? t("common.yes") : t("common.no")}</Row>
+          <Row label={t("self.docRiskType")}>{v(opt(RISK_TYPE_OPTIONS, cd.riskType))}</Row>
+          <Row label={t("self.docKeyControl")}>{v(opt(KEY_CONTROL_OPTIONS, cd.keyControl))}</Row>
+          <Row label={t("self.docLevel")}>{v(opt(CONTROL_LEVEL_OPTIONS, cd.level))}</Row>
           <Row label={t("self.docAssertion")}>{cd.assertions.length ? cd.assertions.map((a) => opt(ASSERTION_OPTIONS, a)).join(", ") : dash}</Row>
           <Row label={t("self.docMethod")}>{v(opt(CONTROL_METHOD_OPTIONS, cd.method))}</Row>
           <Row label={t("self.docType")}>{v(opt(CONTROL_TYPE_OPTIONS, cd.ctype))}</Row>
@@ -3147,7 +3183,7 @@ function IsaDocView({ control: c }) {
           <Block label={t("self.docTestProc")}>{v(cd.testProc)}</Block>
           <Row label={t("self.docEvidence")}>{v(cd.evidence)}</Row>
           <Row label={t("self.docSampleNeed")}>{recommendedSample(c.importance, c.frequency)}{t("common.items")}</Row>
-          <Row label={t("self.docRandom")}>{cd.random ? t("common.yes") : t("common.no")}</Row>
+          <Row label={t("self.docSampling")}>{v(opt(SAMPLING_METHOD_OPTIONS, cd.sampling))}</Row>
           <Row label={t("self.docPopulation")}>{v(cd.population)}</Row>
         </div>
       )}
@@ -5284,10 +5320,20 @@ function IsaDocForms({ control, doc, setDoc, recommended }) {
             <div className={roCls + " whitespace-pre-wrap"}>{cDesc(control, lang) || t("self.docNotSet")}</div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <input id="isa-doc-fraud" type="checkbox" className="w-4 h-4 accent-teal-600"
-                   checked={!!cd.fraud} onChange={(e) => setCd({ fraud: e.target.checked })} />
-            <label htmlFor="isa-doc-fraud" className="text-sm text-slate-700">{t("self.docFraud")}</label>
+          {/* 리스크 유형 · 핵심통제 여부 · 통제 구분 — 모두 하나만 고른다. */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div>
+              <span className={labelCls}>{t("self.docRiskType")}</span>
+              <ChoiceRow name="riskType" options={RISK_TYPE_OPTIONS} value={cd.riskType} onPick={(id) => pickOne("riskType", id)} />
+            </div>
+            <div>
+              <span className={labelCls}>{t("self.docKeyControl")}</span>
+              <ChoiceRow name="keyControl" options={KEY_CONTROL_OPTIONS} value={cd.keyControl} onPick={(id) => pickOne("keyControl", id)} />
+            </div>
+            <div>
+              <span className={labelCls}>{t("self.docLevel")}</span>
+              <ChoiceRow name="level" options={CONTROL_LEVEL_OPTIONS} value={cd.level} onPick={(id) => pickOne("level", id)} />
+            </div>
           </div>
 
           <div>
@@ -5371,10 +5417,28 @@ function IsaDocForms({ control, doc, setDoc, recommended }) {
                 <div><span className={labelCls}>{t("self.docSampleNeed")}</span>
                   <div className={roCls}>{recommended}{t("common.items")}</div></div>
               </div>
-              <div className="flex items-center gap-2">
-                <input id="isa-doc-random" type="checkbox" className="w-4 h-4 accent-teal-600"
-                       checked={!!cd.random} onChange={(e) => setCd({ random: e.target.checked })} />
-                <label htmlFor="isa-doc-random" className="text-sm text-slate-700">{t("self.docRandom")}</label>
+              {/* 표본추출방식 — 하나만 고른다. 방식마다 뜻을 함께 적어 고르기 쉽게 한다. */}
+              <div>
+                <span className={labelCls}>{t("self.docSampling")}</span>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                  {SAMPLING_METHOD_OPTIONS.map((o) => {
+                    const on = cd.sampling === o.id;
+                    return (
+                      <button key={o.id} type="button" role="radio" aria-checked={on} data-group="sampling" data-value={o.id}
+                        onClick={() => pickOne("sampling", o.id)}
+                        className="text-left rounded-lg border px-3 py-2 transition-colors"
+                        style={{ borderColor: on ? BRAND.accent : "#CBD3DD", backgroundColor: on ? "#F0FBF8" : "#fff" }}>
+                        <span className="flex items-center gap-2 text-[13px] font-semibold" style={{ color: on ? BRAND.accent : "#334155" }}>
+                          <span className="w-3.5 h-3.5 rounded-full border-2 flex-shrink-0"
+                                style={{ borderColor: on ? BRAND.accent : "#CBD3DD", backgroundColor: on ? BRAND.accent : "#fff",
+                                         boxShadow: on ? "inset 0 0 0 2px #fff" : "none" }} />
+                          {o[lang]}
+                        </span>
+                        <span className="block text-[11px] text-slate-500 mt-0.5 pl-5">{lang === "en" ? o.den : o.dko}</span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
               <div><span className={labelCls}>{t("self.docPopulation")}</span>
                 <input className={inputCls} value={cd.population} onChange={(e) => setCd({ population: e.target.value })} /></div>
@@ -7379,8 +7443,10 @@ function buildControlDocHtml(c, lang, users, departments) {
     ${S("ICS Control Documentation")}
     ${R(L("통제 세트(주기)", "Control set (cycle)"), val(d.cd.setCycle))}
     ${R(L("시행일", "Effective date"), val(d.cd.effDate))}
-    ${R(L("부정(Fraud) 관련 통제", "Fraud-related"), d.cd.fraud ? L("예", "Yes") : L("아니오", "No"))}
-    ${R(L("어설션(Assertion)", "Assertion"), d.cd.assertions.length ? d.cd.assertions.map((a) => esc(opt(ASSERTION_OPTIONS, a))).join(", ") : dash)}
+    ${R(L("리스크 유형", "Risk type"), d.cd.riskType ? esc(opt(RISK_TYPE_OPTIONS, d.cd.riskType)) : dash)}
+    ${R(L("핵심통제 여부", "Key control"), d.cd.keyControl ? esc(opt(KEY_CONTROL_OPTIONS, d.cd.keyControl)) : dash)}
+    ${R(L("통제 구분", "Control level"), d.cd.level ? esc(opt(CONTROL_LEVEL_OPTIONS, d.cd.level)) : dash)}
+    ${R(L("경영진 주장(Assertion)", "Assertion"), d.cd.assertions.length ? d.cd.assertions.map((a) => esc(opt(ASSERTION_OPTIONS, a))).join(", ") : dash)}
     ${R(L("통제 방법", "Control method"), d.cd.method ? esc(opt(CONTROL_METHOD_OPTIONS, d.cd.method)) : dash)}
     ${R(L("통제 유형", "Control type"), d.cd.ctype ? esc(opt(CONTROL_TYPE_OPTIONS, d.cd.ctype)) : dash)}
     ${R(L("수행 주기", "Frequency"), d.cd.cycle ? esc(opt(PERFORM_CYCLE_OPTIONS, d.cd.cycle)) : dash)}
@@ -7399,7 +7465,7 @@ function buildControlDocHtml(c, lang, users, departments) {
     ${F(L("어떻게 — 테스트 절차 설명", "How — test procedure"), val(d.cd.testProc))}
     ${R(L("통제 증빙", "Control evidence"), val(d.cd.evidence))}
     ${R(L("필요 표본 수", "Required samples"), esc(recommendedSample(c.importance, c.frequency)) + esc(L("건", "")))}
-    ${R(L("「무작위(Random)」 명시", "Marked as random"), d.cd.random ? L("예", "Yes") : L("아니오", "No"))}
+    ${R(L("표본추출방식", "Sampling method"), d.cd.sampling ? esc(opt(SAMPLING_METHOD_OPTIONS, d.cd.sampling)) : dash)}
     ${R(L("표본 모집단 영역/출처", "Sample population"), val(d.cd.population))}
 
     ${S(L("운영 효과성 테스트 문서 (표본 항목)", "Operating effectiveness test"))}
