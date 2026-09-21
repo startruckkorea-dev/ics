@@ -8101,10 +8101,10 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
               <th className="text-left font-medium px-4 py-3 whitespace-nowrap">{t("list.colAccessor")}</th>
               <th className="text-left font-medium px-4 py-3 whitespace-nowrap">{t("history.colSample")}</th>
               <th className="text-left font-medium px-4 py-3 whitespace-nowrap">
-                {stage === "fsa" ? (lang === "en" ? "FSA self" : "FSA 자가평가") : (lang === "en" ? "1st result" : "1차평가")}
+                {stage === "fsa" ? (lang === "en" ? "FSA self-assessment" : "FSA 자가평가") : (lang === "en" ? "ISA 1st result" : "ISA 1차평가")}
               </th>
               <th className="text-left font-medium px-4 py-3 whitespace-nowrap">
-                {stage === "fsa" ? (lang === "en" ? "FSA review" : "FSA 2차검토") : (lang === "en" ? "2nd result" : "2차검토")}
+                {stage === "fsa" ? (lang === "en" ? "FSA 2nd review" : "FSA 2차검토") : (lang === "en" ? "ISA 2nd review" : "ISA 2차검토")}
               </th>
               <th className="text-left font-medium px-4 py-3 whitespace-nowrap">{t("list.colStatus")}</th>
             </tr>
