@@ -3045,18 +3045,9 @@ function ControlDetailBody({ control: c }) {
   const { departments, users } = useAppData();
   return (
     <div className="space-y-5">
-      {/* ISA 와 FSA 를 각각 한 덩어리로 묶는다 — 배지 6개를 한 줄에 늘어놓으니
-          어느 것이 어느 단계의 값인지 읽히지 않았다. */}
-      <div className="flex flex-wrap items-center gap-2">
-        {[["ISA", c.status, finalRisk(c)], ["FSA", c.fsaStatus || "not_started", fsaFinalRisk(c)]].map(([label, st, rk]) => (
-          <div key={label} className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 pl-2 pr-1.5 py-1">
-            <span className="text-[11px] font-bold text-slate-500">{label}</span>
-            <StatusBadge status={st} kind={label.toLowerCase()} />
-            <RiskBadge risk={rk} />
-          </div>
-        ))}
-        <span className="text-xs text-slate-400">{deptName(c.dept, lang, departments)} · {catName(c.cat, lang)}</span>
-      </div>
+      {/* 맨 위 ISA·FSA 상태 배지는 뺐다 — 아래 네 단계 카드에 결과가 모두 있어
+          같은 내용이 두 번 나왔다(09-21 지적). 부서·통제영역만 남긴다. */}
+      <p className="text-xs text-slate-400">{deptName(c.dept, lang, departments)} · {catName(c.cat, lang)}</p>
       <div>
         <p className="text-xs font-medium text-slate-500 mb-1">{t("detail.desc")}</p>
         <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{cDesc(c, lang)}</p>
