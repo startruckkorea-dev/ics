@@ -749,6 +749,47 @@ function finalRisk(control) {
   return "none";
 }
 
+/* FSA 기준 신호등. ISA 와 같은 규칙을 FSA 필드에 적용한다.
+   FSA 2차검토까지 끝났으면 검토자 판정, 제출만 됐으면 담당자 판정, 그 밖에는 미평가. */
+function fsaFinalRisk(control) {
+  if (control.fsaStatus === "completed") return control.fsaReviewRisk || "none";
+  if (control.fsaStatus === "submitted_self" && control.fsaRisk) return control.fsaRisk;
+  return "none";
+}
+/* 대시보드·리포트가 어느 단계를 보고 있는지에 따라 신호등을 고른다.
+   ISA 만 끝난 항목이 「양호」 로 집계되어 FSA 도 끝난 것처럼 보이던 것을 막는다
+   (2026-09-21 사용자 지적). */
+const STAGES = [
+  { id: "isa", ko: "ISA (1차·2차)", en: "ISA (1st·2nd)" },
+  { id: "fsa", ko: "FSA (최종)", en: "FSA (final)" },
+];
+function stageRisk(control, stage) {
+  return stage === "fsa" ? fsaFinalRisk(control) : finalRisk(control);
+}
+function stageDone(control, stage) {
+  return stage === "fsa" ? control.fsaStatus === "completed" : control.status === "completed";
+}
+/* 단계 전환 버튼. 대시보드와 평가 이력 리포트가 같은 모양을 쓴다. */
+function StageTabs({ stage, setStage }) {
+  const { lang } = useLang();
+  return (
+    <div className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+      {STAGES.map((s) => {
+        const on = stage === s.id;
+        return (
+          <button key={s.id} type="button" data-stage={s.id} aria-pressed={on}
+            onClick={() => setStage(s.id)}
+            className="px-3 py-1.5 rounded-md text-[12px] font-semibold transition-colors"
+            style={{ backgroundColor: on ? "#fff" : "transparent", color: on ? BRAND.navy : "#94A3B8",
+                     boxShadow: on ? "0 1px 2px rgba(15,23,42,.08)" : "none" }}>
+            {s[lang]}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 /* 초기 통제 항목 목업 데이터 */
 // 실제 통제 항목/평가 데이터는 로그인 시 ICS_Controls·ICS_Requests SharePoint 목록에서 loadIcsControls()가 불러온다.
 // 통제명·담당자 이메일 등 업무 데이터를 git 저장소에 하드코딩하지 않기 위해 여기서는 항상 빈 배열로 시작한다.
@@ -771,8 +812,8 @@ const INITIAL_LOG = [];
 // 아직 모른다는 뜻이므로, 초록으로 표시하면 실제보다 안전해 보이는 착시가 생긴다.
 // (이전 구현은 red/orange가 없고 none이 섞여 있으면 기본값 green이 그대로 남아, 88건 중
 //  1건만 양호여도 셀 전체가 초록으로 보였다.)
-function matrixCellRisk(items) {
-  const risks = items.map(finalRisk);
+function matrixCellRisk(items, stage = "isa") {
+  const risks = items.map((c) => stageRisk(c, stage));
   if (risks.includes("red")) return "red";
   if (risks.includes("orange")) return "orange";
   if (risks.includes("none")) return "none";
@@ -780,8 +821,8 @@ function matrixCellRisk(items) {
 }
 
 // 셀 툴팁에 쓸 평가 완료 건수 (양호·주의·위험으로 확정된 건수)
-function matrixAssessedCount(items) {
-  return items.filter((c) => finalRisk(c) !== "none").length;
+function matrixAssessedCount(items, stage = "isa") {
+  return items.filter((c) => stageRisk(c, stage) !== "none").length;
 }
 
 function buildArchiveYearControls(sourceControls, sourceYear, newYear) {
@@ -874,6 +915,8 @@ const STR = {
       subtitleAdmin: "전사 내부통제 운영 현황을 한눈에 확인하세요 (권한에 따라 데이터 열람 목록이 제한됩니다)",
       subtitleScoped: "배정된 부서의 통제 현황입니다.",
       kpiTotal: "전체 통제 항목", kpiCompletion: "평가 완료율",
+      stageIsaHint: "ISA(1차 자가평가·2차 검토) 결과 기준입니다.",
+      stageFsaHint: "FSA(최종 자가평가·FSA 2차검토) 결과 기준입니다. FSA 전 항목은 미평가로 집계됩니다.",
       matrixTitle: "부서 × 통제영역 리스크 매트릭스",
       matrixTotal: "전체", matrixAssessed: "평가 완료",
       chartTitle: "부서별 리스크 분포",
@@ -1336,6 +1379,8 @@ const STR = {
       subtitleAdmin: "Get a comprehensive overview of the company's internal control operations at a glance (Data visibility is restricted based on your access permissions)",
       subtitleScoped: "Control status for your assigned department(s).",
       kpiTotal: "Total control items", kpiCompletion: "Completion rate",
+      stageIsaHint: "Based on ISA (1st self-assessment · 2nd review) results.",
+      stageFsaHint: "Based on FSA (final self-assessment · FSA 2nd review) results. Items before FSA count as not assessed.",
       matrixTitle: "Department × Component risk matrix",
       matrixTotal: "Total", matrixAssessed: "Assessed",
       chartTitle: "Risk distribution by department",
@@ -2093,14 +2138,16 @@ function Dashboard({ controls: allControls, goTo, isAdmin, allowedDepts }) {
   const { departments, users } = useAppData();
   const visibleDepts = isAdmin ? departments : departments.filter((d) => allowedDepts.includes(d.id));
   const controls = isAdmin ? allControls : allControls.filter((c) => allowedDepts.includes(c.dept));
+  // 기본은 ISA — 회계연도 중에는 ISA 가 진행 중이고 FSA 는 마감 전에 한다.
+  const [stage, setStage] = useState("isa");
 
   const stats = useMemo(() => {
     const counts = { green: 0, orange: 0, red: 0, none: 0 };
-    controls.forEach((c) => (counts[finalRisk(c)] += 1));
+    controls.forEach((c) => (counts[stageRisk(c, stage)] += 1));
     const total = controls.length;
-    const doneCount = controls.filter((c) => c.status === "completed").length;
+    const doneCount = controls.filter((c) => stageDone(c, stage)).length;
     return { counts, total, completion: total ? Math.round((doneCount / total) * 100) : 0 };
-  }, [controls]);
+  }, [controls, stage]);
 
   // 리스크 매트릭스·분포 차트는 실제 통제 항목이 있는 부서만 보여준다 (25개 부서 중 대부분은 아직 항목이 없어서, 전부 다 보여주면 텅 빈 행/막대만 잔뜩 생겨 알아보기 어려움)
   const deptsWithData = visibleDepts.filter((d) => controls.some((c) => c.dept === d.id));
@@ -2108,7 +2155,7 @@ function Dashboard({ controls: allControls, goTo, isAdmin, allowedDepts }) {
   const barData = deptsWithData.map((d) => {
     const items = controls.filter((c) => c.dept === d.id);
     const row = { name: d[lang], green: 0, orange: 0, red: 0, none: 0 };
-    items.forEach((c) => (row[finalRisk(c)] += 1));
+    items.forEach((c) => (row[stageRisk(c, stage)] += 1));
     return row;
   });
 
@@ -2120,8 +2167,8 @@ function Dashboard({ controls: allControls, goTo, isAdmin, allowedDepts }) {
       // 셀에 총계만 보여주면 88건이 전부 미평가인지 양호인지 알 수 없다.
       // 신호등별 건수를 함께 집계해 셀 안에 나눠 표시한다.
       const by = { green: 0, orange: 0, red: 0, none: 0 };
-      items.forEach((c) => { by[finalRisk(c)] = (by[finalRisk(c)] || 0) + 1; });
-      return { cat, risk: matrixCellRisk(items), count: items.length, assessed: matrixAssessedCount(items), by };
+      items.forEach((c) => { by[stageRisk(c, stage)] = (by[stageRisk(c, stage)] || 0) + 1; });
+      return { cat, risk: matrixCellRisk(items, stage), count: items.length, assessed: matrixAssessedCount(items, stage), by };
     }),
   }));
 
@@ -2135,6 +2182,12 @@ function Dashboard({ controls: allControls, goTo, isAdmin, allowedDepts }) {
             ? `${t("dashboard.scopedWith")} (${visibleDepts.map((d) => d[lang]).join(", ")})`
             : t("dashboard.scopedNone")}
       />
+
+      {/* 어느 단계 기준인지 먼저 고른다. 숫자 위에 두어 무엇을 보고 있는지 놓치지 않게. */}
+      <div className="flex items-center gap-3 mb-4">
+        <StageTabs stage={stage} setStage={setStage} />
+        <span className="text-[12px] text-slate-400">{t(stage === "fsa" ? "dashboard.stageFsaHint" : "dashboard.stageIsaHint")}</span>
+      </div>
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
         <div className="relative bg-white rounded-xl border border-slate-200 shadow-sm p-4 overflow-hidden">
@@ -7880,6 +7933,7 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
   const [detail, setDetail] = useState(null);
   const [tableSearch, setTableSearch] = useState("");
   const [accessorFilter, setAccessorFilter] = useState("");
+  const [stage, setStage] = useState("isa");
   const [tablePage, setTablePage] = useState(0);
   const TABLE_PAGE_SIZE = 10;
   const myEmail = (currentUser.email || "").toLowerCase();
@@ -7896,7 +7950,7 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
     .filter((l) => ASSESSMENT_ACTIONS.has(l.actionKey))
     .filter((l) => (l.actor || "").toLowerCase() === myEmail || myCodes.has(l.code));
   const pieData = ["green", "orange", "red", "none"].map((r) => ({
-    name: RISK_META[r][lang], value: controls.filter((c) => finalRisk(c) === r).length, color: RISK_META[r].color,
+    name: RISK_META[r][lang], value: controls.filter((c) => stageRisk(c, stage) === r).length, color: RISK_META[r].color,
   })).filter((d) => d.value > 0);
 
   const qTable = tableSearch.trim().toLowerCase();
@@ -7921,6 +7975,11 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
   return (
     <div>
       <SectionHeader icon={History} title={t("history.title")} subtitle={t("history.subtitle")} />
+
+      <div className="flex items-center gap-3 mb-4">
+        <StageTabs stage={stage} setStage={setStage} />
+        <span className="text-[12px] text-slate-400">{t(stage === "fsa" ? "dashboard.stageFsaHint" : "dashboard.stageIsaHint")}</span>
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-5 mb-6">
         <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm p-5">
@@ -7991,8 +8050,12 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
               <th className="text-left font-medium px-4 py-3 whitespace-nowrap">{t("list.colDept")}</th>
               <th className="text-left font-medium px-4 py-3 whitespace-nowrap">{t("list.colAccessor")}</th>
               <th className="text-left font-medium px-4 py-3 whitespace-nowrap">{t("history.colSample")}</th>
-              <th className="text-left font-medium px-4 py-3 whitespace-nowrap">{lang === "en" ? "1st result" : "1차평가"}</th>
-              <th className="text-left font-medium px-4 py-3 whitespace-nowrap">{lang === "en" ? "2nd result" : "2차검토"}</th>
+              <th className="text-left font-medium px-4 py-3 whitespace-nowrap">
+                {stage === "fsa" ? (lang === "en" ? "FSA self" : "FSA 자가평가") : (lang === "en" ? "1st result" : "1차평가")}
+              </th>
+              <th className="text-left font-medium px-4 py-3 whitespace-nowrap">
+                {stage === "fsa" ? (lang === "en" ? "FSA review" : "FSA 2차검토") : (lang === "en" ? "2nd result" : "2차검토")}
+              </th>
               <th className="text-left font-medium px-4 py-3 whitespace-nowrap">{t("list.colStatus")}</th>
             </tr>
           </thead>
@@ -8004,9 +8067,11 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
                 <td className="px-4 py-2.5 text-slate-600 whitespace-nowrap">{deptName(c.dept, lang, departments)}</td>
                 <td className="px-4 py-2.5 text-slate-600"><div className="max-w-[170px] truncate" title={personByEmail(c.accessor, lang, users)}>{personByEmail(c.accessor, lang, users)}</div></td>
                 <td className="px-4 py-2.5 text-slate-500 text-xs whitespace-nowrap">{c.actualSample ?? "-"}/{recommendedSample(c.importance, c.frequency)}{t("common.items")}</td>
-                <td className="px-4 py-2.5 whitespace-nowrap"><RiskBadge risk={c.selfRisk || "none"} /></td>
-                <td className="px-4 py-2.5 whitespace-nowrap"><RiskBadge risk={c.reviewRisk || "none"} /></td>
-                <td className="px-4 py-2.5 whitespace-nowrap"><StatusBadge status={c.status} kind="isa" /></td>
+                <td className="px-4 py-2.5 whitespace-nowrap"><RiskBadge risk={(stage === "fsa" ? c.fsaRisk : c.selfRisk) || "none"} /></td>
+                <td className="px-4 py-2.5 whitespace-nowrap"><RiskBadge risk={(stage === "fsa" ? c.fsaReviewRisk : c.reviewRisk) || "none"} /></td>
+                <td className="px-4 py-2.5 whitespace-nowrap">
+                  <StatusBadge status={stage === "fsa" ? (c.fsaStatus || "not_started") : c.status} kind={stage} />
+                </td>
               </tr>
             ))}
             {filteredTableControls.length === 0 && (
