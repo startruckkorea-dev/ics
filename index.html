@@ -1008,7 +1008,8 @@ const STR = {
       pendingNotice: "Accessor의 수정 요청은 검토자(또는 관리자)의 승인 후 실제 내용에 반영됩니다. 승인 전까지는 기존 내용이 그대로 표시됩니다.",
       uploadTemplateBtn: "엑셀 템플릿 다운로드",
       exportBtn: "엑셀 내보내기",
-      colAction: "수정·삭제",
+      colAction: "수정·삭제", colProgress: "진행 (ISA · FSA)",
+      allRiskIsa: "전체 신호등 (ISA 기준)",
       exportHint: "현재 검색·필터가 적용된 목록을 엑셀로 저장합니다.",
       uploadBtn: "엑셀로 일괄 업로드",
       uploadAdminOnly: "엑셀 일괄 업로드는 관리자(권한 담당자)만 사용할 수 있습니다.",
@@ -1472,7 +1473,8 @@ const STR = {
       pendingNotice: "An accessor's edit request only takes effect after a reviewer (or admin) approves it. The existing content is shown until then.",
       uploadTemplateBtn: "Download Excel template",
       exportBtn: "Export to Excel",
-      colAction: "Edit · Delete",
+      colAction: "Edit · Delete", colProgress: "Progress (ISA · FSA)",
+      allRiskIsa: "All risk (ISA)",
       exportHint: "Exports the list with the current search and filters applied.",
       uploadBtn: "Bulk upload from Excel",
       uploadAdminOnly: "Only admins (permission managers) can bulk-upload from Excel.",
@@ -2990,6 +2992,27 @@ function StageOutcome({ stage, control: c }) {
    눈으로 갈라내야 했다(2026-09-21 사용자 지적).
    카드 하나는 위에서 아래로 「단계 이름 + 결과」 → 「신호등 · 사람 · 일시」 → 「의견」
    순서로만 읽히게 하고, 왼쪽 띠 색으로 결과를 한 번 더 알린다. */
+/* 목록 한 칸에 ISA·FSA 진행 상태를 두 줄로 넣는다.
+   상태 열이 ISA 값만 보여 주던 탓에 FSA 까지 끝난 것으로 읽혔다(2026-09-21 지적).
+   열을 늘리면 가로로 넘치므로, 한 칸 안에서 줄을 나눈다. */
+function StageStatusCell({ control: c }) {
+  const rows = [
+    ["ISA", c.status || "not_started", finalRisk(c), "isa"],
+    ["FSA", c.fsaStatus || "not_started", fsaFinalRisk(c), "fsa"],
+  ];
+  return (
+    <div className="space-y-1">
+      {rows.map(([label, st, rk, kind]) => (
+        <div key={label} className="flex items-center gap-1.5 whitespace-nowrap">
+          <span className="text-[10px] font-bold text-slate-400 w-6 flex-shrink-0">{label}</span>
+          <StatusBadge status={st} kind={kind} />
+          <RiskBadge risk={rk} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function StageCard({ stage, control: c, title, risk, who, actor, when, text, empty }) {
   const { lang, t } = useLang();
   const o = stageOutcome(stage, c);
@@ -3857,7 +3880,7 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
           {CATEGORIES.map((c) => <option key={c.id} value={c.id}>{c[lang]}</option>)}
         </select>
         <select value={riskFilter} onChange={(e) => setRiskFilter(e.target.value)} className={`${inputCls} w-auto min-w-[120px]`}>
-          <option value="">{t("common.allRisk")}</option>
+          <option value="">{t("manage.allRiskIsa")}</option>
           {["green", "orange", "red", "none"].map((r) => <option key={r} value={r}>{RISK_META[r][lang]}</option>)}
         </select>
         {filterActive && (
@@ -3883,8 +3906,7 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
               <th className="text-left font-medium px-4 py-3 whitespace-nowrap">{t("list.colAccessor")}</th>
               <th className="text-left font-medium px-4 py-3 whitespace-nowrap">{t("list.colReviewer")}</th>
               <th className="text-left font-medium px-4 py-3 whitespace-nowrap">{t("manage.colSample")}</th>
-              <th className="text-left font-medium px-4 py-3 whitespace-nowrap">{t("list.colStatus")}</th>
-              <th className="text-left font-medium px-4 py-3 whitespace-nowrap">{t("list.colRisk")}</th>
+              <th className="text-left font-medium px-4 py-3 whitespace-nowrap">{t("manage.colProgress")}</th>
               {canEdit && <th className="text-right font-medium px-4 py-3 whitespace-nowrap">{t("manage.colAction")}</th>}
             </tr>
           </thead>
@@ -3902,8 +3924,7 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
                 <td className="px-4 py-3 text-slate-600"><div className="max-w-[150px] truncate" title={personByEmail(c.accessor, lang, users)}>{personByEmail(c.accessor, lang, users)}</div></td>
                 <td className="px-4 py-3 text-slate-600"><div className="max-w-[150px] truncate" title={personByEmail(c.reviewer, lang, users)}>{personByEmail(c.reviewer, lang, users)}</div></td>
                 <td className="px-4 py-3 text-slate-600 text-xs whitespace-nowrap">{freqLabel(c.frequency, lang)} · {importanceLabel(c.importance, lang)} · {c.sampleSize}{t("common.items")}</td>
-                <td className="px-4 py-3"><StatusBadge status={c.status} kind="isa" /></td>
-                <td className="px-4 py-3"><RiskBadge risk={finalRisk(c)} /></td>
+                <td className="px-4 py-3"><StageStatusCell control={c} /></td>
                 {canEdit && (
                   <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-end gap-2">
@@ -3914,7 +3935,7 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
                 )}
               </tr>
             ))}
-            {list.length === 0 && <tr><td colSpan={canEdit ? 10 : 9}><EmptyState text={t("manage.emptyText")} /></td></tr>}
+            {list.length === 0 && <tr><td colSpan={canEdit ? 9 : 8}><EmptyState text={t("manage.emptyText")} /></td></tr>}
           </tbody>
         </table>
         {list.length > 0 && (
