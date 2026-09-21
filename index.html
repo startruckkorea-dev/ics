@@ -1084,9 +1084,11 @@ const STR = {
       docWho: "누가 — 통제를 수행하는 사람",
       docRole: "역할/직책", docRoleDesc: "역할 설명", docRoleDept: "부서",
       docAddRow: "행 추가", docDelRow: "삭제",
-      docWhere: "어디서 — 프로세스 환경", docWhat: "무엇을 — 통제 내용 설명",
+      docWhere: "어디서 — 프로세스의 어느 단계에서 통제가 수행됩니까?",
+      docWhat: "무엇을 — 통제 요건을 충족하기 위해 어떤 활동이 수행됩니까?",
       docTestDesign: "테스트 설계",
-      docTestProc: "테스트 절차 설명", docEvidence: "통제 증빙",
+      docTestProc: "어떻게 — 통제의 운영 효과성을 평가하기 위해 어떤 테스트 절차를 수행합니까?",
+      docEvidence: "통제 증빙",
       docSampleNeed: "필요 표본 수", docRandom: "「무작위(Random)」 명시",
       docPopulation: "표본 모집단 영역/출처",
       docTestRef: "테스트 절차 참조",
@@ -1177,6 +1179,7 @@ const STR = {
       subtitle: "전사 통제 평가 활동 로그와 종합 통계를 확인합니다.",
       pieTitle: "최종 신호등 분포", logTitle: "활동 로그",
       tableTitle: "전체 통제 항목 종합 현황", downloadBtn: "엑셀 다운로드",
+      pdfPkgBtn: "PDF 저장", pickAll: "전체 선택",
       colSample: "샘플링",
       allAccessors: "전체 담당자",
     },
@@ -1552,9 +1555,11 @@ const STR = {
       docWho: "Who — performs the control",
       docRole: "Role / title", docRoleDesc: "Role description", docRoleDept: "Department",
       docAddRow: "Add row", docDelRow: "Remove",
-      docWhere: "Where — process environment", docWhat: "What — control activity",
+      docWhere: "Where — at which step of the process is the control performed?",
+      docWhat: "What — which activities are performed to meet the control requirement?",
       docTestDesign: "Test design",
-      docTestProc: "Test procedure", docEvidence: "Control evidence",
+      docTestProc: "How — which test procedures assess the operating effectiveness?",
+      docEvidence: "Control evidence",
       docSampleNeed: "Required samples", docRandom: "Marked as random",
       docPopulation: "Sample population / source",
       docTestRef: "Test procedure reference",
@@ -1645,6 +1650,7 @@ const STR = {
       subtitle: "Company-wide assessment activity log and summary statistics.",
       pieTitle: "Final risk distribution", logTitle: "Activity log",
       tableTitle: "All control items — summary", downloadBtn: "Download Excel",
+      pdfPkgBtn: "Save PDF", pickAll: "Select all",
       colSample: "Sample",
       allAccessors: "All accessors",
     },
@@ -5036,7 +5042,7 @@ function SubmitProgressModal({ step }) {
    급한 항목까지 함께 멈춘다. 채운 내용만 평가와 함께 저장된다. */
 function IsaDocForms({ control, doc, setDoc, recommended }) {
   const { lang, t } = useLang();
-  const { departments } = useAppData();
+  const { departments, users } = useAppData();
   const cd = doc.cd, tp = doc.tp;
   const setCd = (patch) => setDoc({ ...doc, cd: { ...cd, ...patch } });
   const setTp = (patch) => setDoc({ ...doc, tp: { ...tp, ...patch } });
@@ -5050,6 +5056,17 @@ function IsaDocForms({ control, doc, setDoc, recommended }) {
   const panelCls = "border border-t-0 border-slate-200 rounded-b-xl bg-white px-4 pt-3 pb-4 space-y-4";
   // 지우기 단추 — 회색이 너무 옅어 있는 줄도 몰랐다. 진하게 하고 올리면 빨갛게.
   const delCls = "flex-shrink-0 w-5 h-5 rounded-md flex items-center justify-center text-slate-500 hover:text-white hover:bg-red-500 transition-colors";
+
+  /* 「누가」 의 역할·직책과 부서는 통제 항목에 이미 있는 값이다.
+     담당자가 같은 값을 또 적게 하지 않고 자동으로 채운다(2026-09-21 회의 요청).
+     직접 쓰는 것은 역할 설명뿐이다. 둘째 줄부터는 예전처럼 직접 입력한다. */
+  const autoRole = personByEmail(control.accessor, lang, users);
+  const autoDept = deptName(control.dept, lang, departments);
+  useEffect(() => {
+    const p0 = doc.cd.performers[0] || { role: "", desc: "", dept: "" };
+    if (p0.role === autoRole && p0.dept === autoDept) return;
+    setDoc({ ...doc, cd: { ...doc.cd, performers: doc.cd.performers.map((p, i) => (i === 0 ? { ...p, role: autoRole, dept: autoDept } : p)) } });
+  }, [autoRole, autoDept]);
 
   // 어느 쪽에 내용이 들어갔는지 탭에 점으로 표시한다.
   const cdFilled = isaDocFilled({ cd: doc.cd, tp: emptyIsaDoc().tp });
@@ -5136,12 +5153,9 @@ function IsaDocForms({ control, doc, setDoc, recommended }) {
             <div className="md:col-span-1"><span className={labelCls}>{t("self.docCtrlName")}</span><div className={roCls + " truncate"} title={cName(control, lang)}>{cName(control, lang)}</div></div>
             <div><span className={labelCls}>{t("self.docSetCycle")}</span>
               <input className={inputCls} value={cd.setCycle} onChange={(e) => setCd({ setCycle: e.target.value })} /></div>
-            <div className="grid grid-cols-2 gap-3">
-              <div><span className={labelCls}>{t("self.docVersion")}</span>
-                <input className={inputCls} value={cd.docVersion} onChange={(e) => setCd({ docVersion: e.target.value })} /></div>
-              <div><span className={labelCls}>{t("self.docEffDate")}</span>
-                <input type="date" className={inputCls} value={cd.effDate} onChange={(e) => setCd({ effDate: e.target.value })} /></div>
-            </div>
+            {/* 문서 버전 칸은 뺐다 — 값이 없어도 되는 항목이라는 회의 의견(2026-09-21). */}
+            <div><span className={labelCls}>{t("self.docEffDate")}</span>
+              <input type="date" className={inputCls} value={cd.effDate} onChange={(e) => setCd({ effDate: e.target.value })} /></div>
           </div>
 
           <div>
@@ -5200,13 +5214,20 @@ function IsaDocForms({ control, doc, setDoc, recommended }) {
             <div className="space-y-2">
               {cd.performers.map((p, i) => (
                 <div key={i} className="grid grid-cols-12 gap-2 items-center">
-                  <input className={inputCls + " col-span-3"} placeholder={t("self.docRole")} value={p.role} onChange={(e) => setPerformer(i, { role: e.target.value })} />
+                  {/* 첫 줄은 통제 항목에서 가져온 값이라 고칠 수 없다. */}
+                  <input className={(i === 0 ? roCls : inputCls) + " col-span-3"} readOnly={i === 0}
+                         title={i === 0 ? t("self.docAuto") : ""}
+                         placeholder={t("self.docRole")} value={p.role} onChange={(e) => setPerformer(i, { role: e.target.value })} />
                   <input className={inputCls + " col-span-6"} placeholder={t("self.docRoleDesc")} value={p.desc} onChange={(e) => setPerformer(i, { desc: e.target.value })} />
-                  <input className={inputCls + " col-span-2"} placeholder={t("self.docRoleDept")} value={p.dept} onChange={(e) => setPerformer(i, { dept: e.target.value })} />
-                  <button type="button" onClick={() => delPerformer(i)} title={t("self.docDelRow")}
-                          className="col-span-1 flex justify-center">
-                    <span className={delCls}><X size={14} /></span>
-                  </button>
+                  <input className={(i === 0 ? roCls : inputCls) + " col-span-2"} readOnly={i === 0}
+                         title={i === 0 ? t("self.docAuto") : ""}
+                         placeholder={t("self.docRoleDept")} value={p.dept} onChange={(e) => setPerformer(i, { dept: e.target.value })} />
+                  {i === 0 ? <span className="col-span-1" /> : (
+                    <button type="button" onClick={() => delPerformer(i)} title={t("self.docDelRow")}
+                            className="col-span-1 flex justify-center">
+                      <span className={delCls}><X size={14} /></span>
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
@@ -7193,6 +7214,207 @@ async function exportFinalReportPdf(lang, ctx, onProgress) {
   } finally { host.remove(); }
 }
 
+/* 통제 한 건을 인쇄용 HTML 로 만든다.
+   화면 컴포넌트를 그대로 캡처하지 않는 이유는, 화면에는 버튼·탭·접이식이 섞여 있어
+   출력물에 그대로 실리기 때문이다. 서식 두 장(통제기술서·운영 효과성 테스트)과
+   평가 이력을 문서 순서대로 다시 짠다(2026-09-21 회의 요청). */
+function buildControlDocHtml(c, lang, users, departments) {
+  const L = (ko, en) => (lang === "en" ? en : ko);
+  const esc = (v) => String(v == null ? "" : v).replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m]));
+  const pre = (v) => esc(v).replace(/\n/g, "<br>");
+  const d = normalizeIsaDoc(c.isaDoc);
+  const opt = (arr, id) => { const o = arr.find((x) => x.id === id); return o ? o[lang] : "-"; };
+  const dash = `<span style="color:#94a3b8">-</span>`;
+  const val = (v) => (String(v || "").trim() ? pre(v) : dash);
+
+  const S = (t) => `<div style="font-size:12px;font-weight:700;color:#1F4E79;background:#EFF6FF;border-left:3px solid #1F4E79;padding:5px 9px;margin:14px 0 7px">${esc(t)}</div>`;
+  const R = (l, v) => `<div style="display:flex;padding:4px 0;border-bottom:.5px solid #e8eaed;font-size:11.5px"><div style="width:190px;flex-shrink:0;color:#64748b">${esc(l)}</div><div style="flex:1;color:#1e293b">${v}</div></div>`;
+  const F = (l, v) => `<div style="padding:4px 0;border-bottom:.5px solid #e8eaed"><div style="font-size:10.5px;color:#64748b;margin-bottom:2px">${esc(l)}</div><div style="font-size:11.5px;color:#1e293b;white-space:pre-wrap">${v}</div></div>`;
+
+  const stage = (title, st, risk, who, actor, when, text) => {
+    const o = stageOutcome(st, c);
+    const lab = { outcomeApproved: L("승인", "Approved"), outcomeReturned: L("반려", "Returned"),
+      outcomePending: L("검토 대기", "Awaiting review"), outcomeNone: L("진행 전", "Not started"),
+      outcomeSubmitted: L("제출 완료", "Submitted"), outcomeNotSubmitted: L("미제출", "Not submitted") }[o.key];
+    return `<div style="border:1px solid #e2e8f0;border-left:3px solid ${o.fg};border-radius:6px;padding:8px 10px;margin-bottom:6px">
+      <div style="display:flex;align-items:center;font-size:11.5px">
+        <b style="color:#1e293b">${esc(title)}</b>
+        <span style="margin-left:auto;color:#64748b;font-size:10.5px">${esc(risk ? (RISK_META[risk] ? RISK_META[risk][lang] : risk) : "")}${when ? " · " + esc(formatDateTime(when, lang)) : ""}</span>
+      </div>
+      <div style="font-size:12px;font-weight:700;color:${o.fg};margin-top:4px">${esc(lab)}</div>
+      <div style="font-size:10.5px;color:#64748b;margin-top:2px">${esc(who || "")}${actor ? " · " + esc(L("실제 처리:", "Processed by:")) + " " + esc(actor) : ""}</div>
+      <div style="font-size:11.5px;color:#334155;white-space:pre-wrap;margin-top:4px">${String(text || "").trim() ? pre(text) : `<span style="color:#94a3b8">${esc(L("의견 없음", "No comment"))}</span>`}</div>
+    </div>`;
+  };
+
+  const perf = d.cd.performers.filter((p) => String(p.role || p.desc || p.dept || "").trim());
+  const samples = d.tp.samples.filter((r) => String(r.date || r.ref || r.result || r.comment || "").trim());
+
+  return `<div style="font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;color:#1e293b;width:820px;padding:0 4px">
+    <div style="font-size:15px;font-weight:700;padding-bottom:8px;border-bottom:2px solid #e2e8f0">${esc(c.code)} · ${esc(cName(c, lang))}</div>
+
+    ${S(L("통제 개요", "Control overview"))}
+    ${R(L("법인명", "Entity"), "STK")}
+    ${R(L("부서", "Department"), esc(deptName(c.dept, lang, departments)))}
+    ${R(L("회계연도", "Fiscal year"), esc(c.year))}
+    ${R(L("통제영역", "Component"), esc(catName(c.cat, lang)))}
+    ${R(L("1차 담당자(Accessor)", "Accessor"), esc(personByEmail(c.accessor, lang, users)))}
+    ${R(L("2차 검토자(Reviewer)", "Reviewer"), esc(personByEmail(c.reviewer, lang, users)))}
+    ${F(L("통제 목표", "Control objective"), val(cDesc(c, lang)))}
+
+    ${S("ICS Control Documentation")}
+    ${R(L("통제 세트(주기)", "Control set (cycle)"), val(d.cd.setCycle))}
+    ${R(L("시행일", "Effective date"), val(d.cd.effDate))}
+    ${R(L("부정(Fraud) 관련 통제", "Fraud-related"), d.cd.fraud ? L("예", "Yes") : L("아니오", "No"))}
+    ${R(L("어설션(Assertion)", "Assertion"), d.cd.assertions.length ? d.cd.assertions.map((a) => esc(opt(ASSERTION_OPTIONS, a))).join(", ") : dash)}
+    ${R(L("통제 방법", "Control method"), d.cd.method ? esc(opt(CONTROL_METHOD_OPTIONS, d.cd.method)) : dash)}
+    ${R(L("통제 유형", "Control type"), d.cd.ctype ? esc(opt(CONTROL_TYPE_OPTIONS, d.cd.ctype)) : dash)}
+    ${R(L("수행 주기", "Frequency"), d.cd.cycle ? esc(opt(PERFORM_CYCLE_OPTIONS, d.cd.cycle)) : dash)}
+    ${R(L("관련 문서", "Related documents"), val(d.cd.relatedDocs))}
+    ${R(L("관련 시스템", "Related systems"), val(d.cd.relatedSystems))}
+    <div style="font-size:10.5px;color:#64748b;margin:7px 0 3px">${esc(L("누가 — 통제를 수행하는 사람", "Who performs the control"))}</div>
+    ${perf.length ? `<table style="width:100%;border-collapse:collapse;font-size:11px">
+      <tr style="background:#f8fafc;color:#64748b">
+        <th style="text-align:left;padding:4px 6px;border:1px solid #e2e8f0;width:170px">${esc(L("역할/직책", "Role"))}</th>
+        <th style="text-align:left;padding:4px 6px;border:1px solid #e2e8f0">${esc(L("역할 설명", "Description"))}</th>
+        <th style="text-align:left;padding:4px 6px;border:1px solid #e2e8f0;width:130px">${esc(L("부서", "Department"))}</th></tr>
+      ${perf.map((p) => `<tr><td style="padding:4px 6px;border:1px solid #e2e8f0">${esc(p.role)}</td><td style="padding:4px 6px;border:1px solid #e2e8f0">${pre(p.desc)}</td><td style="padding:4px 6px;border:1px solid #e2e8f0">${esc(p.dept)}</td></tr>`).join("")}
+    </table>` : `<div style="font-size:11px;color:#94a3b8">-</div>`}
+    ${F(L("어디서 — 프로세스 환경", "Where — process environment"), val(d.cd.processEnv))}
+    ${F(L("무엇을 — 통제 내용 설명", "What — control activity"), val(d.cd.activity))}
+    ${F(L("어떻게 — 테스트 절차 설명", "How — test procedure"), val(d.cd.testProc))}
+    ${R(L("통제 증빙", "Control evidence"), val(d.cd.evidence))}
+    ${R(L("필요 표본 수", "Required samples"), esc(recommendedSample(c.importance, c.frequency)) + esc(L("건", "")))}
+    ${R(L("「무작위(Random)」 명시", "Marked as random"), d.cd.random ? L("예", "Yes") : L("아니오", "No"))}
+    ${R(L("표본 모집단 영역/출처", "Sample population"), val(d.cd.population))}
+
+    ${S(L("운영 효과성 테스트 문서 (표본 항목)", "Operating effectiveness test"))}
+    ${R(L("통제 세트(주기)", "Control set (cycle)"), val(d.tp.setCycle))}
+    ${F(L("테스트 절차 참조", "Test procedure reference"), val(d.tp.testRef))}
+    ${samples.length ? `<table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:4px">
+      <tr style="background:#f8fafc;color:#64748b">
+        <th style="padding:4px 6px;border:1px solid #e2e8f0;width:36px">No.</th>
+        <th style="text-align:left;padding:4px 6px;border:1px solid #e2e8f0;width:110px">${esc(L("표본 추출일", "Date"))}</th>
+        <th style="text-align:left;padding:4px 6px;border:1px solid #e2e8f0">${esc(L("증빙 문서 참조", "Evidence"))}</th>
+        <th style="text-align:left;padding:4px 6px;border:1px solid #e2e8f0;width:80px">${esc(L("평가", "Result"))}</th>
+        <th style="text-align:left;padding:4px 6px;border:1px solid #e2e8f0">${esc(L("코멘트", "Comment"))}</th></tr>
+      ${samples.map((r, i) => `<tr><td style="padding:4px 6px;border:1px solid #e2e8f0;text-align:center">${i + 1}</td><td style="padding:4px 6px;border:1px solid #e2e8f0">${esc(r.date)}</td><td style="padding:4px 6px;border:1px solid #e2e8f0">${esc(r.ref)}</td><td style="padding:4px 6px;border:1px solid #e2e8f0">${esc(r.result)}</td><td style="padding:4px 6px;border:1px solid #e2e8f0">${pre(r.comment)}</td></tr>`).join("")}
+    </table>` : `<div style="font-size:11px;color:#94a3b8">-</div>`}
+    ${F(L("테스트 절차 결과", "Test result"), val(d.tp.resultText))}
+
+    ${S(L("평가 이력", "Assessment history"))}
+    ${R(L("샘플링 건수", "Sample count"), esc((c.actualSample == null ? "-" : c.actualSample)) + " / " + esc(recommendedSample(c.importance, c.frequency)))}
+    ${stage(L("1차 자가평가", "1st self-assessment"), "isaSelf", c.selfRisk, personByEmail(c.accessor, lang, users), "", c.selfDate, lang === "en" ? c.selfCommentEn || c.selfComment : c.selfComment)}
+    ${stage(L("2차 검토", "2nd review"), "isaReview", c.reviewRisk, personByEmail(c.reviewer, lang, users), c.reviewActor, c.reviewDate, lang === "en" ? c.reviewCommentEn || c.reviewComment : c.reviewComment)}
+    ${stage(L("FSA 최종자기평가", "FSA final"), "fsaSelf", c.fsaRisk, personByEmail(c.accessor, lang, users), "", c.fsaDate, lang === "en" ? c.fsaCommentEn || c.fsaComment : c.fsaComment)}
+    ${stage(L("FSA 2차검토", "FSA 2nd review"), "fsaReview", c.fsaReviewRisk, personByEmail(c.reviewer, lang, users), c.fsaReviewActor, c.fsaReviewDate, lang === "en" ? c.fsaReviewCommentEn || c.fsaReviewComment : c.fsaReviewComment)}
+  </div>`;
+}
+
+/* 고른 통제를 한 건씩 PDF 로 만든다. 서식·평가 이력을 앞에 두고 첨부 자료를 뒤에 붙인다.
+   첨부는 이미지면 그대로, 그 밖은 Graph 로 PDF 변환해 이어 붙인다(ACC Others 와 같은 방식). */
+async function exportControlPackagePdf(controls, lang, users, departments, onProgress) {
+  if (typeof html2canvas !== "function" || typeof PDFLib === "undefined") {
+    alert(lang === "en" ? "Could not load the PDF library." : "PDF 라이브러리를 불러오지 못했습니다. 네트워크를 확인해 주세요.");
+    return false;
+  }
+  const { PDFDocument } = PDFLib;
+  const A4W = 595, A4H = 842, margin = 30, hdrH = 22;
+  const printW = A4W - margin * 2, printH = A4H - margin * 2 - hdrH;
+  const now = new Date(new Date().getTime() + 9 * 3600 * 1000);
+  const ds = now.toISOString().slice(0, 16).replace("T", " ");
+  const b64 = (u) => { const bin = atob(String(u).slice(String(u).indexOf(",") + 1)); const out = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i); return out; };
+  const hdrPng = (left) => {
+    const hc = document.createElement("canvas"); hc.width = 1190; hc.height = 28;
+    const hx = hc.getContext("2d");
+    const g = hx.createLinearGradient(0, 0, hc.width, 0); g.addColorStop(0, "#0f2744"); g.addColorStop(1, "#0a4a8a");
+    hx.fillStyle = g; hx.fillRect(0, 0, hc.width, hc.height);
+    hx.fillStyle = "#fff"; hx.font = "500 13px 'Malgun Gothic',sans-serif"; hx.textBaseline = "middle";
+    hx.fillText(left, 14, 13);
+    hx.textAlign = "right"; hx.font = "400 12px 'Malgun Gothic',sans-serif"; hx.fillStyle = "rgba(255,255,255,.6)";
+    hx.fillText(ds, hc.width - 14, 13);
+    return b64(hc.toDataURL("image/png"));
+  };
+
+  const host = document.createElement("div");
+  host.style.cssText = "position:fixed;left:-9999px;top:0;width:840px;background:#fff;z-index:-1";
+  document.body.appendChild(host);
+
+  try {
+    let done = 0;
+    for (const c of controls) {
+      if (onProgress) onProgress(++done, controls.length, c.code);
+      host.innerHTML = buildControlDocHtml(c, lang, users, departments);
+      const cvs = await html2canvas(host.firstElementChild, { scale: 2, useCORS: true, backgroundColor: "#fff", scrollY: 0, windowWidth: 840 });
+
+      const doc = await PDFDocument.create();
+      const hdr = hdrPng("ICS · " + c.code);
+      const pxPerPt = cvs.width / printW;
+      const sliceH = Math.round(printH * pxPerPt);
+      const pages = Math.max(1, Math.ceil(cvs.height / sliceH));
+      for (let i = 0; i < pages; i++) {
+        const page = doc.addPage([A4W, A4H]);
+        page.drawImage(await doc.embedPng(hdr), { x: 0, y: A4H - hdrH, width: A4W, height: hdrH });
+        const srcY = i * sliceH, h = Math.min(sliceH, cvs.height - srcY);
+        if (h <= 0) break;
+        const sc = document.createElement("canvas"); sc.width = cvs.width; sc.height = h;
+        sc.getContext("2d").drawImage(cvs, 0, srcY, cvs.width, h, 0, 0, cvs.width, h);
+        const img = await doc.embedJpg(b64(sc.toDataURL("image/jpeg", 0.92)));
+        page.drawImage(img, { x: margin, y: A4H - hdrH - margin - h / pxPerPt, width: printW, height: h / pxPerPt });
+      }
+
+      // 첨부 자료 — 1차에서 올린 샘플링 자료를 뒤에 붙인다.
+      for (const a of (c.attachments || [])) {
+        if (!a.name || !c.requestSpId) continue;
+        if (onProgress) onProgress(done, controls.length, c.code + " · " + a.name);
+        try {
+          const token = await getGraphToken();
+          const driveId = await getIcsAttachedFilesDriveId();
+          const path = `ICS_Requests_AttachedFiles/${c.requestSpId}/${encodeURIComponent(a.name)}`;
+          const ext = String(a.name).split(".").pop().toLowerCase();
+          const isImg = ["jpg", "jpeg", "png", "gif", "webp"].includes(ext);
+          const url = `${GRAPH}/drives/${driveId}/root:/${path}:/content` + (isImg || ext === "pdf" ? "" : "?format=pdf");
+          const res = await icsFetch(url, { headers: { Authorization: "Bearer " + token } });
+          if (!res.ok) throw new Error(String(res.status));
+          const buf = new Uint8Array(await res.arrayBuffer());
+          const aHdr = hdrPng((lang === "en" ? "Attachment: " : "첨부파일: ") + a.name);
+          if (isImg) {
+            const p = doc.addPage([A4W, A4H]);
+            p.drawImage(await doc.embedPng(aHdr), { x: 0, y: A4H - hdrH, width: A4W, height: hdrH });
+            const im = ["jpg", "jpeg"].includes(ext) ? await doc.embedJpg(buf) : await doc.embedPng(buf);
+            const r = Math.min(printW / im.width, (A4H - hdrH - margin * 2) / im.height);
+            p.drawImage(im, { x: margin, y: A4H - hdrH - margin - im.height * r, width: im.width * r, height: im.height * r });
+          } else {
+            const src = await PDFDocument.load(buf, { ignoreEncryption: true });
+            const copied = await doc.copyPages(src, src.getPageIndices());
+            for (const pg of copied) {
+              doc.addPage(pg);
+              const { width: w2, height: h2 } = pg.getSize();
+              pg.drawImage(await doc.embedPng(aHdr), { x: 0, y: h2 - hdrH, width: w2, height: hdrH });
+            }
+          }
+        } catch (e) {
+          console.warn("[ICS] 첨부 변환 실패:", a.name, e.message);
+          const p = doc.addPage([A4W, A4H]);
+          p.drawImage(await doc.embedPng(hdrPng((lang === "en" ? "Attachment: " : "첨부파일: ") + a.name + (lang === "en" ? " (conversion failed)" : " (변환 실패)"))),
+            { x: 0, y: A4H - hdrH, width: A4W, height: hdrH });
+        }
+      }
+
+      const blob = new Blob([await doc.save()], { type: "application/pdf" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `ICS_${c.year}_${c.code}.pdf`;
+      document.body.appendChild(link); link.click();
+      setTimeout(() => { URL.revokeObjectURL(link.href); link.remove(); }, 1500);
+      await new Promise((r) => setTimeout(r, 250));   // 브라우저가 연속 저장을 막지 않도록 잠시 쉰다
+    }
+    return true;
+  } finally {
+    host.remove();
+  }
+}
+
 async function exportRequestPdf(bodyId, fileName, title) {
   const el = document.getElementById(bodyId);
   if (!el) return false;
@@ -8037,6 +8259,9 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
   const [tableSearch, setTableSearch] = useState("");
   const [accessorFilter, setAccessorFilter] = useState("");
   const [stage, setStage] = useState("isa");
+  /* 고른 통제를 통제기술서·테스트수행·첨부까지 묶어 PDF 로 저장한다(09-21 회의 요청). */
+  const [picked, setPicked] = useState(() => new Set());
+  const [pdfBusy, setPdfBusy] = useState("");
   const [tablePage, setTablePage] = useState(0);
   const TABLE_PAGE_SIZE = 10;
   const myEmail = (currentUser.email || "").toLowerCase();
@@ -8142,12 +8367,35 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
             <button onClick={() => exportControlsToExcel(filteredTableControls, lang, departments, users)} className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:border-teal-400 hover:text-teal-600 flex-shrink-0">
               <Download size={13} /> {t("history.downloadBtn")}
             </button>
+            <button
+              disabled={!picked.size || !!pdfBusy}
+              onClick={async () => {
+                const list = filteredTableControls.filter((c) => picked.has(c.id));
+                if (!list.length) return;
+                try {
+                  await exportControlPackagePdf(list, lang, users, departments,
+                    (i, n, label) => setPdfBusy(`${i}/${n} · ${label}`));
+                } catch (e) {
+                  alert("PDF: " + e.message);
+                } finally { setPdfBusy(""); }
+              }}
+              className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg text-white flex-shrink-0 disabled:opacity-40"
+              style={{ backgroundColor: BRAND.accent }}>
+              {pdfBusy ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />}
+              {pdfBusy || `${t("history.pdfPkgBtn")}${picked.size ? ` (${picked.size})` : ""}`}
+            </button>
           </div>
         </div>
         <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-slate-500 text-xs">
             <tr>
+              <th className="px-3 py-3 w-9">
+                {/* 지금 화면에 걸러진 목록 전체를 한 번에 고른다. */}
+                <input type="checkbox" className="w-4 h-4 accent-teal-600" aria-label={t("history.pickAll")}
+                  checked={filteredTableControls.length > 0 && filteredTableControls.every((c) => picked.has(c.id))}
+                  onChange={(e) => setPicked(e.target.checked ? new Set(filteredTableControls.map((c) => c.id)) : new Set())} />
+              </th>
               <th className="text-left font-medium px-4 py-3 whitespace-nowrap">{t("list.colCode")}</th>
               <th className="text-left font-medium px-4 py-3 whitespace-nowrap">{t("list.colName")}</th>
               <th className="text-left font-medium px-4 py-3 whitespace-nowrap">{t("list.colDept")}</th>
@@ -8165,6 +8413,11 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
           <tbody className="divide-y divide-slate-100">
             {pagedTableControls.map((c) => (
               <tr key={c.id} onClick={() => setDetail(c)} className="cursor-pointer hover:bg-slate-50">
+                <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
+                  <input type="checkbox" className="w-4 h-4 accent-teal-600" aria-label={c.code}
+                    checked={picked.has(c.id)}
+                    onChange={(e) => setPicked((prev) => { const n = new Set(prev); if (e.target.checked) n.add(c.id); else n.delete(c.id); return n; })} />
+                </td>
                 <td className="px-4 py-2.5 text-slate-500 text-xs font-mono whitespace-nowrap">{c.code}</td>
                 <td className="px-4 py-2.5 text-slate-700"><div className="max-w-[360px] truncate" title={cName(c, lang)}>{cName(c, lang)}</div></td>
                 <td className="px-4 py-2.5 text-slate-600 whitespace-nowrap">{deptName(c.dept, lang, departments)}</td>
@@ -8178,7 +8431,7 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
               </tr>
             ))}
             {filteredTableControls.length === 0 && (
-              <tr><td colSpan={8}><EmptyState text={t("list.emptyText")} /></td></tr>
+              <tr><td colSpan={9}><EmptyState text={t("list.emptyText")} /></td></tr>
             )}
           </tbody>
         </table>
