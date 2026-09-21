@@ -2997,6 +2997,9 @@ function StageStatusCell({ control: c }) {
 function StageCard({ stage, control: c, title, risk, who, actor, when, text, empty }) {
   const { lang, t } = useLang();
   const o = stageOutcome(stage, c);
+  const phase = stage.startsWith("fsa") ? "FSA" : "ISA";
+  // 제목이 이미 「FSA …」 로 시작하면 앞 표시와 겹치므로 떼어 낸다.
+  const shownTitle = String(title || "").replace(/^(ISA|FSA)\s*/, "");
   const body = String(text || "").trim();
   /* 「승인」 인데 「아직 진행되지 않았습니다」 가 뜨던 자리 — 검토자가 의견 없이
      승인하면 본문이 비는데, 그때 진행 전 안내를 내보내 앞뒤가 맞지 않았다(09-21).
@@ -3011,7 +3014,12 @@ function StageCard({ stage, control: c, title, risk, who, actor, when, text, emp
       <div className="flex-1 min-w-0">
         {/* 머리줄은 단계 이름과 신호등·일시까지만. */}
         <div className="flex items-center gap-2 flex-wrap px-3.5 py-2 border-b border-slate-200" style={{ backgroundColor: "#ECEFF3" }}>
-          <span className="text-[13px] font-bold text-slate-800">{title}</span>
+          {/* 어느 단계의 결과인지 제목 앞에 못 박는다. 「2차 검토 · 반려」 만으로는
+              ISA 에서 반려됐는지 FSA 에서 반려됐는지 알 수 없었다(09-21 지적).
+              단계 표시는 stage 에서 정하므로 카드를 쓰는 모든 화면에 똑같이 붙는다. */}
+          <span className="text-[10px] font-bold tracking-wide rounded px-1.5 py-0.5 text-white flex-shrink-0"
+                style={{ backgroundColor: phase === "FSA" ? BRAND.accent : BRAND.navy }}>{phase}</span>
+          <span className="text-[13px] font-bold text-slate-800">{shownTitle}</span>
           <div className="ml-auto flex items-center gap-2 flex-shrink-0">
             {risk ? <RiskBadge risk={risk} /> : null}
             {/* 회색 바탕 위에서 옅은 회색 글씨는 잘 안 읽혀 진하게 한다. */}
@@ -7220,10 +7228,10 @@ function buildControlDocHtml(c, lang, users, departments) {
 
     ${S(L("평가 이력", "Assessment history"))}
     ${R(L("샘플링 건수", "Sample count"), esc((c.actualSample == null ? "-" : c.actualSample)) + " / " + esc(recommendedSample(c.importance, c.frequency)))}
-    ${stage(L("1차 자가평가", "1st self-assessment"), "isaSelf", c.selfRisk, personByEmail(c.accessor, lang, users), "", c.selfDate, lang === "en" ? c.selfCommentEn || c.selfComment : c.selfComment)}
-    ${stage(L("2차 검토", "2nd review"), "isaReview", c.reviewRisk, personByEmail(c.reviewer, lang, users), c.reviewActor, c.reviewDate, lang === "en" ? c.reviewCommentEn || c.reviewComment : c.reviewComment)}
-    ${stage(L("FSA 최종자기평가", "FSA final"), "fsaSelf", c.fsaRisk, personByEmail(c.accessor, lang, users), "", c.fsaDate, lang === "en" ? c.fsaCommentEn || c.fsaComment : c.fsaComment)}
-    ${stage(L("FSA 2차검토", "FSA 2nd review"), "fsaReview", c.fsaReviewRisk, personByEmail(c.reviewer, lang, users), c.fsaReviewActor, c.fsaReviewDate, lang === "en" ? c.fsaReviewCommentEn || c.fsaReviewComment : c.fsaReviewComment)}
+    ${stage(L("ISA 1차 자가평가", "ISA 1st self-assessment"), "isaSelf", c.selfRisk, personByEmail(c.accessor, lang, users), "", c.selfDate, lang === "en" ? c.selfCommentEn || c.selfComment : c.selfComment)}
+    ${stage(L("ISA 2차 검토", "ISA 2nd review"), "isaReview", c.reviewRisk, personByEmail(c.reviewer, lang, users), c.reviewActor, c.reviewDate, lang === "en" ? c.reviewCommentEn || c.reviewComment : c.reviewComment)}
+    ${stage(L("FSA 최종 자가평가", "FSA final self-assessment"), "fsaSelf", c.fsaRisk, personByEmail(c.accessor, lang, users), "", c.fsaDate, lang === "en" ? c.fsaCommentEn || c.fsaComment : c.fsaComment)}
+    ${stage(L("FSA 2차 검토", "FSA 2nd review"), "fsaReview", c.fsaReviewRisk, personByEmail(c.reviewer, lang, users), c.fsaReviewActor, c.fsaReviewDate, lang === "en" ? c.fsaReviewCommentEn || c.fsaReviewComment : c.fsaReviewComment)}
   </div>`;
 }
 
