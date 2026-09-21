@@ -3058,6 +3058,59 @@ function StageStatusCell({ control: c }) {
   );
 }
 
+/* 목록에서 쓰는 한 줄 요약. 「[FSA] 2차 검토 반려 · ● 위험 · 09.21 10:32 · "사유"」.
+   목록마다 단계 카드를 통째로 넣으니 카드가 길어지고 화면이 복잡했다(09-21 지적).
+   전체 내용은 카드를 눌러 여는 세부 내용에 그대로 있다. 사유가 길면 줄이고, 마우스를 올리면 전부 보인다. */
+const STAGE_STEP = {
+  isaSelf: { ko: "1차 자가평가", en: "1st self-assessment" },
+  isaReview: { ko: "2차 검토", en: "2nd review" },
+  fsaSelf: { ko: "최종 자가평가", en: "Final self-assessment" },
+  fsaReview: { ko: "2차 검토", en: "2nd review" },
+};
+/* 이 통제에서 가장 최근에 끝난 단계를 고른다(목록 요약에 쓴다). */
+function latestStage(c) {
+  const fs = c.fsaStatus || "not_started";
+  if (fs === "completed" || fs === "returned") return "fsaReview";
+  if (fs === "submitted_self") return "fsaSelf";
+  if (c.status === "completed" || c.status === "returned") return "isaReview";
+  return "isaSelf";
+}
+function stageFields(c, stage, lang) {
+  const pick = (ko, en) => (lang === "en" ? en || ko : ko);
+  switch (stage) {
+    case "isaSelf": return { risk: c.selfRisk, when: c.selfDate, text: pick(c.selfComment, c.selfCommentEn) };
+    case "isaReview": return { risk: c.reviewRisk, when: c.reviewDate, text: pick(c.reviewComment, c.reviewCommentEn) };
+    case "fsaSelf": return { risk: c.fsaRisk, when: c.fsaDate, text: pick(c.fsaComment, c.fsaCommentEn) };
+    default: return { risk: c.fsaReviewRisk, when: c.fsaReviewDate, text: pick(c.fsaReviewComment, c.fsaReviewCommentEn) };
+  }
+}
+function StageLine({ stage, control: c }) {
+  const { lang, t } = useLang();
+  const o = stageOutcome(stage, c);
+  const phase = stage.startsWith("fsa") ? "FSA" : "ISA";
+  const { risk, when, text } = stageFields(c, stage, lang);
+  const body = String(text || "").trim();
+  // 짧은 일시(KST) — 「09.21 10:32」
+  let short = "";
+  if (when) {
+    const k = new Date(new Date(when).getTime() + 9 * 3600 * 1000).toISOString();
+    short = `${k.slice(5, 7)}.${k.slice(8, 10)} ${k.slice(11, 16)}`;
+  }
+  return (
+    <div data-stage-line={stage} className="flex items-center gap-1.5 min-w-0 max-w-[520px] text-[12px] rounded-lg border px-2.5 py-1"
+         style={{ borderColor: o.bg, backgroundColor: "#F8FAFC" }}
+         title={body ? `${phase} ${STAGE_STEP[stage][lang]} · ${t("detail." + o.key)}\n${body}` : ""}>
+      <span className="text-[10px] font-bold tracking-wide rounded px-1.5 py-0.5 text-white flex-shrink-0"
+            style={{ backgroundColor: phase === "FSA" ? BRAND.accent : BRAND.navy }}>{phase}</span>
+      <span className="font-semibold text-slate-700 flex-shrink-0">{STAGE_STEP[stage][lang]}</span>
+      <span className="font-bold flex-shrink-0" style={{ color: o.fg }}>{t("detail." + o.key)}</span>
+      {risk ? <span className="flex-shrink-0"><RiskBadge risk={risk} /></span> : null}
+      {short ? <span className="flex-shrink-0 font-medium" style={{ color: "#1E293B" }}>{short}</span> : null}
+      {body ? <span className="truncate text-slate-500">“{body}”</span> : null}
+    </div>
+  );
+}
+
 function StageCard({ stage, control: c, title, risk, who, actor, when, text, empty }) {
   const { lang, t } = useLang();
   const o = stageOutcome(stage, c);
@@ -5093,7 +5146,10 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
                         <ClipboardEdit size={13} /> {t("self.reqBtn")}
                       </button>
                     ))}
-                  <StatusBadge status={c.status} kind="isa" />
+                  {/* 반려된 건은 상태 배지 대신 한 줄 요약(누가·언제·왜) */}
+                  {c.status === "returned"
+                    ? <StageLine stage="isaReview" control={c} />
+                    : <StatusBadge status={c.status} kind="isa" />}
                   </div>
                 </div>
 
@@ -5114,19 +5170,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
                   </div>
                 </div>
 
-                {/* 반려된 건은 세부 내용에서 보던 2차 검토 카드를 그대로 보여 준다(09-21 요청).
-                    같은 내용을 화면마다 다른 모양으로 보여 주면 읽는 법을 두 번 익혀야 한다. */}
-                {c.status === "returned" && (
-                  <div className="mb-3">
-                    <StageCard
-                      stage="isaReview" control={c} title={t("detail.review")}
-                      risk={c.reviewRisk} who={personByEmail(c.reviewer, lang, users)}
-                      actor={c.reviewActor} when={c.reviewDate}
-                      text={lang === "en" ? c.reviewCommentEn || c.reviewComment : c.reviewComment}
-                      empty={t("detail.noReview")}
-                    />
-                  </div>
-                )}
+                {/* 반려 내용은 오른쪽 위 한 줄 요약으로 옮겼다(09-21). 전체는 세부 내용에 있다. */}
 
                 {/* 제출을 누르면 폼이 바로 닫혀서, 저장이 끝날 때까지 카드에 아무 변화가 없었다.
                     스로틀이 걸려 몇 초 걸리면 「눌리지 않았다」고 보고 다시 누르게 된다. */}
@@ -5180,7 +5224,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
                   <p className="text-xs text-slate-400 font-mono mb-0.5">{c.code}</p>
                   <p className="font-medium text-slate-800">{cName(c, lang)}</p>
                 </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
+                <div className="flex items-center gap-2 min-w-0">
                   {/* 생략한 항목은 리스크 수준이 없다. 배지 자리에 생략 표시를 대신 둔다. */}
                   {isIsaSkipped(c)
                     ? <span title={t("self.skipBadgeTitle")}
@@ -5188,21 +5232,13 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
                             style={{ color: "#64748B", backgroundColor: "#F1F5F9", borderColor: "#CBD3DD" }}>
                         {t("self.skipBadge")}
                       </span>
-                    : null /* 신호등은 아래 카드 머리줄에 있다(09-21) */}
-                  <StatusBadge status={c.status} kind="isa" />
+                    : null}
+                  {/* 가장 최근 ISA 단계를 한 줄로 — 제출만 됐으면 1차, 검토가 끝났으면 2차 */}
+                  <StageLine stage={c.status === "completed" ? "isaReview" : "isaSelf"} control={c} />
                 </div>
               </div>
               <div>
-                <div className="flex items-start justify-between">
-                  <div className="min-w-0 flex-1">
-                    {/* 세부 내용과 같은 카드. 1차 자가평가가 어떻게 끝났는지(제출·승인·반려)가 함께 보인다. */}
-                    <StageCard
-                      stage="isaSelf" control={c} title={t("detail.selfAssessment")}
-                      risk={c.selfRisk} who={personByEmail(c.accessor, lang, users)} when={c.selfDate}
-                      text={lang === "en" ? c.selfCommentEn || c.selfComment : c.selfComment}
-                      empty={t("detail.noSelf")}
-                    />
-                  </div>
+                <div className="flex items-start justify-end">
                   {c.status === "submitted_self" && !isArchived && (
                     <button onClick={() => withdrawSubmission(c)} className="text-xs text-red-400 hover:text-red-600 flex items-center gap-1 flex-shrink-0 ml-3">
                       <Undo2 size={12} /> {t("self.withdrawBtn")}
@@ -6235,24 +6271,14 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
                   {/* 여기 있던 신호등은 ISA 1차 자가평가 값(selfRisk)이었다. FSA 화면에 ISA 값이 뜨니
                       FSA 판정처럼 읽혔고, FSA 는 아직 판정 전이라 보여 줄 값도 없다(09-21 지적).
                       반려 상태 표시만 남긴다. */}
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    {c.fsaStatus === "returned" && <StatusBadge status="returned" kind="fsa" />}
+                  <div className="flex items-center gap-2 min-w-0">
+                    {c.fsaStatus === "returned" && <StageLine stage="fsaReview" control={c} />}
                   </div>
                 </div>
                 <p className="text-sm text-slate-500 mb-3 whitespace-pre-wrap">{cDesc(c, lang)}</p>
                 {/* ISA 1차·2차 의견 요약은 뺐다 — 카드를 눌러 여는 세부 내용에 네 단계가 모두 있다(09-21). */}
 
-                {c.fsaStatus === "returned" && (
-                  <div className="mb-3">
-                    <StageCard
-                      stage="fsaReview" control={c} title={t("fsaReview.title")}
-                      risk={c.fsaReviewRisk} who={personByEmail(c.reviewer, lang, users)}
-                      actor={c.fsaReviewActor} when={c.fsaReviewDate}
-                      text={lang === "en" ? c.fsaReviewCommentEn || c.fsaReviewComment : c.fsaReviewComment}
-                      empty={t("detail.noFsaReview")}
-                    />
-                  </div>
-                )}
+                {/* 반려 내용은 오른쪽 위 한 줄 요약으로 옮겼다(09-21). */}
 
                 {editing === c.id && !isArchived ? (
                   <FSAForm draft={draft} setDraft={setDraft} onCancel={() => setEditing(null)} onSubmit={() => submit(c)} control={c} />
@@ -6279,30 +6305,11 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
                   <p className="text-xs text-slate-400 font-mono mb-0.5">{c.code}</p>
                   <p className="font-medium text-slate-800">{cName(c, lang)}</p>
                 </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  {/* 신호등은 아래 카드 머리줄에 있어 여기서는 뺐다(09-21). 상태만 남긴다. */}
-                  <StatusBadge status={c.fsaStatus} kind="fsa" />
+                <div className="flex items-center gap-2 min-w-0">
+                  <StageLine stage={c.fsaStatus === "submitted_self" ? "fsaSelf" : "fsaReview"} control={c} />
                 </div>
               </div>
-              {/* FSA 제출·완료 목록도 세부 내용과 같은 카드로 — 최종 자가평가와,
-                  검토가 끝났으면 FSA 2차검토까지. 예전에는 의견 한 줄과 회색 상자뿐이라
-                  승인인지 반려인지가 보이지 않았다(09-21 리뷰). */}
-              <div className="space-y-2 mt-2">
-                <StageCard
-                  stage="fsaSelf" control={c} title={t("detail.fsa")}
-                  risk={c.fsaRisk} who={personByEmail(c.accessor, lang, users)} when={c.fsaDate}
-                  text={lang === "en" ? c.fsaCommentEn || c.fsaComment : c.fsaComment}
-                  empty={t("detail.noFsa")}
-                />
-                {(c.fsaStatus === "completed" || c.fsaStatus === "returned") && (
-                  <StageCard
-                    stage="fsaReview" control={c} title={t("fsaReview.title")}
-                    risk={c.fsaReviewRisk} who={personByEmail(c.reviewer, lang, users)}
-                    actor={c.fsaReviewActor} when={c.fsaReviewDate}
-                    text={lang === "en" ? c.fsaReviewCommentEn || c.fsaReviewComment : c.fsaReviewComment}
-                    empty={t("detail.noFsaReview")}
-                  />
-                )}
+              <div className="space-y-2">
                 {c.fsaStatus === "submitted_self" && !isArchived && (
                   <div className="flex justify-end">
                     <button onClick={() => withdrawSubmission(c)} className="text-xs text-red-400 hover:text-red-600 flex items-center gap-1">
@@ -6514,18 +6521,10 @@ function FSAReviewPage({ controls, setControls, currentUser, addLog, isArchived,
                   <p className="text-xs text-slate-400 font-mono mb-0.5">{c.code}</p>
                   <p className="font-medium text-slate-800">{cName(c, lang)}</p>
                 </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  {/* 신호등은 아래 카드 머리줄에 있어 여기서는 뺐다(09-21). 상태만 남긴다. */}
-                  <StatusBadge status={c.fsaStatus} kind="fsa" />
+                <div className="flex items-center gap-2 min-w-0">
+                  <StageLine stage="fsaReview" control={c} />
                 </div>
               </div>
-              <StageCard
-                stage="fsaReview" control={c} title={t("fsaReview.title")}
-                risk={c.fsaReviewRisk} who={personByEmail(c.reviewer, lang, users)}
-                actor={c.fsaReviewActor} when={c.fsaReviewDate}
-                text={lang === "en" ? c.fsaReviewCommentEn || c.fsaReviewComment : c.fsaReviewComment}
-                empty={t("detail.noFsaReview")}
-              />
             </div>
           ))}
           {done.length === 0 && <EmptyState text={t("fsaReview.noDone")} />}
@@ -6745,18 +6744,10 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, sh
                   <p className="text-xs text-slate-400 font-mono mb-0.5">{c.code}</p>
                   <p className="font-medium text-slate-800">{cName(c, lang)}</p>
                 </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  {/* 신호등은 아래 카드 머리줄에 있어 여기서는 뺐다(09-21). 상태만 남긴다. */}
-                  <StatusBadge status={c.status} kind="isa" />
+                <div className="flex items-center gap-2 min-w-0">
+                  <StageLine stage="isaReview" control={c} />
                 </div>
               </div>
-              <StageCard
-                stage="isaReview" control={c} title={t("detail.review")}
-                risk={c.reviewRisk} who={personByEmail(c.reviewer, lang, users)}
-                actor={c.reviewActor} when={c.reviewDate}
-                text={lang === "en" ? c.reviewCommentEn || c.reviewComment : c.reviewComment}
-                empty={t("detail.noReview")}
-              />
             </div>
           ))}
           {done.length === 0 && <EmptyState text={t("review.noDone")} />}
