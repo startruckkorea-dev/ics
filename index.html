@@ -5973,8 +5973,10 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
                     <p className="text-xs text-slate-400 font-mono mb-0.5">{c.code} · {deptName(c.dept, lang, departments)} · {catName(c.cat, lang)}</p>
                     <p className="font-medium text-slate-800">{cName(c, lang)}</p>
                   </div>
+                  {/* 여기 있던 신호등은 ISA 1차 자가평가 값(selfRisk)이었다. FSA 화면에 ISA 값이 뜨니
+                      FSA 판정처럼 읽혔고, FSA 는 아직 판정 전이라 보여 줄 값도 없다(09-21 지적).
+                      반려 상태 표시만 남긴다. */}
                   <div className="flex items-center gap-2 flex-shrink-0">
-                    <RiskBadge risk={c.selfRisk} />
                     {c.fsaStatus === "returned" && <StatusBadge status="returned" kind="fsa" />}
                   </div>
                 </div>
