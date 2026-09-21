@@ -321,6 +321,87 @@ function recommendedSample(importanceId, frequencyId) {
    새 상태를 넣으면 그 모든 곳을 함께 고쳐야 하고 한 곳이라도 빠지면 항목이 사라진다.
    대신 평가 의견 맨 앞에 표식을 남기고 리스크 수준을 비워 두어, 정상 평가와 구분한다.
    (표식은 사람이 고칠 수 있으므로 ICS_Log 의 skip_isa 기록이 감사 근거다.) */
+/* ── 통제기술서(ICS Control Documentation)·운영 효과성 테스트 문서 ──
+   ISA 1차 자가평가를 하면서 두 서식을 함께 채운다(2026-09-21 요청).
+   서식의 「하위 프로세스 번호」·「통제 번호」·「통제 목표 번호」 는 모두 통제 코드
+   하나로 통일하고, 「평가명」 은 통제명을 쓴다 — 같은 값을 세 칸에 따로 적다가
+   어긋나는 것을 막기 위해서다. 그 값들은 통제 항목에서 가져와 읽기 전용으로 보여 준다.
+   통제 방법·통제 유형·수행 주기는 서식상 하나만 고르는 항목이라 라디오로 둔다
+   (어설션만 여러 개 고를 수 있다). */
+const ASSERTION_OPTIONS = [
+  { id: "C", ko: "완전성(C)", en: "Completeness (C)" },
+  { id: "E", ko: "실재성 및 발생(E)", en: "Existence & Occurrence (E)" },
+  { id: "A", ko: "정확성(A)", en: "Accuracy (A)" },
+  { id: "V", ko: "평가(V)", en: "Valuation (V)" },
+  { id: "O", ko: "권리와 의무(O)", en: "Rights & Obligations (O)" },
+  { id: "P", ko: "표시와 공시(P)", en: "Presentation & Disclosure (P)" },
+];
+const CONTROL_METHOD_OPTIONS = [
+  { id: "preventive", ko: "예방적(Preventive)", en: "Preventive" },
+  { id: "detective", ko: "적발적(Detective)", en: "Detective" },
+  { id: "combination", ko: "혼합(Combination)", en: "Combination" },
+];
+const CONTROL_TYPE_OPTIONS = [
+  { id: "automated", ko: "자동화(Automated)", en: "Automated" },
+  { id: "manual", ko: "수동(Manual)", en: "Manual" },
+  { id: "itdm", ko: "시스템 기반 수동", en: "IT-dependent manual" },
+  { id: "hybrid", ko: "자동+수동 혼합", en: "Automated + manual" },
+];
+const PERFORM_CYCLE_OPTIONS = [
+  { id: "adhoc_day", ko: "하루 중 수시", en: "Multiple times a day" },
+  { id: "daily", ko: "매일", en: "Daily" },
+  { id: "weekly", ko: "매주", en: "Weekly" },
+  { id: "monthly", ko: "매월", en: "Monthly" },
+  { id: "quarterly", ko: "분기별", en: "Quarterly" },
+  { id: "annual", ko: "매년", en: "Annually" },
+  { id: "yearend", ko: "연말", en: "Year-end" },
+  { id: "on_request", ko: "수시(요청 시)", en: "On request" },
+];
+const SAMPLE_RESULT_OPTIONS = [
+  { id: "적정", ko: "적정", en: "Effective" },
+  { id: "부적정", ko: "부적정", en: "Ineffective" },
+];
+/* 통제 항목의 점검 빈도를 서식의 수행 주기 기본값으로 옮긴다. 담당자가 바꿀 수 있다. */
+const FREQ_TO_CYCLE = { continuous: "adhoc_day", monthly: "monthly", quarterly: "quarterly", semiannual: "monthly", annual: "annual" };
+
+function emptyIsaDoc() {
+  return {
+    ver: 1,
+    cd: {
+      setCycle: "", docVersion: "", effDate: "",
+      fraud: false, assertions: [], method: "", ctype: "",
+      relatedDocs: "", relatedSystems: "", cycle: "",
+      performers: [{ role: "", desc: "", dept: "" }],
+      processEnv: "", activity: "",
+      testProc: "", evidence: "", random: false, population: "",
+    },
+    tp: { setCycle: "", testRef: "", samples: [], resultText: "" },
+  };
+}
+/* 저장된 값을 읽을 때 빠진 칸을 채워 준다 — 서식이 늘어나도 옛 기록이 깨지지 않게. */
+function normalizeIsaDoc(raw) {
+  const base = emptyIsaDoc();
+  if (!raw || typeof raw !== "object") return base;
+  const cd = { ...base.cd, ...(raw.cd || {}) };
+  cd.assertions = Array.isArray(cd.assertions) ? cd.assertions.filter((x) => ASSERTION_OPTIONS.some((o) => o.id === x)) : [];
+  cd.performers = Array.isArray(cd.performers) && cd.performers.length ? cd.performers : base.cd.performers;
+  const tp = { ...base.tp, ...(raw.tp || {}) };
+  tp.samples = Array.isArray(tp.samples) ? tp.samples : [];
+  return { ver: 1, cd, tp };
+}
+/* 한 칸이라도 채웠는지 — 저장할지 판단하고, 목록에 「서식 작성됨」 을 표시하는 데 쓴다. */
+function isaDocFilled(doc) {
+  if (!doc) return false;
+  const { cd, tp } = normalizeIsaDoc(doc);
+  const texts = [cd.setCycle, cd.docVersion, cd.effDate, cd.relatedDocs, cd.relatedSystems,
+    cd.processEnv, cd.activity, cd.testProc, cd.evidence, cd.population,
+    tp.setCycle, tp.testRef, tp.resultText];
+  if (texts.some((v) => String(v || "").trim())) return true;
+  if (cd.fraud || cd.random || cd.method || cd.ctype || cd.cycle || cd.assertions.length) return true;
+  if (cd.performers.some((p) => String(p.role || p.desc || p.dept || "").trim())) return true;
+  return tp.samples.some((r) => String(r.date || r.ref || r.result || r.comment || "").trim());
+}
+
 const ISA_SKIP_TAG = "[ISA Skip]";
 const ISA_SKIP_FREQ = "annual";
 function isaSkipText(lang) {
@@ -924,6 +1005,34 @@ const STR = {
       needTitle: "제출하려면 다음이 필요합니다 —",
       skipBtn: "ISA Skip →",
       skipHint: "연 1회 통제는 ISA 를 생략하고 FSA 에서 수행할 수 있습니다.",
+      docCdTitle: "통제기술서 (ICS Control Documentation)",
+      docTpTitle: "운영 효과성 테스트 문서 (표본 항목)",
+      docOptional: "선택 입력 · 채운 내용은 평가와 함께 저장됩니다",
+      docAuto: "통제 항목에서 가져온 값",
+      docCorp: "법인명", docDept: "부서", docYear: "회계연도",
+      docCode: "코드 번호", docCtrlName: "통제명",
+      docSetCycle: "통제 세트(주기)", docVersion: "문서 버전", docEffDate: "시행일",
+      docObjective: "통제 목표", docFraud: "부정(Fraud) 관련 통제",
+      docAssertion: "어설션 (Assertion · 여러 개 선택 가능)",
+      docMethod: "통제 방법 (하나만 선택)", docType: "통제 유형 (하나만 선택)",
+      docRelDocs: "관련 문서", docRelSystems: "관련 시스템",
+      docCycle: "수행 주기 (하나만 선택)",
+      docWho: "누가 — 통제를 수행하는 사람",
+      docRole: "역할/직책", docRoleDesc: "역할 설명", docRoleDept: "부서",
+      docAddRow: "행 추가", docDelRow: "삭제",
+      docWhere: "어디서 — 프로세스 환경", docWhat: "무엇을 — 통제 내용 설명",
+      docTestDesign: "테스트 설계",
+      docTestProc: "테스트 절차 설명", docEvidence: "통제 증빙",
+      docSampleNeed: "필요 표본 수", docRandom: "「무작위(Random)」 명시",
+      docPopulation: "표본 모집단 영역/출처",
+      docTestRef: "테스트 절차 참조",
+      docSamples: "표본 항목", docSampleNo: "번호", docSampleDate: "표본 추출일",
+      docSampleRef: "증빙 문서 참조", docSampleResult: "표본 항목 평가", docSampleComment: "코멘트",
+      docSampleFill: "권장 건수만큼 행 만들기",
+      docTestResult: "테스트 절차 결과",
+      docFilledBadge: "서식 작성됨",
+      docSaveFailed: "평가는 저장되었으나 서식(통제기술서·테스트수행)은 저장하지 못했습니다. IT팀에 알려주세요.",
+      docNotSet: "-",
       skipConfirm: "이 통제의 ISA 단계를 생략할까요?\n\n· 점검 빈도가 「연 1회」 인 항목만 생략할 수 있습니다.\n· 생략하면 ISA 2차 검토 없이 FSA 최종 자가평가 대상으로 넘어갑니다.\n· 활동 로그에 생략 기록이 남습니다.\n· FSA 를 시작하기 전까지는 되돌릴 수 있습니다.",
       skipBadge: "ISA 생략",
       skipBadgeTitle: "연 1회 통제로 ISA 를 생략했습니다. 평가는 FSA 에서 수행합니다.",
@@ -1347,6 +1456,34 @@ const STR = {
       needTitle: "To submit, you still need —",
       skipBtn: "ISA Skip →",
       skipHint: "Annual controls may skip ISA and be assessed at FSA instead.",
+      docCdTitle: "ICS Control Documentation",
+      docTpTitle: "Operating effectiveness test document (samples)",
+      docOptional: "Optional — saved together with your assessment",
+      docAuto: "Taken from the control item",
+      docCorp: "Entity", docDept: "Department", docYear: "Fiscal year",
+      docCode: "Code", docCtrlName: "Control name",
+      docSetCycle: "Control set (cycle)", docVersion: "Document version", docEffDate: "Effective date",
+      docObjective: "Control objective", docFraud: "Fraud-related control",
+      docAssertion: "Assertion (choose any)",
+      docMethod: "Control method (choose one)", docType: "Control type (choose one)",
+      docRelDocs: "Related documents", docRelSystems: "Related systems",
+      docCycle: "Performance frequency (choose one)",
+      docWho: "Who — performs the control",
+      docRole: "Role / title", docRoleDesc: "Role description", docRoleDept: "Department",
+      docAddRow: "Add row", docDelRow: "Remove",
+      docWhere: "Where — process environment", docWhat: "What — control activity",
+      docTestDesign: "Test design",
+      docTestProc: "Test procedure", docEvidence: "Control evidence",
+      docSampleNeed: "Required samples", docRandom: "Marked as random",
+      docPopulation: "Sample population / source",
+      docTestRef: "Test procedure reference",
+      docSamples: "Sample items", docSampleNo: "No.", docSampleDate: "Sampling date",
+      docSampleRef: "Evidence reference", docSampleResult: "Result", docSampleComment: "Comment",
+      docSampleFill: "Create rows for the recommended count",
+      docTestResult: "Test procedure result",
+      docFilledBadge: "Documentation filled",
+      docSaveFailed: "The assessment was saved, but the documentation could not be. Please notify IT.",
+      docNotSet: "-",
       skipConfirm: "Skip the ISA stage for this control?\n\n· Only controls with an \"Annually\" frequency can be skipped.\n· It moves straight to FSA without an ISA 2nd review.\n· The skip is recorded in the activity log.\n· You can undo it until FSA begins.",
       skipBadge: "ISA skipped",
       skipBadgeTitle: "ISA was skipped for this annual control. It is assessed at FSA.",
@@ -4012,7 +4149,10 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
 
   function startEdit(c) {
     setEditing(c.id);
-    setDraft({ risk: c.selfRisk, comment: c.selfComment || "", frequency: c.frequency, importance: c.importance, sampleSize: c.actualSample ?? recommendedSample(c.importance, c.frequency), attachments: c.attachments || [] });
+    // 서식은 저장된 것이 있으면 그대로, 없으면 통제 항목의 점검 빈도를 수행 주기 기본값으로 둔다.
+    const doc = normalizeIsaDoc(c.isaDoc);
+    if (!c.isaDoc && !doc.cd.cycle) doc.cd.cycle = FREQ_TO_CYCLE[c.frequency] || "";
+    setDraft({ risk: c.selfRisk, comment: c.selfComment || "", frequency: c.frequency, importance: c.importance, sampleSize: c.actualSample ?? recommendedSample(c.importance, c.frequency), attachments: c.attachments || [], doc });
   }
 
   const [saving, setSaving] = useState(null);
@@ -4100,13 +4240,28 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
         AttachedFiles: attachedFilesField,
       });
 
+      /* 서식은 따로 저장한다. IsaDocJson 열이 아직 없는 환경에서도
+         평가 제출 자체는 끝나야 하기 때문이다 — 실패하면 알리기만 하고 넘어간다. */
+      const docObj = normalizeIsaDoc(draft.doc);
+      const docFilled = isaDocFilled(docObj);
+      let docSaved = docFilled;
+      if (docFilled) {
+        try {
+          await icsUpdateItem(ICS_LISTS.requests, spId, { IsaDocJson: JSON.stringify(docObj) });
+        } catch (e) {
+          docSaved = false;
+          console.warn("[ICS] 서식 저장 실패(평가는 저장됨):", e.message);
+        }
+      }
+
       setControls((prev) =>
         prev.map((x) =>
           x.id === c.id
-            ? { ...x, requestSpId: spId, frequency: newFreq, importance: newImp, status: "submitted_self", selfRisk: draft.risk, selfComment: draft.comment, selfCommentEn: draft.comment, selfDate: today, actualSample: draft.sampleSize, attachments: finalAttachments }
+            ? { ...x, requestSpId: spId, frequency: newFreq, importance: newImp, status: "submitted_self", selfRisk: draft.risk, selfComment: draft.comment, selfCommentEn: draft.comment, selfDate: today, actualSample: draft.sampleSize, attachments: finalAttachments, isaDoc: docSaved ? docObj : x.isaDoc }
             : x
         )
       );
+      if (docFilled && !docSaved) showToast(t("self.docSaveFailed"));
       addLog(currentUser.email, "submit_self", c.code, c.name, c.nameEn);
       showToast(lang === "en" ? "Self-assessment submitted." : "자가평가가 제출되었습니다.");
     } catch (e) {
@@ -4662,6 +4817,11 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
                 <div className="flex items-center gap-3 mt-2 text-xs text-slate-400">
                   <span>{t("self.sampleCount")} {c.actualSample ?? "-"}{t("common.items")} ({t("self.recommendedShort")} {recommendedSample(c.importance, c.frequency)}{t("common.items")})</span>
                   <span className="flex items-center gap-1"><Paperclip size={11} /> {(c.attachments || []).length}</span>
+                  {isaDocFilled(c.isaDoc) && (
+                    <span className="flex items-center gap-1" style={{ color: BRAND.accent }}>
+                      <FileText size={11} /> {t("self.docFilledBadge")}
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
@@ -4694,6 +4854,264 @@ function SubmitProgressModal({ step }) {
         <p className="text-sm text-slate-500 min-h-[20px]">{step}</p>
         <p className="text-xs text-slate-400 mt-4">{t("self.submittingHint")}</p>
       </div>
+    </div>
+  );
+}
+
+/* 통제기술서·테스트수행 서식. 자가평가 폼 안에 접어 두고, 필요할 때 펼쳐 채운다.
+   평가 제출 조건에는 넣지 않는다 — 서식이 비어 있다고 평가를 막으면
+   급한 항목까지 함께 멈춘다. 채운 내용만 평가와 함께 저장된다. */
+function IsaDocForms({ control, doc, setDoc, recommended }) {
+  const { lang, t } = useLang();
+  const { departments } = useAppData();
+  const cd = doc.cd, tp = doc.tp;
+  const setCd = (patch) => setDoc({ ...doc, cd: { ...cd, ...patch } });
+  const setTp = (patch) => setDoc({ ...doc, tp: { ...tp, ...patch } });
+
+  const inputCls = "w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-100 focus:border-teal-400";
+  const labelCls = "text-[12px] font-semibold text-slate-500 uppercase tracking-wide mb-1 block";
+  const roCls = "w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-500 bg-slate-50";
+  const sumCls = "list-none cursor-pointer px-4 py-3 text-sm font-semibold text-slate-700 flex items-center gap-2";
+
+  // 여러 개 고르는 것은 어설션뿐이다.
+  function toggleAssertion(id) {
+    const has = cd.assertions.includes(id);
+    setCd({ assertions: has ? cd.assertions.filter((x) => x !== id) : [...cd.assertions, id] });
+  }
+  // 하나만 고르는 항목. 같은 것을 다시 누르면 선택을 푼다.
+  function pickOne(key, id) { setCd({ [key]: cd[key] === id ? "" : id }); }
+
+  function ChoiceRow({ options, value, onPick, name }) {
+    return (
+      <div className="flex flex-wrap gap-2">
+        {options.map((o) => {
+          const on = value === o.id;
+          return (
+            <button key={o.id} type="button" role="radio" aria-checked={on} data-group={name} data-value={o.id}
+              onClick={() => onPick(o.id)}
+              className="px-3 py-1.5 rounded-lg text-[13px] font-medium border transition-colors"
+              style={{ borderColor: on ? BRAND.accent : "#CBD3DD", color: on ? "#fff" : "#64748B", backgroundColor: on ? BRAND.accent : "#fff" }}>
+              {o[lang]}
+            </button>
+          );
+        })}
+      </div>
+    );
+  }
+
+  function addPerformer() { setCd({ performers: [...cd.performers, { role: "", desc: "", dept: "" }] }); }
+  function setPerformer(i, patch) { setCd({ performers: cd.performers.map((p, j) => (j === i ? { ...p, ...patch } : p)) }); }
+  function delPerformer(i) { setCd({ performers: cd.performers.length > 1 ? cd.performers.filter((_, j) => j !== i) : cd.performers }); }
+
+  function addSample() { setTp({ samples: [...tp.samples, { date: "", ref: "", result: "", comment: "" }] }); }
+  function setSample(i, patch) { setTp({ samples: tp.samples.map((r, j) => (j === i ? { ...r, ...patch } : r)) }); }
+  function delSample(i) { setTp({ samples: tp.samples.filter((_, j) => j !== i) }); }
+  // 권장 건수만큼 빈 행을 만들어 둔다. 이미 쓴 행은 그대로 둔다.
+  function fillSamples() {
+    const need = Math.max(0, Number(recommended || 0) - tp.samples.length);
+    if (!need) return;
+    setTp({ samples: [...tp.samples, ...Array.from({ length: need }, () => ({ date: "", ref: "", result: "", comment: "" }))] });
+  }
+
+  return (
+    <div className="mt-4 space-y-3">
+      {/* ── 통제기술서 ── */}
+      <details className="border border-slate-200 rounded-xl bg-slate-50/60">
+        <summary className={sumCls}>
+          <FileText size={15} className="text-slate-400" />
+          {t("self.docCdTitle")}
+          <span className="ml-auto text-[11px] font-normal text-slate-400">{t("self.docOptional")}</span>
+        </summary>
+        <div className="px-4 pb-4 pt-1 space-y-4 bg-white rounded-b-xl border-t border-slate-200">
+          {/* 통제 항목에서 가져오는 값 — 서식의 번호 칸은 모두 코드 번호 하나로 통일한다. */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div><span className={labelCls}>{t("self.docCorp")}</span><div className={roCls}>STK</div></div>
+            <div><span className={labelCls}>{t("self.docDept")}</span><div className={roCls}>{deptName(control.dept, lang, departments) || t("self.docNotSet")}</div></div>
+            <div><span className={labelCls}>{t("self.docYear")}</span><div className={roCls}>{control.year}</div></div>
+            <div><span className={labelCls}>{t("self.docCode")}</span><div className={roCls + " font-mono"}>{control.code}</div></div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="md:col-span-1"><span className={labelCls}>{t("self.docCtrlName")}</span><div className={roCls + " truncate"} title={cName(control, lang)}>{cName(control, lang)}</div></div>
+            <div><span className={labelCls}>{t("self.docSetCycle")}</span>
+              <input className={inputCls} value={cd.setCycle} onChange={(e) => setCd({ setCycle: e.target.value })} /></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><span className={labelCls}>{t("self.docVersion")}</span>
+                <input className={inputCls} value={cd.docVersion} onChange={(e) => setCd({ docVersion: e.target.value })} /></div>
+              <div><span className={labelCls}>{t("self.docEffDate")}</span>
+                <input type="date" className={inputCls} value={cd.effDate} onChange={(e) => setCd({ effDate: e.target.value })} /></div>
+            </div>
+          </div>
+
+          <div>
+            <span className={labelCls}>{t("self.docObjective")}</span>
+            <div className={roCls + " whitespace-pre-wrap"}>{cDesc(control, lang) || t("self.docNotSet")}</div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <input id="isa-doc-fraud" type="checkbox" className="w-4 h-4 accent-teal-600"
+                   checked={!!cd.fraud} onChange={(e) => setCd({ fraud: e.target.checked })} />
+            <label htmlFor="isa-doc-fraud" className="text-sm text-slate-700">{t("self.docFraud")}</label>
+          </div>
+
+          <div>
+            <span className={labelCls}>{t("self.docAssertion")}</span>
+            <div className="flex flex-wrap gap-2">
+              {ASSERTION_OPTIONS.map((o) => {
+                const on = cd.assertions.includes(o.id);
+                return (
+                  <button key={o.id} type="button" role="checkbox" aria-checked={on} data-assertion={o.id}
+                    onClick={() => toggleAssertion(o.id)}
+                    className="px-3 py-1.5 rounded-lg text-[13px] font-medium border transition-colors"
+                    style={{ borderColor: on ? BRAND.accent : "#CBD3DD", color: on ? "#fff" : "#64748B", backgroundColor: on ? BRAND.accent : "#fff" }}>
+                    {o[lang]}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div>
+              <span className={labelCls}>{t("self.docMethod")}</span>
+              <ChoiceRow name="method" options={CONTROL_METHOD_OPTIONS} value={cd.method} onPick={(id) => pickOne("method", id)} />
+            </div>
+            <div>
+              <span className={labelCls}>{t("self.docType")}</span>
+              <ChoiceRow name="ctype" options={CONTROL_TYPE_OPTIONS} value={cd.ctype} onPick={(id) => pickOne("ctype", id)} />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div><span className={labelCls}>{t("self.docRelDocs")}</span>
+              <input className={inputCls} value={cd.relatedDocs} onChange={(e) => setCd({ relatedDocs: e.target.value })} /></div>
+            <div><span className={labelCls}>{t("self.docRelSystems")}</span>
+              <input className={inputCls} value={cd.relatedSystems} onChange={(e) => setCd({ relatedSystems: e.target.value })} /></div>
+          </div>
+
+          <div>
+            <span className={labelCls}>{t("self.docCycle")}</span>
+            <ChoiceRow name="cycle" options={PERFORM_CYCLE_OPTIONS} value={cd.cycle} onPick={(id) => pickOne("cycle", id)} />
+          </div>
+
+          <div>
+            <span className={labelCls}>{t("self.docWho")}</span>
+            <div className="space-y-2">
+              {cd.performers.map((p, i) => (
+                <div key={i} className="grid grid-cols-12 gap-2 items-center">
+                  <input className={inputCls + " col-span-3"} placeholder={t("self.docRole")} value={p.role} onChange={(e) => setPerformer(i, { role: e.target.value })} />
+                  <input className={inputCls + " col-span-6"} placeholder={t("self.docRoleDesc")} value={p.desc} onChange={(e) => setPerformer(i, { desc: e.target.value })} />
+                  <input className={inputCls + " col-span-2"} placeholder={t("self.docRoleDept")} value={p.dept} onChange={(e) => setPerformer(i, { dept: e.target.value })} />
+                  <button type="button" onClick={() => delPerformer(i)} title={t("self.docDelRow")}
+                          className="col-span-1 text-slate-300 hover:text-red-500 flex justify-center"><X size={14} /></button>
+                </div>
+              ))}
+            </div>
+            <button type="button" onClick={addPerformer} className="mt-2 text-xs font-medium" style={{ color: BRAND.accent }}>+ {t("self.docAddRow")}</button>
+          </div>
+
+          <div><span className={labelCls}>{t("self.docWhere")}</span>
+            <input className={inputCls} value={cd.processEnv} onChange={(e) => setCd({ processEnv: e.target.value })} /></div>
+          <div><span className={labelCls}>{t("self.docWhat")}</span>
+            <textarea rows={3} className={inputCls + " resize-none"} value={cd.activity} onChange={(e) => setCd({ activity: e.target.value })} /></div>
+
+          <div className="border-t border-slate-200 pt-3">
+            <p className="text-[13px] font-bold text-slate-600 mb-2">{t("self.docTestDesign")}</p>
+            <div className="space-y-3">
+              <div><span className={labelCls}>{t("self.docTestProc")}</span>
+                <textarea rows={2} className={inputCls + " resize-none"} value={cd.testProc} onChange={(e) => setCd({ testProc: e.target.value })} /></div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div><span className={labelCls}>{t("self.docEvidence")}</span>
+                  <input className={inputCls} value={cd.evidence} onChange={(e) => setCd({ evidence: e.target.value })} /></div>
+                <div><span className={labelCls}>{t("self.docSampleNeed")}</span>
+                  <div className={roCls}>{recommended}{t("common.items")}</div></div>
+              </div>
+              <div className="flex items-center gap-2">
+                <input id="isa-doc-random" type="checkbox" className="w-4 h-4 accent-teal-600"
+                       checked={!!cd.random} onChange={(e) => setCd({ random: e.target.checked })} />
+                <label htmlFor="isa-doc-random" className="text-sm text-slate-700">{t("self.docRandom")}</label>
+              </div>
+              <div><span className={labelCls}>{t("self.docPopulation")}</span>
+                <input className={inputCls} value={cd.population} onChange={(e) => setCd({ population: e.target.value })} /></div>
+            </div>
+          </div>
+        </div>
+      </details>
+
+      {/* ── 운영 효과성 테스트 문서 ── */}
+      <details className="border border-slate-200 rounded-xl bg-slate-50/60">
+        <summary className={sumCls}>
+          <ClipboardList size={15} className="text-slate-400" />
+          {t("self.docTpTitle")}
+          <span className="ml-auto text-[11px] font-normal text-slate-400">{t("self.docOptional")}</span>
+        </summary>
+        <div className="px-4 pb-4 pt-1 space-y-4 bg-white rounded-b-xl border-t border-slate-200">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div><span className={labelCls}>{t("self.docCorp")}</span><div className={roCls}>STK</div></div>
+            <div><span className={labelCls}>{t("self.docDept")}</span><div className={roCls}>{deptName(control.dept, lang, departments) || t("self.docNotSet")}</div></div>
+            <div><span className={labelCls}>{t("self.docYear")}</span><div className={roCls}>{control.year}</div></div>
+            <div><span className={labelCls}>{t("self.docCode")}</span><div className={roCls + " font-mono"}>{control.code}</div></div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div><span className={labelCls}>{t("self.docCtrlName")}</span><div className={roCls + " truncate"} title={cName(control, lang)}>{cName(control, lang)}</div></div>
+            <div><span className={labelCls}>{t("self.docSetCycle")}</span>
+              <input className={inputCls} value={tp.setCycle} onChange={(e) => setTp({ setCycle: e.target.value })} /></div>
+          </div>
+          <div><span className={labelCls}>{t("self.docTestRef")}</span>
+            <textarea rows={2} className={inputCls + " resize-none"} value={tp.testRef} onChange={(e) => setTp({ testRef: e.target.value })} /></div>
+
+          <div>
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className={labelCls + " mb-0"}>{t("self.docSamples")}</span>
+              <span className="text-[11px] text-slate-400">({tp.samples.length} / {recommended})</span>
+              {tp.samples.length < recommended && (
+                <button type="button" onClick={fillSamples} className="ml-auto text-xs font-medium" style={{ color: BRAND.accent }}>
+                  {t("self.docSampleFill")}
+                </button>
+              )}
+            </div>
+            <div className="border border-slate-200 rounded-lg overflow-hidden">
+              <table className="w-full text-[13px]">
+                <thead className="bg-slate-50 text-slate-500">
+                  <tr>
+                    <th className="px-2 py-2 w-10 font-semibold">{t("self.docSampleNo")}</th>
+                    <th className="px-2 py-2 w-36 font-semibold text-left">{t("self.docSampleDate")}</th>
+                    <th className="px-2 py-2 font-semibold text-left">{t("self.docSampleRef")}</th>
+                    <th className="px-2 py-2 w-28 font-semibold text-left">{t("self.docSampleResult")}</th>
+                    <th className="px-2 py-2 font-semibold text-left">{t("self.docSampleComment")}</th>
+                    <th className="px-2 py-2 w-8"></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {tp.samples.map((r, i) => (
+                    <tr key={i}>
+                      <td className="px-2 py-1.5 text-center text-slate-400">{i + 1}</td>
+                      <td className="px-2 py-1.5"><input type="date" className={inputCls + " py-1.5"} value={r.date} onChange={(e) => setSample(i, { date: e.target.value })} /></td>
+                      <td className="px-2 py-1.5"><input className={inputCls + " py-1.5"} value={r.ref} onChange={(e) => setSample(i, { ref: e.target.value })} /></td>
+                      <td className="px-2 py-1.5">
+                        <select className={inputCls + " py-1.5"} value={r.result} onChange={(e) => setSample(i, { result: e.target.value })}>
+                          <option value="">-</option>
+                          {SAMPLE_RESULT_OPTIONS.map((o) => <option key={o.id} value={o.id}>{o[lang]}</option>)}
+                        </select>
+                      </td>
+                      <td className="px-2 py-1.5"><input className={inputCls + " py-1.5"} value={r.comment} onChange={(e) => setSample(i, { comment: e.target.value })} /></td>
+                      <td className="px-2 py-1.5 text-center">
+                        <button type="button" onClick={() => delSample(i)} title={t("self.docDelRow")} className="text-slate-300 hover:text-red-500"><X size={13} /></button>
+                      </td>
+                    </tr>
+                  ))}
+                  {tp.samples.length === 0 && (
+                    <tr><td colSpan={6} className="px-2 py-4 text-center text-slate-400 text-xs">{t("self.docSampleFill")}</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <button type="button" onClick={addSample} className="mt-2 text-xs font-medium" style={{ color: BRAND.accent }}>+ {t("self.docAddRow")}</button>
+          </div>
+
+          <div><span className={labelCls}>{t("self.docTestResult")}</span>
+            <textarea rows={3} className={inputCls + " resize-none"} value={tp.resultText} onChange={(e) => setTp({ resultText: e.target.value })} /></div>
+        </div>
+      </details>
     </div>
   );
 }
@@ -4851,6 +5269,14 @@ function SelfAssessForm({ control, draft, setDraft, onCancel, onSubmit, onSkip }
         onChange={(e) => setDraft({ ...draft, comment: e.target.value })}
       />
       </div>
+
+      {/* 서식은 평가 근거 아래에 접어 둔다 — 평가 자체의 흐름을 가리지 않게. */}
+      <IsaDocForms
+        control={control}
+        doc={normalizeIsaDoc(draft.doc)}
+        setDoc={(d) => setDraft({ ...draft, doc: d })}
+        recommended={recommended}
+      />
 
       {(draft.attachments || []).length > 0 && (
         <ul className="mt-3 space-y-1.5">
@@ -10163,6 +10589,12 @@ async function loadIcsControls() {
     match.selfCommentEn = stripSpRichText(f.SelfCommentEn) || "";
     match.selfDate = f.SelfDate ? String(f.SelfDate) : null;  // 원본 ISO 유지 - 표시 시점에 formatDateTime 으로 포맷
     match.actualSample = f.SampleCount !== undefined && f.SampleCount !== "" && f.SampleCount !== null ? Number(f.SampleCount) : null;
+    // 통제기술서·테스트수행 서식(JSON 한 덩어리). 열이 없거나 값이 깨졌으면 없는 것으로 둔다.
+    match.isaDoc = null;
+    if (f.IsaDocJson) {
+      try { match.isaDoc = normalizeIsaDoc(JSON.parse(stripSpRichText(f.IsaDocJson))); }
+      catch (e) { console.warn("[ICS] 서식 JSON 해석 실패:", match.code, e.message); }
+    }
     match.reviewRisk = f.ReviewRisk || null;
     match.reviewComment = stripSpRichText(f.ReviewCommentKo) || "";
     match.reviewCommentEn = stripSpRichText(f.ReviewCommentEn) || "";
