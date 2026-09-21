@@ -4886,16 +4886,16 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
                   </div>
                 </div>
 
+                {/* 반려된 건은 세부 내용에서 보던 2차 검토 카드를 그대로 보여 준다(09-21 요청).
+                    같은 내용을 화면마다 다른 모양으로 보여 주면 읽는 법을 두 번 익혀야 한다. */}
                 {c.status === "returned" && (
                   <div className="mb-3">
-                    <CommentBlock
-                      label={t("self.rejectReasonTitle")}
+                    <StageCard
+                      stage="isaReview" control={c} title={t("detail.review")}
+                      risk={c.reviewRisk} who={personByEmail(c.reviewer, lang, users)}
+                      actor={c.reviewActor} when={c.reviewDate}
                       text={lang === "en" ? c.reviewCommentEn || c.reviewComment : c.reviewComment}
-                      who={personByEmail(c.reviewer, lang, users)}
-                      actor={c.reviewActor}
-                      when={c.reviewDate}
-                      tone="red"
-                      lang={lang}
+                      empty={t("detail.noReview")}
                     />
                   </div>
                 )}
@@ -5870,14 +5870,12 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
 
                 {c.fsaStatus === "returned" && (
                   <div className="mb-3">
-                    <CommentBlock
-                      label={t("fsa.rejectReasonTitle")}
+                    <StageCard
+                      stage="fsaReview" control={c} title={t("fsaReview.title")}
+                      risk={c.fsaReviewRisk} who={personByEmail(c.reviewer, lang, users)}
+                      actor={c.fsaReviewActor} when={c.fsaReviewDate}
                       text={lang === "en" ? c.fsaReviewCommentEn || c.fsaReviewComment : c.fsaReviewComment}
-                      who={personByEmail(c.reviewer, lang, users)}
-                      actor={c.fsaReviewActor}
-                      when={c.fsaReviewDate}
-                      tone="red"
-                      lang={lang}
+                      empty={t("detail.noFsaReview")}
                     />
                   </div>
                 )}
