@@ -4874,10 +4874,34 @@ function IsaDocForms({ control, doc, setDoc, recommended }) {
   const setCd = (patch) => setDoc({ ...doc, cd: { ...cd, ...patch } });
   const setTp = (patch) => setDoc({ ...doc, tp: { ...tp, ...patch } });
 
+  // 두 서식을 위아래로 쌓으니 자리를 많이 먹고 산만했다. 한 줄에 나란히 두고
+  // 누른 쪽만 아래에 펼친다(2026-09-21 사용자 요청).
+  const [openDoc, setOpenDoc] = useState("");
   const inputCls = "w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-100 focus:border-teal-400";
   const labelCls = "text-[12px] font-semibold text-slate-500 uppercase tracking-wide mb-1 block";
   const roCls = "w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-500 bg-slate-50";
-  const sumCls = "list-none cursor-pointer px-4 py-3 text-sm font-semibold text-slate-700 flex items-center gap-2";
+  const panelCls = "border border-t-0 border-slate-200 rounded-b-xl bg-white px-4 pt-3 pb-4 space-y-4";
+  // 지우기 단추 — 회색이 너무 옅어 있는 줄도 몰랐다. 진하게 하고 올리면 빨갛게.
+  const delCls = "flex-shrink-0 w-5 h-5 rounded-md flex items-center justify-center text-slate-500 hover:text-white hover:bg-red-500 transition-colors";
+
+  // 어느 쪽에 내용이 들어갔는지 탭에 점으로 표시한다.
+  const cdFilled = isaDocFilled({ cd: doc.cd, tp: emptyIsaDoc().tp });
+  const tpFilled = isaDocFilled({ cd: emptyIsaDoc().cd, tp: doc.tp });
+
+  function DocTab({ id, icon: Icon, label, filled }) {
+    const on = openDoc === id;
+    return (
+      <button type="button" data-doctab={id} aria-expanded={on}
+        onClick={() => setOpenDoc(on ? "" : id)}
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] font-semibold border transition-colors"
+        style={{ borderColor: on ? BRAND.accent : "#CBD3DD", backgroundColor: on ? BRAND.accent : "#fff", color: on ? "#fff" : "#475569" }}>
+        <Icon size={14} />
+        <span className="truncate">{label}</span>
+        {filled && <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: on ? "#fff" : BRAND.accent }} />}
+        <ChevronDown size={13} className="flex-shrink-0" style={{ transform: on ? "rotate(180deg)" : "none", transition: "transform .15s" }} />
+      </button>
+    );
+  }
 
   // 여러 개 고르는 것은 어설션뿐이다.
   function toggleAssertion(id) {
@@ -4920,15 +4944,20 @@ function IsaDocForms({ control, doc, setDoc, recommended }) {
   }
 
   return (
-    <div className="mt-4 space-y-3">
+    <div className="mt-4">
+      {/* 두 서식을 한 줄에 — 누른 쪽만 아래에 펼쳐진다 */}
+      <div className={"flex items-center gap-2 flex-wrap border border-slate-200 bg-slate-50 px-3 py-2.5 " + (openDoc ? "rounded-t-xl" : "rounded-xl")}>
+        <DocTab id="cd" icon={FileText} label={t("self.docCdTitle")} filled={cdFilled} />
+        <DocTab id="tp" icon={ClipboardList} label={t("self.docTpTitle")} filled={tpFilled} />
+        <span className="ml-auto text-[11px] font-semibold rounded-md px-2 py-1 border"
+              style={{ color: BRAND.accent, backgroundColor: "#F0FBF8", borderColor: "#BFE7DD" }}>
+          {t("self.docOptional")}
+        </span>
+      </div>
+
       {/* ── 통제기술서 ── */}
-      <details className="border border-slate-200 rounded-xl bg-slate-50/60">
-        <summary className={sumCls}>
-          <FileText size={15} className="text-slate-400" />
-          {t("self.docCdTitle")}
-          <span className="ml-auto text-[11px] font-normal text-slate-400">{t("self.docOptional")}</span>
-        </summary>
-        <div className="px-4 pb-4 pt-1 space-y-4 bg-white rounded-b-xl border-t border-slate-200">
+      {openDoc === "cd" && (
+        <div className={panelCls}>
           {/* 통제 항목에서 가져오는 값 — 서식의 번호 칸은 모두 코드 번호 하나로 통일한다. */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div><span className={labelCls}>{t("self.docCorp")}</span><div className={roCls}>STK</div></div>
@@ -5008,7 +5037,9 @@ function IsaDocForms({ control, doc, setDoc, recommended }) {
                   <input className={inputCls + " col-span-6"} placeholder={t("self.docRoleDesc")} value={p.desc} onChange={(e) => setPerformer(i, { desc: e.target.value })} />
                   <input className={inputCls + " col-span-2"} placeholder={t("self.docRoleDept")} value={p.dept} onChange={(e) => setPerformer(i, { dept: e.target.value })} />
                   <button type="button" onClick={() => delPerformer(i)} title={t("self.docDelRow")}
-                          className="col-span-1 text-slate-300 hover:text-red-500 flex justify-center"><X size={14} /></button>
+                          className="col-span-1 flex justify-center">
+                    <span className={delCls}><X size={14} /></span>
+                  </button>
                 </div>
               ))}
             </div>
@@ -5041,16 +5072,11 @@ function IsaDocForms({ control, doc, setDoc, recommended }) {
             </div>
           </div>
         </div>
-      </details>
+      )}
 
       {/* ── 운영 효과성 테스트 문서 ── */}
-      <details className="border border-slate-200 rounded-xl bg-slate-50/60">
-        <summary className={sumCls}>
-          <ClipboardList size={15} className="text-slate-400" />
-          {t("self.docTpTitle")}
-          <span className="ml-auto text-[11px] font-normal text-slate-400">{t("self.docOptional")}</span>
-        </summary>
-        <div className="px-4 pb-4 pt-1 space-y-4 bg-white rounded-b-xl border-t border-slate-200">
+      {openDoc === "tp" && (
+        <div className={panelCls}>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div><span className={labelCls}>{t("self.docCorp")}</span><div className={roCls}>STK</div></div>
             <div><span className={labelCls}>{t("self.docDept")}</span><div className={roCls}>{deptName(control.dept, lang, departments) || t("self.docNotSet")}</div></div>
@@ -5101,7 +5127,9 @@ function IsaDocForms({ control, doc, setDoc, recommended }) {
                       </td>
                       <td className="px-2 py-1.5"><input className={inputCls + " py-1.5"} value={r.comment} onChange={(e) => setSample(i, { comment: e.target.value })} /></td>
                       <td className="px-2 py-1.5 text-center">
-                        <button type="button" onClick={() => delSample(i)} title={t("self.docDelRow")} className="text-slate-300 hover:text-red-500"><X size={13} /></button>
+                        <button type="button" onClick={() => delSample(i)} title={t("self.docDelRow")} className="inline-flex">
+                          <span className={delCls}><X size={13} /></span>
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -5117,7 +5145,7 @@ function IsaDocForms({ control, doc, setDoc, recommended }) {
           <div><span className={labelCls}>{t("self.docTestResult")}</span>
             <textarea rows={3} className={inputCls + " resize-none"} value={tp.resultText} onChange={(e) => setTp({ resultText: e.target.value })} /></div>
         </div>
-      </details>
+      )}
     </div>
   );
 }
@@ -5291,7 +5319,10 @@ function SelfAssessForm({ control, draft, setDraft, onCancel, onSubmit, onSkip }
               <Paperclip size={12} className="text-slate-400 flex-shrink-0" />
               <span className="truncate">{a.name}</span>
               <span className="text-slate-400 flex-shrink-0">{a.size}</span>
-              <button onClick={() => removeAttachment(i)} className="ml-auto text-slate-300 hover:text-red-500 flex-shrink-0"><X size={12} /></button>
+              <button onClick={() => removeAttachment(i)} title={t("common.delete")}
+                      className="ml-auto flex-shrink-0 w-5 h-5 rounded-md flex items-center justify-center text-slate-500 hover:text-white hover:bg-red-500 transition-colors">
+                <X size={13} />
+              </button>
             </li>
           ))}
         </ul>
