@@ -968,6 +968,8 @@ const STR = {
     },
     detail: {
       desc: "통제 설명", accessor: "1차 담당자(Accessor)", reviewer: "2차 검토자(Reviewer)",
+      outcomeApproved: "승인", outcomeReturned: "반려", outcomePending: "검토 대기",
+      outcomeNone: "진행 전", outcomeSubmitted: "제출 완료", outcomeNotSubmitted: "미제출",
       samplingInfo: "샘플링 정보", freq: "빈도", importance: "중요도", recommended: "권장 건수", actual: "실제 샘플링",
       attachments: "첨부된 샘플링 자료", noAttachments: "첨부된 자료가 없습니다.",
       selfAssessment: "1차 자가평가", noSelf: "아직 1차 평가가 진행되지 않았습니다.",
@@ -1432,6 +1434,8 @@ const STR = {
     },
     detail: {
       desc: "Description", accessor: "1st Accessor", reviewer: "2nd Reviewer",
+      outcomeApproved: "Approved", outcomeReturned: "Returned", outcomePending: "Awaiting review",
+      outcomeNone: "Not started", outcomeSubmitted: "Submitted", outcomeNotSubmitted: "Not submitted",
       samplingInfo: "Sampling info", freq: "Frequency", importance: "Importance", recommended: "Recommended", actual: "Actual sample",
       attachments: "Attached sampling evidence", noAttachments: "No files attached.",
       selfAssessment: "1st self-assessment", noSelf: "1st assessment has not been started yet.",
@@ -2935,14 +2939,48 @@ function ControlList({ controls: allControls, filter, setFilter, isAdmin, allowe
   );
 }
 
+/* 단계별 결과 배지 — 리스크 수준(양호·주의·위험)과 별개로,
+   그 단계가 승인으로 끝났는지 반려됐는지를 보여 준다.
+   실무에서는 신호등보다 이쪽이 먼저 필요하다(2026-09-21 사용자 지적).
+   판정은 현재 상태값에서 그대로 끌어온다 — 자가평가 칸은 제출 여부,
+   검토 칸은 승인·반려 여부다. */
+function StageOutcome({ stage, control: c }) {
+  const { t } = useLang();
+  const st = String((stage.startsWith("fsa") ? c.fsaStatus : c.status) || "not_started");
+  const isReview = stage.endsWith("Review");
+  let key, fg, bg;
+  if (isReview) {
+    if (st === "completed") { key = "outcomeApproved"; fg = "#166A43"; bg = "#E4F3EC"; }
+    else if (st === "returned") { key = "outcomeReturned"; fg = "#8F2822"; bg = "#F8E4E3"; }
+    else if (st === "submitted_self") { key = "outcomePending"; fg = "#8A5A0C"; bg = "#FBEDDC"; }
+    else { key = "outcomeNone"; fg = "#5B6472"; bg = "#EEF0F3"; }
+  } else {
+    if (st === "completed" || st === "submitted_self") { key = "outcomeSubmitted"; fg = "#166A43"; bg = "#E4F3EC"; }
+    else if (st === "returned") { key = "outcomeReturned"; fg = "#8F2822"; bg = "#F8E4E3"; }
+    else { key = "outcomeNotSubmitted"; fg = "#5B6472"; bg = "#EEF0F3"; }
+  }
+  return (
+    <span data-outcome={key} className="text-[11px] font-bold rounded-md px-2 py-0.5"
+          style={{ color: fg, backgroundColor: bg }}>
+      {t("detail." + key)}
+    </span>
+  );
+}
+
 function ControlDetailBody({ control: c }) {
   const { lang, t } = useLang();
   const { departments, users } = useAppData();
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap gap-2">
+      {/* ISA 만 보여 주면 FSA 까지 끝난 것처럼 읽힌다. 두 단계를 나란히 둔다. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-[11px] font-bold text-slate-400">ISA</span>
         <StatusBadge status={c.status} kind="isa" />
         <RiskBadge risk={finalRisk(c)} />
+        <span className="text-slate-200">|</span>
+        <span className="text-[11px] font-bold text-slate-400">FSA</span>
+        <StatusBadge status={c.fsaStatus || "not_started"} kind="fsa" />
+        <RiskBadge risk={fsaFinalRisk(c)} />
         <span className="text-xs text-slate-400 px-2 py-1">{deptName(c.dept, lang, departments)} · {catName(c.cat, lang)}</span>
       </div>
       <div>
@@ -2983,7 +3021,9 @@ function ControlDetailBody({ control: c }) {
       </div>
 
       <div className="border-t border-slate-100 pt-4">
-        <p className="text-xs font-semibold text-slate-500 mb-2">{t("detail.selfAssessment")}</p>
+        <p className="text-xs font-semibold text-slate-500 mb-2 flex items-center gap-2">
+          {t("detail.selfAssessment")} <StageOutcome stage="isaSelf" control={c} />
+        </p>
         {c.selfRisk ? (
           <div className="bg-slate-50 rounded-lg p-3">
             <div className="flex items-center justify-between mb-1.5">
@@ -2998,9 +3038,12 @@ function ControlDetailBody({ control: c }) {
       </div>
 
       <div className="border-t border-slate-100 pt-4">
-        <p className="text-xs font-semibold text-slate-500 mb-2">{t("detail.review")}</p>
+        <p className="text-xs font-semibold text-slate-500 mb-2 flex items-center gap-2">
+          {t("detail.review")} <StageOutcome stage="isaReview" control={c} />
+        </p>
         {c.reviewRisk ? (
-          <div className="bg-slate-50 rounded-lg p-3">
+          /* 반려 건은 배경을 붉게 — 의견이 곧 반려 사유다. */
+          <div className={c.status === "returned" ? "bg-red-50 border border-red-100 rounded-lg p-3" : "bg-slate-50 rounded-lg p-3"}>
             <div className="flex items-center justify-between mb-1.5">
               <RiskBadge risk={c.reviewRisk} />
               <span className="text-xs text-slate-400">
@@ -3016,7 +3059,9 @@ function ControlDetailBody({ control: c }) {
       </div>
 
       <div className="border-t border-slate-100 pt-4">
-        <p className="text-xs font-semibold text-slate-500 mb-2">{t("detail.fsa")}</p>
+        <p className="text-xs font-semibold text-slate-500 mb-2 flex items-center gap-2">
+          {t("detail.fsa")} <StageOutcome stage="fsaSelf" control={c} />
+        </p>
         {c.fsaRisk ? (
           <div className="bg-slate-50 rounded-lg p-3">
             <div className="flex items-center justify-between mb-1.5">
@@ -3031,12 +3076,17 @@ function ControlDetailBody({ control: c }) {
       </div>
 
       <div className="border-t border-slate-100 pt-4">
-        <p className="text-xs font-semibold text-slate-500 mb-2">{t("fsaReview.title")}</p>
+        <p className="text-xs font-semibold text-slate-500 mb-2 flex items-center gap-2">
+          {t("fsaReview.title")} <StageOutcome stage="fsaReview" control={c} />
+        </p>
         {c.fsaReviewRisk ? (
-          <div className="bg-slate-50 rounded-lg p-3">
+          <div className={c.fsaStatus === "returned" ? "bg-red-50 border border-red-100 rounded-lg p-3" : "bg-slate-50 rounded-lg p-3"}>
             <div className="flex items-center justify-between mb-1.5">
               <RiskBadge risk={c.fsaReviewRisk} />
-              <span className="text-xs text-slate-400">{formatDateTime(c.fsaReviewDate, lang)}</span>
+              <span className="text-xs text-slate-400">
+                {c.fsaReviewActor ? <span className="mr-2">{t("self.processedBy")} {c.fsaReviewActor}</span> : null}
+                {formatDateTime(c.fsaReviewDate, lang)}
+              </span>
             </div>
             <p className="text-sm text-slate-600 whitespace-pre-wrap">{lang === "en" ? c.fsaReviewCommentEn || c.fsaReviewComment : c.fsaReviewComment}</p>
           </div>
