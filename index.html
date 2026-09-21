@@ -757,15 +757,15 @@ function stageDone(control, stage) {
 function StageTabs({ stage, setStage }) {
   const { lang } = useLang();
   return (
-    <div className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+    <div className="inline-flex items-center gap-0.5 rounded-full border border-slate-200 bg-slate-100 p-0.5">
       {STAGES.map((s) => {
         const on = stage === s.id;
         return (
           <button key={s.id} type="button" data-stage={s.id} aria-pressed={on}
             onClick={() => setStage(s.id)}
-            className="px-3 py-1.5 rounded-md text-[12px] font-semibold transition-colors"
-            style={{ backgroundColor: on ? "#fff" : "transparent", color: on ? BRAND.navy : "#94A3B8",
-                     boxShadow: on ? "0 1px 2px rgba(15,23,42,.08)" : "none" }}>
+            className="px-3.5 py-1 rounded-full text-[12px] font-semibold transition-all"
+            style={{ backgroundColor: on ? BRAND.accent : "transparent", color: on ? "#fff" : "#64748B",
+                     boxShadow: on ? "0 1px 3px rgba(15,23,42,.15)" : "none" }}>
             {s[lang]}
           </button>
         );
@@ -1849,7 +1849,9 @@ function StatusBadge({ status, kind }) {
   );
 }
 
-function SectionHeader({ icon: Icon, title, subtitle, action }) {
+/* inline — 제목 바로 옆(같은 줄)에 붙는 조작. 대시보드·평가 이력 리포트의 ISA/FSA 전환이
+   쓴다. 제목 아래 줄에 따로 두었더니 화면 위쪽이 두 층으로 갈라져 보였다(09-21 지적). */
+function SectionHeader({ icon: Icon, title, subtitle, action, inline }) {
   return (
     <div className="flex items-start justify-between mb-6">
       <div className="flex items-start gap-3">
@@ -1857,7 +1859,10 @@ function SectionHeader({ icon: Icon, title, subtitle, action }) {
           <Icon size={20} color={BRAND.accent} />
         </div>
         <div>
-          <h1 className="text-xl font-semibold text-slate-800">{title}</h1>
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="text-xl font-semibold text-slate-800">{title}</h1>
+            {inline}
+          </div>
           {subtitle && <p className="text-sm text-slate-500 mt-0.5">{subtitle}</p>}
         </div>
       </div>
@@ -2172,20 +2177,21 @@ function Dashboard({ controls: allControls, goTo, isAdmin, allowedDepts }) {
 
   return (
     <div>
+      {/* 어느 단계 기준인지는 제목 바로 옆에서 고르고, 그 기준은 부제목 끝에 붙인다. */}
       <SectionHeader
         icon={LayoutDashboard}
         title={t("dashboard.title")}
-        subtitle={isAdmin ? t("dashboard.subtitleAdmin")
-          : visibleDepts.length
-            ? `${t("dashboard.scopedWith")} (${visibleDepts.map((d) => d[lang]).join(", ")})`
-            : t("dashboard.scopedNone")}
+        inline={<StageTabs stage={stage} setStage={setStage} />}
+        subtitle={<>
+          {isAdmin ? t("dashboard.subtitleAdmin")
+            : visibleDepts.length
+              ? `${t("dashboard.scopedWith")} (${visibleDepts.map((d) => d[lang]).join(", ")})`
+              : t("dashboard.scopedNone")}
+          <span className="block text-[12px] mt-0.5" style={{ color: BRAND.accent }}>
+            {t(stage === "fsa" ? "dashboard.stageFsaHint" : "dashboard.stageIsaHint")}
+          </span>
+        </>}
       />
-
-      {/* 어느 단계 기준인지 먼저 고른다. 숫자 위에 두어 무엇을 보고 있는지 놓치지 않게. */}
-      <div className="flex items-center gap-3 mb-4">
-        <StageTabs stage={stage} setStage={setStage} />
-        <span className="text-[12px] text-slate-400">{t(stage === "fsa" ? "dashboard.stageFsaHint" : "dashboard.stageIsaHint")}</span>
-      </div>
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
         <div className="relative bg-white rounded-xl border border-slate-200 shadow-sm p-4 overflow-hidden">
@@ -8221,12 +8227,17 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
 
   return (
     <div>
-      <SectionHeader icon={History} title={t("history.title")} subtitle={t("history.subtitle")} />
-
-      <div className="flex items-center gap-3 mb-4">
-        <StageTabs stage={stage} setStage={setStage} />
-        <span className="text-[12px] text-slate-400">{t(stage === "fsa" ? "dashboard.stageFsaHint" : "dashboard.stageIsaHint")}</span>
-      </div>
+      <SectionHeader
+        icon={History}
+        title={t("history.title")}
+        inline={<StageTabs stage={stage} setStage={setStage} />}
+        subtitle={<>
+          {t("history.subtitle")}
+          <span className="block text-[12px] mt-0.5" style={{ color: BRAND.accent }}>
+            {t(stage === "fsa" ? "dashboard.stageFsaHint" : "dashboard.stageIsaHint")}
+          </span>
+        </>}
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-5 mb-6">
         <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm p-5">
