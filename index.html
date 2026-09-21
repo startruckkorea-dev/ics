@@ -465,6 +465,7 @@ function isIsaSkipped(c) {
 const ACTION_LABELS = {
   submit_self: { ko: "1차 자가평가 제출", en: "Self-assessment submitted" },
   skip_isa: { ko: "ISA 생략 (연 1회 통제 · FSA 에서 수행)", en: "ISA skipped (annual control · performed at FSA)" },
+  fsa_same_as_isa: { ko: "FSA 최종 자가평가 — ISA 1차와 동일로 제출", en: "FSA submitted as same as ISA 1st" },
   unskip_isa: { ko: "ISA 생략 취소", en: "ISA skip cancelled" },
   review_complete: { ko: "2차 검토 · 완료", en: "Review completed" },
   review_reject: { ko: "2차 검토 · 반려", en: "Review returned" },
@@ -1001,6 +1002,7 @@ const STR = {
       desc: "통제 설명", accessor: "1차 담당자(Accessor)", reviewer: "2차 검토자(Reviewer)",
       noComment: "의견 없음",
       docTitle: "통제기술서 · 테스트수행 문서", noDoc: "작성된 서식이 없습니다.",
+      wordBtn: "Word 내려받기", wordHint: "회사 서식(통제기술서 · 운영 효과성 테스트 문서) Word 두 개를 만듭니다.",
       outcomeApproved: "승인", outcomeReturned: "반려", outcomePending: "검토 대기",
       outcomeNone: "진행 전", outcomeSubmitted: "제출 완료", outcomeNotSubmitted: "미제출",
       samplingInfo: "샘플링 정보", freq: "빈도", importance: "중요도", recommended: "권장 건수", actual: "실제 샘플링",
@@ -1114,6 +1116,7 @@ const STR = {
       docTestResult: "테스트 절차 결과",
       docFilledBadge: "서식 작성됨",
       docSaveFailed: "평가는 저장되었으나 서식(통제기술서·테스트수행)은 저장하지 못했습니다. IT팀에 알려주세요.",
+      docxSaveFailed: "평가는 저장되었으나 서식 Word 파일을 첨부 폴더에 올리지 못했습니다. 세부 내용에서 다시 내려받을 수 있습니다.",
       docDone: "입력 완료", docModalHint: "입력한 내용은 평가를 제출할 때 함께 저장됩니다. 닫아도 지워지지 않습니다.",
       docNotSet: "-",
       skipModalTitle: "ISA 생략",
@@ -1181,6 +1184,9 @@ const STR = {
       waitingIsa: "ISA 2차 검토가 완료된 후 최종 자가평가를 진행할 수 있습니다.",
       noNeedsAction: "현재 최종평가가 필요한 항목이 없습니다.", noSubmitted: "제출된 최종평가가 없습니다.",
       rejectReasonTitle: "FSA 검토자 반려 사유",
+      sameAsIsa: "ISA 1차와 동일",
+      sameAsIsaHint: "ISA 에서 판단한 리스크 수준 · 근거 · 샘플링 건수를 그대로 가져오고, ISA 샘플링 자료를 근거로 씁니다.",
+      isaAttachUsed: "근거로 쓰는 ISA 샘플링 자료",
     },
     fsaReview: {
       title: "FSA 2차검토",
@@ -1475,6 +1481,7 @@ const STR = {
       desc: "Description", accessor: "1st Accessor", reviewer: "2nd Reviewer",
       noComment: "No comment",
       docTitle: "Control documentation · Test document", noDoc: "No documentation written yet.",
+      wordBtn: "Download Word", wordHint: "Creates the two company-format Word files (control documentation · test document).",
       outcomeApproved: "Approved", outcomeReturned: "Returned", outcomePending: "Awaiting review",
       outcomeNone: "Not started", outcomeSubmitted: "Submitted", outcomeNotSubmitted: "Not submitted",
       samplingInfo: "Sampling info", freq: "Frequency", importance: "Importance", recommended: "Recommended", actual: "Actual sample",
@@ -1588,6 +1595,7 @@ const STR = {
       docTestResult: "Test procedure result",
       docFilledBadge: "Documentation filled",
       docSaveFailed: "The assessment was saved, but the documentation could not be. Please notify IT.",
+      docxSaveFailed: "The assessment was saved, but the Word files could not be uploaded. You can download them again from the details.",
       docDone: "Done", docModalHint: "Saved together when you submit the assessment. Closing keeps what you entered.",
       docNotSet: "-",
       skipModalTitle: "Skip ISA",
@@ -1655,6 +1663,9 @@ const STR = {
       waitingIsa: "The final self-assessment becomes available once ISA 2nd review is complete.",
       noNeedsAction: "No items currently need a final assessment.", noSubmitted: "No final assessments submitted yet.",
       rejectReasonTitle: "FSA reviewer's return reason",
+      sameAsIsa: "Same as ISA 1st",
+      sameAsIsaHint: "Copies the ISA risk level, rationale and sample count, and uses the ISA sampling files as evidence.",
+      isaAttachUsed: "ISA sampling files used as evidence",
     },
     fsaReview: {
       title: "FSA 2nd Review",
@@ -3143,8 +3154,17 @@ function IsaDocView({ control: c }) {
     );
   };
 
+  const [dlBusy, setDlBusy] = useState(false);
   if (!cdFilled && !tpFilled) {
     return <p className="text-xs text-slate-400 flex items-center gap-1"><FileText size={12} /> {t("detail.noDoc")}</p>;
+  }
+  // 회사 서식 Word 두 개를 바로 만든다. FSA 를 시작했으면 FSA 판으로 이름을 붙인다.
+  const stage = c.fsaStatus && c.fsaStatus !== "not_started" ? "FSA" : "ISA";
+  async function downloadWord() {
+    setDlBusy(true);
+    try { await icsDownloadDocx(c, c.isaDoc, lang, users, departments, stage); }
+    catch (e) { alert(e.message); }
+    finally { setDlBusy(false); }
   }
 
   const perf = cd.performers.filter((p) => String(p.role || p.desc || p.dept || "").trim());
@@ -3156,6 +3176,11 @@ function IsaDocView({ control: c }) {
       <div className={"flex items-center gap-2 flex-wrap border border-slate-200 bg-slate-50 px-3 py-2 " + (open ? "rounded-t-xl" : "rounded-xl")}>
         <Tab id="cd" icon={FileText} label={t("self.docCdTitle")} filled={cdFilled} />
         <Tab id="tp" icon={ClipboardList} label={t("self.docTpTitle")} filled={tpFilled} />
+        <button type="button" onClick={downloadWord} disabled={dlBusy}
+          className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold text-white disabled:opacity-50"
+          style={{ backgroundColor: "#2B579A" }} title={t("detail.wordHint")}>
+          {dlBusy ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />} {t("detail.wordBtn")}
+        </button>
       </div>
 
       {open === "cd" && (
@@ -3260,32 +3285,47 @@ function ControlDetailBody({ control: c }) {
         <div><span className="text-slate-400">{t("detail.reviewer")}</span><p className="text-slate-700 font-medium">{personByEmail(c.reviewer, lang, users)}</p></div>
       </div>
 
+      {/* 샘플링 정보 — 점검 빈도·중요도·권장 건수는 통제 공통, 실제 건수와 첨부는 단계마다 따로.
+          하나로 합쳐 두었더니 FSA 를 제출하면 ISA 건수가 덮여 어느 단계 값인지 알 수 없었다(09-21). */}
       <div className="border-t border-slate-100 pt-4">
         <p className="text-xs font-semibold text-slate-500 mb-2">{t("detail.samplingInfo")}</p>
-        <div className="grid grid-cols-4 gap-3 text-sm bg-slate-50 rounded-lg p-3">
+        <div className="grid grid-cols-3 gap-3 text-sm bg-slate-50 rounded-lg p-3 mb-2">
           <div><span className="text-xs text-slate-400">{t("detail.freq")}</span><p className="text-slate-700 font-medium">{freqLabel(c.frequency, lang)}</p></div>
           <div><span className="text-xs text-slate-400">{t("detail.importance")}</span><p className="text-slate-700 font-medium">{importanceLabel(c.importance, lang)}</p></div>
           <div><span className="text-xs text-slate-400">{t("detail.recommended")}</span><p className="text-slate-700 font-medium">{recommendedSample(c.importance, c.frequency)}{t("common.items")}</p></div>
-          <div><span className="text-xs text-slate-400">{t("detail.actual")}</span><p className="text-slate-700 font-medium">{c.actualSample != null ? `${c.actualSample}${t("common.items")}` : "-"}</p></div>
         </div>
-        <p className="text-xs font-medium text-slate-500 mt-3 mb-1.5 flex items-center gap-1"><Paperclip size={12} /> {t("detail.attachments")} ({(c.attachments || []).length})</p>
-        {(c.attachments || []).length > 0 ? (
-          <ul className="space-y-1">
-            {c.attachments.map((a, i) => (
-              <li key={i} className="flex items-center gap-2 text-sm text-slate-600 bg-slate-50 rounded-lg px-3 py-2">
-                <FileText size={14} className="text-slate-400 flex-shrink-0" />
-                {a.webUrl ? (
-                  <button type="button" onClick={() => icsDownloadAttachment(c.requestSpId, a.name)} className="truncate hover:underline text-left bg-transparent border-0 p-0 cursor-pointer" style={{ color: BRAND.accent }}>{a.name}</button>
-                ) : (
-                  <span className="truncate">{a.name}</span>
-                )}
-                {a.size && <span className="text-xs text-slate-400 flex-shrink-0 ml-auto">{a.size}</span>}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-sm text-slate-400">{t("detail.noAttachments")}</p>
-        )}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          {[
+            { phase: "ISA", count: c.actualSample, atts: c.attachments || [], sub: "" },
+            { phase: "FSA", count: c.fsaActualSample, atts: c.fsaAttachments || [], sub: "FSA" },
+          ].map((b) => (
+            <div key={b.phase} className="rounded-lg border border-slate-200 p-3">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-[10px] font-bold tracking-wide rounded px-1.5 py-0.5 text-white"
+                      style={{ backgroundColor: b.phase === "FSA" ? BRAND.accent : BRAND.navy }}>{b.phase}</span>
+                <span className="text-xs text-slate-500">{t("detail.actual")}</span>
+                <span className="text-sm font-semibold text-slate-800 ml-auto">{b.count != null ? `${b.count}${t("common.items")}` : "-"}</span>
+              </div>
+              <p className="text-[11px] font-medium text-slate-500 mb-1 flex items-center gap-1"><Paperclip size={11} /> {t("detail.attachments")} ({b.atts.length})</p>
+              {b.atts.length > 0 ? (
+                <ul className="space-y-1">
+                  {b.atts.map((a, i) => (
+                    <li key={i} className="flex items-center gap-2 text-[13px] text-slate-600 bg-slate-50 rounded-md px-2.5 py-1.5">
+                      <FileText size={13} className="text-slate-400 flex-shrink-0" />
+                      {a.webUrl ? (
+                        <button type="button" onClick={() => icsDownloadAttachment(c.requestSpId, a.name, b.sub)} className="truncate hover:underline text-left bg-transparent border-0 p-0 cursor-pointer" style={{ color: BRAND.accent }}>{a.name}</button>
+                      ) : (
+                        <span className="truncate">{a.name}</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-[12px] text-slate-400">{t("detail.noAttachments")}</p>
+              )}
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* 통제기술서·테스트수행 서식 — 작성 화면과 같은 탭, 읽기 전용 */}
@@ -4601,6 +4641,14 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
           docSaved = false;
           console.warn("[ICS] 서식 저장 실패(평가는 저장됨):", e.message);
         }
+        /* 같은 내용을 회사 서식 Word 두 개로 만들어 첨부 폴더(Documentation)에 둔다(09-21 요청).
+           실패해도 평가 제출은 끝난다 — 서식 값은 위에서 이미 저장했고, 세부 내용에서 언제든 다시 내려받을 수 있다. */
+        try {
+          await icsSaveDocx(c, spId, docObj, lang, users, departments, "ISA");
+        } catch (e) {
+          console.warn("[ICS] 서식 Word 저장 실패(평가는 저장됨):", e.message);
+          showToast(t("self.docxSaveFailed"));
+        }
       }
 
       setControls((prev) =>
@@ -5831,82 +5879,152 @@ function FSAForm({ draft, setDraft, onCancel, onSubmit, control }) {
   const { lang, t } = useLang();
   const fileInputRef = useRef(null);
   const recommended = control ? recommendedSample(control.importance, control.frequency) : 0;
+  /* ISA 1차 자가평가와 같은 모양으로 만든다(09-21 요청). 점검 빈도·중요도는 통제 공통 값이라
+     FSA 에서는 보여 주기만 한다(ISA 이후에 바꾸면 이미 끝난 ISA 의 권장 건수가 흔들린다). */
+  const isaSkipped = control ? isIsaSkipped(control) : false;
+  const isaAtts = (control && control.attachments) || [];
+
+  const commentLen = (draft.comment || "").trim().length;
+  const sampleNum = Number(draft.sampleSize);
+  const hasAttach = (draft.attachments || []).length > 0 || (draft.sameAsIsa && isaAtts.length > 0);
+  const attachBytes = (draft.attachments || []).reduce((n, a) => n + (a.rawSize || 0), 0);
+  const missing = [];
+  if (!draft.risk) missing.push(t("self.needRisk"));
+  if (commentLen < COMMENT_MIN) missing.push(t("self.needComment"));
+  if (!(sampleNum > 0)) missing.push(t("self.needSample"));
+  if (!hasAttach) missing.push(t("self.needAttach"));
+
+  /* 「ISA 1차와 동일」 — ISA 에서 판단한 리스크·근거·샘플링 건수를 그대로 가져온다.
+     샘플링 자료도 ISA 에 올린 것을 근거로 쓴다(따로 다시 올리지 않아도 된다).
+     체크를 풀면 가져온 값은 그대로 두고 고칠 수 있게 한다. ISA 를 생략한 항목에는 가져올 값이 없어 보이지 않는다. */
+  function toggleSame(on) {
+    if (!on) { setDraft({ ...draft, sameAsIsa: false }); return; }
+    setDraft({
+      ...draft, sameAsIsa: true,
+      risk: control.selfRisk || draft.risk,
+      comment: (lang === "en" ? control.selfCommentEn || control.selfComment : control.selfComment) || draft.comment,
+      sampleSize: control.actualSample ?? draft.sampleSize,
+    });
+  }
 
   function handleFiles(e) {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
-    const newAttachments = files.map((f) => ({ name: f.name, size: formatBytes(f.size), file: f }));
+    const addBytes = files.reduce((n, f) => n + f.size, 0);
+    if (attachBytes + addBytes > ATTACH_MAX_BYTES) {
+      alert(`${t("self.attachTooBig")}\n\n${t("self.attachCurrent")} ${formatBytes(attachBytes)}\n${t("self.attachAdding")} ${formatBytes(addBytes)}`);
+      e.target.value = "";
+      return;
+    }
+    const newAttachments = files.map((f) => ({ name: f.name, size: formatBytes(f.size), rawSize: f.size, file: f }));
     setDraft({ ...draft, attachments: [...(draft.attachments || []), ...newAttachments] });
     e.target.value = "";
   }
   function removeAttachment(idx) {
     setDraft({ ...draft, attachments: draft.attachments.filter((_, i) => i !== idx) });
   }
+  const labelCls = "text-[13px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5";
+  const roSel = "w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-500 bg-slate-50";
 
   return (
-    <div className="bg-white border border-slate-200 rounded-xl p-5 mt-3 shadow-sm">
-      <p className="text-[13px] font-semibold text-slate-500 uppercase tracking-wide mb-2.5">{t("fsa.riskLevel")}</p>
-      <div className="grid grid-cols-3 gap-3 mb-4 max-w-2xl">
-        {["green", "orange", "red"].map((r) => (
-          <button
-            key={r}
-            onClick={() => setDraft({ ...draft, risk: r })}
-            className="flex flex-col items-center justify-center gap-1.5 py-3.5 rounded-xl text-sm font-semibold border-2 transition-all"
-            style={{
-              borderColor: draft.risk === r ? RISK_META[r].color : "#E5E9EF",
-              backgroundColor: draft.risk === r ? RISK_META[r].bg : "#fff",
-              color: draft.risk === r ? RISK_META[r].text : "#94A3B8",
-              boxShadow: draft.risk === r ? `0 2px 8px ${RISK_META[r].color}22` : "none",
-            }}
-          >
-            <span className="w-3 h-3 rounded-full" style={{ backgroundColor: draft.risk === r ? RISK_META[r].color : "#CBD3DD" }} />
-            {RISK_META[r][lang]}
-          </button>
-        ))}
-      </div>
-      <p className="text-[13px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5">{t("fsa.commentPlaceholder")}</p>
-      <textarea
-        className="w-full border border-slate-200 rounded-xl px-3.5 py-3 text-[15px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-100 focus:border-teal-400 resize-none"
-        rows={3}
-        placeholder={t("fsa.commentPlaceholder")}
-        value={draft.comment}
-        onChange={(e) => setDraft({ ...draft, comment: e.target.value })}
-      />
+    <div className="bg-white border border-slate-300 rounded-xl p-5 mt-3 shadow-sm">
+      {control && !isaSkipped && (
+        <label className="flex items-center gap-2.5 mb-4 px-3.5 py-2.5 rounded-xl border cursor-pointer select-none"
+               style={{ borderColor: draft.sameAsIsa ? BRAND.accent : "#CBD3DD", backgroundColor: draft.sameAsIsa ? "#F0FBF8" : "#F8FAFC" }}>
+          <input type="checkbox" className="w-4 h-4 accent-teal-600" data-same-as-isa
+                 checked={!!draft.sameAsIsa} onChange={(e) => toggleSame(e.target.checked)} />
+          <span className="text-sm font-semibold" style={{ color: draft.sameAsIsa ? BRAND.accent : "#334155" }}>{t("fsa.sameAsIsa")}</span>
+          <span className="text-[12px] text-slate-500">{t("fsa.sameAsIsaHint")}</span>
+        </label>
+      )}
 
-      <div className="mt-4 grid grid-cols-2 gap-3 items-end">
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-x-6 gap-y-5">
         <div>
-          <p className="text-[13px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5">{t("self.sampleCount")}</p>
-          {control && (
-            <p className="text-[11px] text-slate-400 mb-1.5">
-              {t("self.recommendedNote")} {recommended}{t("common.items")} · {importanceLabel(control.importance, lang)} · {freqLabel(control.frequency, lang)}
+          <p className={labelCls}>{t("fsa.riskLevel")}</p>
+          <div className="grid grid-cols-3 gap-3">
+            {["green", "orange", "red"].map((r) => (
+              <button
+                key={r}
+                onClick={() => setDraft({ ...draft, risk: r })}
+                className="flex flex-col items-center justify-center gap-1.5 py-3.5 rounded-xl text-sm font-semibold border-2 transition-all"
+                style={{
+                  borderColor: draft.risk === r ? RISK_META[r].color : "#E5E9EF",
+                  backgroundColor: draft.risk === r ? RISK_META[r].bg : "#fff",
+                  color: draft.risk === r ? RISK_META[r].text : "#94A3B8",
+                  boxShadow: draft.risk === r ? `0 2px 8px ${RISK_META[r].color}22` : "none",
+                }}
+              >
+                <span className="w-3 h-3 rounded-full" style={{ backgroundColor: draft.risk === r ? RISK_META[r].color : "#CBD3DD" }} />
+                {RISK_META[r][lang]}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 items-end xl:pl-6 xl:border-l xl:border-slate-200">
+          <div>
+            <p className={labelCls}>{t("manage.fieldFreq")}</p>
+            <div className={roSel}>{control ? freqLabel(control.frequency, lang) : "-"}</div>
+          </div>
+          <div>
+            <p className={labelCls}>{t("manage.fieldImportance")}</p>
+            <div className={roSel}>{control ? importanceLabel(control.importance, lang) : "-"}</div>
+          </div>
+          <div>
+            <p className={labelCls + " truncate"}>
+              {t("self.sampleCount")} <span className="normal-case font-normal text-slate-400">({t("self.recommendedNote")} {recommended}{t("common.items")})</span>
             </p>
-          )}
-          <input
-            type="number"
-            min={0}
-            className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-100 focus:border-teal-400"
-            value={draft.sampleSize}
-            onChange={(e) => setDraft({ ...draft, sampleSize: Math.max(0, Number(e.target.value)) })}
-          />
-        </div>
-        <div>
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="w-full flex items-center justify-center gap-1.5 border-2 border-dashed rounded-xl py-[13px] text-xs font-medium transition-colors"
-            style={{ borderColor: "#B6C0CC", color: "#64748B" }}
-            onMouseEnter={(e) => { e.currentTarget.style.borderColor = BRAND.accent; e.currentTarget.style.color = BRAND.accent; }}
-            onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#B6C0CC"; e.currentTarget.style.color = "#64748B"; }}
-          >
-            <UploadCloud size={15} /> {t("self.attachBtn")}
-          </button>
-          <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFiles} />
+            <input
+              type="number"
+              min={0}
+              className="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-100 focus:border-teal-400"
+              value={draft.sampleSize}
+              onChange={(e) => setDraft({ ...draft, sampleSize: Math.max(0, Number(e.target.value)) })}
+            />
+          </div>
+          <div>
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="w-full flex flex-col items-center justify-center gap-0.5 border-2 border-dashed rounded-xl py-2 text-xs font-medium transition-colors"
+              style={{ borderColor: "#B6C0CC", color: "#64748B" }}
+              onMouseEnter={(e) => { e.currentTarget.style.borderColor = BRAND.accent; e.currentTarget.style.color = BRAND.accent; }}
+              onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#B6C0CC"; e.currentTarget.style.color = "#64748B"; }}
+            >
+              <span className="inline-flex items-center gap-1.5"><UploadCloud size={15} /> {t("self.attachBtn")}</span>
+              <span className="text-[11px] font-normal opacity-70">
+                {attachBytes > 0 ? `${formatBytes(attachBytes)} / ${ATTACH_MAX_MB}MB` : t("self.attachHint")}
+              </span>
+            </button>
+            <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFiles} />
+          </div>
         </div>
       </div>
 
-      {/* 통제기술서·테스트수행 서식 — ISA 와 같은 입력(09-21 요청).
-          ISA 를 생략한 연 1회 통제는 여기서 처음 서식을 쓰게 되므로 FSA 에도 있어야 한다.
-          ISA 에서 쓴 내용이 있으면 그대로 불러와 이어서 고친다(같은 IsaDocJson 한 칸). */}
+      <div className="border-t border-slate-200 mt-5 pt-4">
+        <p className={labelCls}>
+          {t("fsa.commentPlaceholder")}
+          <span className="ml-1.5 font-normal normal-case"
+                style={{ color: commentLen >= COMMENT_MIN ? "#94A3B8" : BRAND.accent }}>
+            ({commentLen} / {COMMENT_MIN}{t("self.charsMin")})
+          </span>
+        </p>
+        <textarea
+          className="w-full border border-slate-300 rounded-xl px-3.5 py-3 text-[15px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-100 focus:border-teal-400 resize-none"
+          rows={3}
+          placeholder={t("fsa.commentPlaceholder")}
+          value={draft.comment}
+          onChange={(e) => setDraft({ ...draft, comment: e.target.value })}
+        />
+        {missing.length > 0 && (
+          <p className="mt-2 flex items-start gap-1.5 text-[12px] font-semibold rounded-lg px-3 py-2 border"
+             style={{ color: "#9F1D1D", backgroundColor: "#FEF2F2", borderColor: "#FBD5D5" }}>
+            <AlertTriangle size={13} className="flex-shrink-0 mt-px" />
+            <span>{t("self.needTitle")} {missing.join(" · ")}</span>
+          </p>
+        )}
+      </div>
+
       {control && (
         <IsaDocForms
           control={control}
@@ -5916,10 +6034,26 @@ function FSAForm({ draft, setDraft, onCancel, onSubmit, control }) {
         />
       )}
 
+      {/* ISA 와 동일을 골랐으면 ISA 에 올린 샘플링 자료를 근거로 쓴다는 것을 보여 준다. */}
+      {draft.sameAsIsa && isaAtts.length > 0 && (
+        <div className="mt-3">
+          <p className="text-[11px] font-medium text-slate-500 mb-1">{t("fsa.isaAttachUsed")}</p>
+          <ul className="space-y-1.5">
+            {isaAtts.map((a, i) => (
+              <li key={i} className="flex items-center gap-2 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                <span className="text-[10px] font-bold rounded px-1.5 py-0.5 text-white" style={{ backgroundColor: BRAND.navy }}>ISA</span>
+                <Paperclip size={12} className="text-slate-400 flex-shrink-0" />
+                <span className="truncate">{a.name}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {(draft.attachments || []).length > 0 && (
         <ul className="mt-3 space-y-1.5">
           {draft.attachments.map((a, i) => (
-            <li key={i} className="flex items-center gap-2 text-xs text-slate-600 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
+            <li key={i} className="flex items-center gap-2 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
               <Paperclip size={12} className="text-slate-400 flex-shrink-0" />
               <span className="truncate">{a.name}</span>
               {a.size && <span className="text-slate-400 flex-shrink-0">{a.size}</span>}
@@ -5932,9 +6066,12 @@ function FSAForm({ draft, setDraft, onCancel, onSubmit, control }) {
         </ul>
       )}
 
-      <div className="flex justify-end gap-2 mt-4 pt-4 border-t border-slate-100">
+      <div className="flex justify-end items-center gap-2 mt-4 pt-4 border-t border-slate-200">
         <button onClick={onCancel} className="px-4 py-2 text-sm text-slate-500 rounded-lg hover:bg-slate-50">{t("common.cancel")}</button>
-        <button onClick={onSubmit} className="px-5 py-2 text-sm font-semibold text-white rounded-lg" style={{ backgroundColor: BRAND.accent }}>
+        <button onClick={onSubmit} disabled={missing.length > 0}
+                title={missing.length ? `${t("self.needTitle")}\n${missing.map((m) => "· " + m).join("\n")}` : ""}
+                className="px-5 py-2 text-sm font-semibold text-white rounded-lg disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{ backgroundColor: BRAND.accent }}>
           {t("fsa.submitBtn")}
         </button>
       </div>
@@ -5969,7 +6106,9 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
       risk: c.fsaRisk,
       comment: c.fsaComment || "",
       attachments: c.fsaAttachments || [],
-      sampleSize: c.actualSample ?? recommendedSample(c.importance, c.frequency),
+      // FSA 샘플링 건수는 따로 둔다. 처음이면 권장 건수로 시작한다.
+      sampleSize: c.fsaActualSample ?? recommendedSample(c.importance, c.frequency),
+      sameAsIsa: false,
       doc,
     });
   }
@@ -5997,8 +6136,18 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
         FsaCommentEn: draft.comment,
         FsaDate: new Date().toISOString(),
         FsaAttachedFiles: fsaAttachedFilesField,
-        SampleCount: draft.sampleSize,
+        /* SampleCount(ISA 샘플링 건수)는 건드리지 않는다. 예전에는 FSA 제출이 그 값을 덮어
+           ISA 가 몇 건을 봤는지 사라졌다(09-21). FSA 건수는 아래에서 FsaSampleCount 에 따로 둔다. */
       });
+      /* FsaSampleCount 는 새 열이라 없는 환경에서도 최종 제출이 끝나야 한다 — 따로 저장한다. */
+      let fsaCountSaved = true;
+      try {
+        await icsUpdateItem(ICS_LISTS.requests, c.requestSpId, { FsaSampleCount: Number(draft.sampleSize) || 0 });
+      } catch (e) {
+        fsaCountSaved = false;
+        console.warn("[ICS] FSA 샘플링 건수 저장 실패(FsaSampleCount 열 확인):", e.message);
+      }
+      if (draft.sameAsIsa) addLog(currentUser.email, "fsa_same_as_isa", c.code, c.name, c.nameEn);
 
       /* 서식 저장은 ISA 와 같은 방식 — 평가 저장과 분리해, 열이 없거나 실패해도
          최종 제출은 끝나게 하고 안내만 띄운다. 한 칸도 안 채웠으면 저장하지 않는다. */
@@ -6012,12 +6161,18 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
           docSaved = false;
           console.warn("[ICS] FSA 서식 저장 실패(평가는 저장됨):", e.message);
         }
+        try {
+          await icsSaveDocx(c, c.requestSpId, docObj, lang, users, departments, "FSA");
+        } catch (e) {
+          console.warn("[ICS] FSA 서식 Word 저장 실패(평가는 저장됨):", e.message);
+          showToast(t("self.docxSaveFailed"));
+        }
       }
 
       setControls((prev) =>
         prev.map((x) =>
           x.id === c.id
-            ? { ...x, fsaStatus: "submitted_self", fsaRisk: draft.risk, fsaComment: draft.comment, fsaCommentEn: draft.comment, fsaDate: today, fsaAttachments: finalAttachments, actualSample: draft.sampleSize, isaDoc: docSaved ? docObj : x.isaDoc }
+            ? { ...x, fsaStatus: "submitted_self", fsaRisk: draft.risk, fsaComment: draft.comment, fsaCommentEn: draft.comment, fsaDate: today, fsaAttachments: finalAttachments, fsaActualSample: fsaCountSaved ? Number(draft.sampleSize) || 0 : x.fsaActualSample, isaDoc: docSaved ? docObj : x.isaDoc }
             : x
         )
       );
@@ -7627,6 +7782,266 @@ async function exportControlPackagePdf(controls, lang, users, departments, onPro
     return true;
   } finally {
     host.remove();
+  }
+}
+
+/* ==DOCX BUILDER START== */
+/* 통제기술서·운영 효과성 테스트 문서를 회사 서식(Word)으로 만든다(2026-09-21 요청).
+   templates/ 의 원본 서식 파일에서 머리말(로고·「ICS Control Documentation」)·꼬리말(인쇄 일자·쪽)·
+   글꼴·용지 설정은 그대로 두고, 본문(<w:body>)만 새로 짠다. 원본 서식의 표 모양을 따른다 —
+   바깥 굵은 선, 회색(E6E6E6) 라벨 칸 오른쪽 정렬, 짙은 청록(004355) 구역 머리, Word 양식 체크 칸.
+   서식 항목은 회의에서 바뀐 구성(리스크 유형·핵심통제·통제 구분·경영진 주장 8종·표본추출방식)을 따른다. */
+const DOCX_TPL = { cd: "templates/ics_control_doc.docx", tp: "templates/ics_test_doc.docx" };
+const DOCX_GRID_CD = [2239, 400, 2067, 400, 2067, 400, 2067];   // 합계 9,640 — 용지 폭(여백 뺀 값)에 맞춘다
+const DOCX_FULL = 9640;
+
+function docxEsc(v) {
+  return String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+/* 여러 줄 글은 줄마다 <w:br/> 로 잇는다. */
+function docxRuns(text, rpr) {
+  const lines = String(text == null ? "" : text).split(/\r?\n/);
+  return lines.map((ln, i) => (i ? `<w:r>${rpr ? `<w:rPr>${rpr}</w:rPr>` : ""}<w:br/></w:r>` : "")
+    + `<w:r>${rpr ? `<w:rPr>${rpr}</w:rPr>` : ""}<w:t xml:space="preserve">${docxEsc(ln)}</w:t></w:r>`).join("");
+}
+const DOCX_FONT = '<w:rFonts w:ascii="CorpoS" w:hAnsi="CorpoS" w:eastAsia="맑은 고딕" w:cs="Arial"/>';
+function docxP(text, o = {}) {
+  const sz = o.size || 19;
+  const rpr = DOCX_FONT + (o.bold ? "<w:b/>" : "") + (o.color ? `<w:color w:val="${o.color}"/>` : "")
+    + `<w:sz w:val="${sz}"/><w:szCs w:val="${sz}"/>` + '<w:lang w:val="en-US" w:eastAsia="ko-KR"/>';
+  const ppr = `<w:pPr><w:spacing w:before="${o.before || 0}" w:after="${o.after || 0}"/>`
+    + (o.align ? `<w:jc w:val="${o.align}"/>` : "") + "</w:pPr>";
+  return `<w:p>${ppr}${docxRuns(text, rpr)}</w:p>`;
+}
+/* Word 양식 체크 칸(원본 서식과 같은 FORMCHECKBOX). 인쇄하면 □·☒ 로 나온다. */
+function docxCheck(on) {
+  return `<w:p><w:pPr><w:spacing w:before="0" w:after="0"/><w:jc w:val="center"/></w:pPr>`
+    + `<w:r><w:fldChar w:fldCharType="begin"><w:ffData><w:name w:val=""/><w:enabled/><w:calcOnExit w:val="0"/>`
+    + `<w:checkBox><w:sizeAuto/><w:default w:val="${on ? 1 : 0}"/></w:checkBox></w:ffData></w:fldChar></w:r>`
+    + `<w:r><w:instrText xml:space="preserve"> FORMCHECKBOX </w:instrText></w:r>`
+    + `<w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>`;
+}
+function docxCell(w, inner, o = {}) {
+  const pr = `<w:tcW w:w="${w}" w:type="dxa"/>`
+    + (o.span > 1 ? `<w:gridSpan w:val="${o.span}"/>` : "")
+    + (o.vMerge ? `<w:vMerge w:val="${o.vMerge}"/>` : "")
+    + (o.fill ? `<w:shd w:val="clear" w:color="auto" w:fill="${o.fill}"/>` : "")
+    + `<w:vAlign w:val="${o.vAlign || "center"}"/>`;
+  return `<w:tc><w:tcPr>${pr}</w:tcPr>${inner || docxP("")}</w:tc>`;
+}
+function docxRow(cells, h) {
+  return `<w:tr><w:trPr>${h ? `<w:trHeight w:val="${h}"/>` : ""}<w:cantSplit/></w:trPr>${cells.join("")}</w:tr>`;
+}
+function docxTbl(grid, rows) {
+  const b = (side, sz) => `<w:${side} w:val="single" w:sz="${sz}" w:space="0" w:color="auto"/>`;
+  return `<w:tbl><w:tblPr><w:tblW w:w="${grid.reduce((a, x) => a + x, 0)}" w:type="dxa"/><w:tblLayout w:type="fixed"/>`
+    + `<w:tblBorders>${b("top", 12)}${b("left", 12)}${b("bottom", 12)}${b("right", 12)}${b("insideH", 4)}${b("insideV", 4)}</w:tblBorders>`
+    + `<w:tblCellMar><w:top w:w="40" w:type="dxa"/><w:left w:w="100" w:type="dxa"/><w:bottom w:w="40" w:type="dxa"/><w:right w:w="100" w:type="dxa"/></w:tblCellMar>`
+    + `</w:tblPr><w:tblGrid>${grid.map((g) => `<w:gridCol w:w="${g}"/>`).join("")}</w:tblGrid>${rows.join("")}</w:tbl>`;
+}
+const docxGap = () => docxP("", { after: 120 });
+
+/* 자주 쓰는 행 모양 */
+function docxSectionRow(title, full, span) {           // 짙은 청록 구역 머리
+  return docxRow([docxCell(full, docxP(title, { bold: true, color: "FFFFFF", align: "center" }), { span, fill: "004355" })], 460);
+}
+function docxQuestionRow(head, q, full, span) {        // 「얼마나 자주? — …」 같은 물음 줄
+  return docxRow([docxCell(full,
+    `<w:p><w:pPr><w:spacing w:before="0" w:after="0"/></w:pPr>${docxRuns(head, DOCX_FONT + '<w:b/><w:sz w:val="19"/>')}${docxRuns("   " + q, DOCX_FONT + '<w:color w:val="404040"/><w:sz w:val="19"/>')}</w:p>`,
+    { span, fill: "F2F2F2" })], 380);
+}
+function docxLabel(text, w, o = {}) { return docxCell(w, docxP(text, { align: "right" }), { fill: "E6E6E6", ...o }); }
+function docxValue(text, w, span) { return docxCell(w, docxP(String(text || "").trim() ? text : "", {}), { span }); }
+
+/* 택일·복수 선택 줄 — 체크 칸 + 이름을 한 줄에 세 개씩. 라벨은 세로로 합친다. */
+function docxOptionRows(label, options, isOn, lang, fmt) {
+  const rows = [];
+  for (let i = 0; i < options.length; i += 3) {
+    const part = options.slice(i, i + 3);
+    const cells = [docxLabel(i === 0 ? label : "", DOCX_GRID_CD[0], { vMerge: options.length > 3 ? (i === 0 ? "restart" : "continue") : "" })];
+    for (let k = 0; k < 3; k++) {
+      const o = part[k];
+      cells.push(docxCell(DOCX_GRID_CD[1 + k * 2], o ? docxCheck(isOn(o.id)) : docxP("")));
+      const f = o && fmt ? fmt(o) : null;
+      cells.push(docxCell(DOCX_GRID_CD[2 + k * 2],
+        !o ? docxP("") : f ? docxP(f.t, { bold: true }) + docxP(f.d, { size: 15, color: "666666" }) : docxP(o[lang])));
+    }
+    rows.push(docxRow(cells, 380));
+  }
+  return rows;
+}
+
+/* ── 통제기술서 본문 ── */
+function buildControlDocBody(c, d, lang, ctx) {
+  const L = (ko, en) => (lang === "en" ? en : ko);
+  const G = DOCX_GRID_CD, FULL = DOCX_FULL, R = G.slice(1).reduce((a, x) => a + x, 0);
+  const cd = d.cd;
+  const one = (label, value) => docxRow([docxLabel(label, G[0]), docxValue(value, R, 6)], 380);
+
+  // 1. 머리 정보
+  const top = docxTbl([2239, 2581, 2239, 2581], [
+    docxRow([docxLabel(L("법인명", "Entity"), 2239), docxValue("STK", 2581), docxLabel(L("부서", "Department"), 2239), docxValue(ctx.dept, 2581)], 380),
+    docxRow([docxLabel(L("회계연도", "Fiscal year"), 2239), docxValue(c.year, 2581), docxLabel(L("시행일", "Effective date"), 2239), docxValue(cd.effDate, 2581)], 380),
+    docxRow([docxLabel(L("통제 세트(주기)", "Control set (cycle)"), 2239), docxValue(cd.setCycle, 7401, 3)], 380),
+  ]);
+
+  // 2. 통제 목표
+  const objective = docxTbl([2239, 7401], [
+    docxSectionRow(L("통제 목표", "Control Objective"), FULL, 2),
+    docxRow([docxLabel(L("코드 번호", "Code"), 2239), docxValue(c.code, 7401)], 380),
+    docxRow([docxLabel(L("통제 목표", "Control objective"), 2239), docxValue(ctx.desc, 7401)], 620),
+  ]);
+
+  // 3. 통제 설계
+  const perf = cd.performers.filter((p) => String(p.role || p.desc || p.dept || "").trim());
+  const perfRows = (perf.length ? perf : [{}, {}]).map((p) => docxRow([
+    docxValue(p.role, G[0]), docxValue(p.desc, G[1] + G[2] + G[3] + G[4], 4), docxValue(p.dept, G[5] + G[6], 2)], 420));
+  const design = docxTbl(G, [
+    docxSectionRow(L("통제 설계", "Control Design"), FULL, 7),
+    one(L("통제명", "Control name"), ctx.name),
+    ...docxOptionRows(L("리스크 유형", "Risk type"), RISK_TYPE_OPTIONS, (id) => cd.riskType === id, lang),
+    ...docxOptionRows(L("핵심통제 여부", "Key control"), KEY_CONTROL_OPTIONS, (id) => cd.keyControl === id, lang),
+    ...docxOptionRows(L("통제 구분", "Control level"), CONTROL_LEVEL_OPTIONS, (id) => cd.level === id, lang),
+    ...docxOptionRows(L("경영진 주장(Assertion)", "Assertion"), ASSERTION_OPTIONS, (id) => cd.assertions.includes(id), lang),
+    ...docxOptionRows(L("통제 방법", "Control method"), CONTROL_METHOD_OPTIONS, (id) => cd.method === id, lang),
+    ...docxOptionRows(L("통제 유형", "Control type"), CONTROL_TYPE_OPTIONS, (id) => cd.ctype === id, lang),
+    one(L("관련 문서", "Related documents"), cd.relatedDocs),
+    one(L("관련 시스템", "Related systems"), cd.relatedSystems),
+    docxQuestionRow(L("얼마나 자주?", "How often?"), L("통제가 얼마나 자주 수행되어야 합니까?", "How often should the control be performed?"), FULL, 7),
+    ...docxOptionRows(L("수행 주기", "Frequency"), PERFORM_CYCLE_OPTIONS, (id) => cd.cycle === id, lang),
+    docxQuestionRow(L("누가?", "Who?"), L("누가 통제를 수행합니까?", "Who performs the control?"), FULL, 7),
+    docxRow([docxLabel(L("역할/직책", "Role / title"), G[0], { }),
+      docxCell(G[1] + G[2] + G[3] + G[4], docxP(L("역할 설명", "Role description"), { align: "center" }), { span: 4, fill: "E6E6E6" }),
+      docxCell(G[5] + G[6], docxP(L("부서", "Department"), { align: "center" }), { span: 2, fill: "E6E6E6" })], 380),
+    ...perfRows,
+    docxQuestionRow(L("어디서?", "Where?"), L("프로세스의 어느 단계에서 통제가 수행됩니까?", "At which step of the process is the control performed?"), FULL, 7),
+    docxRow([docxCell(FULL, docxP(L("프로세스 환경", "Process environment"), { bold: true }), { span: 7 })], 340),
+    docxRow([docxValue(cd.processEnv, FULL, 7)], 700),
+    docxQuestionRow(L("무엇을?", "What?"), L("통제 요건을 충족하기 위해 어떤 활동이 수행됩니까?", "Which activities are performed to meet the control requirement?"), FULL, 7),
+    docxRow([docxCell(FULL, docxP(L("통제 내용 설명", "Control activity"), { bold: true }), { span: 7 })], 340),
+    docxRow([docxValue(cd.activity, FULL, 7)], 1400),
+  ]);
+
+  // 4. 테스트 설계
+  const sampling = SAMPLING_METHOD_OPTIONS;
+  const test = docxTbl(G, [
+    docxSectionRow(L("테스트 설계", "Test Design"), FULL, 7),
+    docxQuestionRow(L("어떻게?", "How?"), L("통제의 운영 효과성을 평가하기 위해 어떤 테스트 절차를 수행합니까?", "Which test procedures assess the operating effectiveness?"), FULL, 7),
+    docxRow([docxLabel(L("테스트 절차 설명", "Test procedure"), G[0]), docxValue(cd.testProc, R, 6)], 1000),
+    one(L("통제 증빙", "Control evidence"), cd.evidence),
+    one(L("필요 표본 수", "Required samples"), `${ctx.recommended}${L("건", "")} ${L("(수행 주기에 따라)", "(by frequency)")}`),
+    ...docxOptionRows(L("표본추출방식", "Sampling method"), sampling, (id) => cd.sampling === id, lang,
+      (o) => ({ t: o[lang], d: lang === "en" ? o.den : o.dko })),
+    one(L("표본 모집단 영역/출처", "Sample population / source"), cd.population),
+  ]);
+
+  const stamp = docxP(`${ctx.stage} · ${L("작성", "Prepared")} ${ctx.date} · ${ctx.preparer}`, { align: "right", size: 16, color: "808080", after: 80 });
+  return stamp + top + docxGap() + objective + docxGap() + design + docxGap() + test;
+}
+
+/* ── 운영 효과성 테스트 문서 본문 ── */
+function buildTestDocBody(c, d, lang, ctx) {
+  const L = (ko, en) => (lang === "en" ? en : ko);
+  const tp = d.tp;
+  const top = docxTbl([2239, 2581, 2239, 2581], [
+    docxRow([docxLabel(L("법인명", "Entity"), 2239), docxValue("STK", 2581), docxLabel(L("부서", "Department"), 2239), docxValue(ctx.dept, 2581)], 380),
+    docxRow([docxLabel(L("회계연도", "Fiscal year"), 2239), docxValue(c.year, 7401, 3)], 380),
+  ]);
+  const info = docxTbl([2239, 7401], [
+    docxRow([docxLabel(L("통제 세트(주기)", "Control set (cycle)"), 2239), docxValue(tp.setCycle, 7401)], 380),
+    docxRow([docxLabel(L("통제명", "Control name"), 2239), docxValue(ctx.name, 7401)], 380),
+    docxRow([docxLabel(L("코드 번호", "Code"), 2239), docxValue(c.code, 7401)], 380),
+    docxRow([docxLabel(L("테스트 절차 참조", "Test procedure reference"), 2239), docxValue(tp.testRef, 7401)], 900),
+  ]);
+  const SG = [700, 1700, 3240, 1500, 2500];
+  const headRow = docxRow([
+    docxCell(SG[0], docxP(L("번호", "No."), { align: "center" }), { fill: "E6E6E6" }),
+    docxCell(SG[1], docxP(L("표본 추출일\n(yyyy-mm-dd)", "Sampling date\n(yyyy-mm-dd)"), { align: "center" }), { fill: "E6E6E6" }),
+    docxCell(SG[2], docxP(L("표본 항목 증빙 문서 참조\n(예: 문서명 약칭/번호)", "Evidence reference\n(e.g. doc name/no.)"), { align: "center" }), { fill: "E6E6E6" }),
+    docxCell(SG[3], docxP(L("표본 항목 평가\n(적정 / 부적정)", "Result\n(Effective / Ineffective)"), { align: "center" }), { fill: "E6E6E6" }),
+    docxCell(SG[4], docxP(L("코멘트", "Comment"), { align: "center" }), { fill: "E6E6E6" }),
+  ], 640);
+  const filled = tp.samples.filter((r) => String(r.date || r.ref || r.result || r.comment || "").trim());
+  // 표본을 아직 안 적었으면 필요 건수만큼 빈 줄을 둔다 — 인쇄해서 손으로 채울 수 있게.
+  const rows = filled.length ? filled : Array.from({ length: Math.max(1, ctx.recommended) }, () => ({}));
+  const res = (v) => { const o = SAMPLE_RESULT_OPTIONS.find((x) => x.id === v); return o ? o[lang] : (v || ""); };
+  const sampleRows = rows.map((r, i) => docxRow([
+    docxCell(SG[0], docxP(String(i + 1), { align: "center" })),
+    docxCell(SG[1], docxP(r.date || "", { align: "center" })),
+    docxValue(r.ref, SG[2]),
+    docxCell(SG[3], docxP(res(r.result), { align: "center" })),
+    docxValue(r.comment, SG[4]),
+  ], 420));
+  const samples = docxTbl(SG, [headRow, ...sampleRows]);
+  const result = docxTbl([2239, 7401], [
+    docxRow([docxLabel(L("테스트 절차 결과", "Test procedure result"), 2239), docxValue(tp.resultText, 7401)], 1200),
+  ]);
+  const stamp = docxP(`${ctx.stage} · ${L("작성", "Prepared")} ${ctx.date} · ${ctx.preparer}`, { align: "right", size: 16, color: "808080", after: 80 });
+  return stamp + top + docxGap() + info + docxGap() + samples + docxGap() + result;
+}
+
+/* 원본 서식 파일의 본문만 갈아 끼운다. 머리말·꼬리말·용지 설정(sectPr)은 원본 그대로. */
+function docxReplaceBody(tplBytes, bodyXml) {
+  const files = fflate.unzipSync(tplBytes);
+  const path = "word/document.xml";
+  let xml = new TextDecoder().decode(files[path]);
+  const b0 = xml.indexOf("<w:body>"), b1 = xml.lastIndexOf("</w:body>");
+  const inner = xml.slice(b0 + 8, b1);
+  const sect = (inner.match(/<w:sectPr[\s\S]*<\/w:sectPr>\s*$/) || [""])[0];
+  xml = xml.slice(0, b0 + 8) + bodyXml + sect + xml.slice(b1);
+  files[path] = new TextEncoder().encode(xml);
+  return fflate.zipSync(files);
+}
+
+/* 통제 한 건의 두 서식을 Word 로 만든다. 돌려주는 값: [{ name, bytes }, …] */
+async function buildIcsDocxFiles(c, doc, lang, ctx, fetchTpl) {
+  const d = normalizeIsaDoc(doc);
+  const [cdTpl, tpTpl] = await Promise.all([fetchTpl(DOCX_TPL.cd), fetchTpl(DOCX_TPL.tp)]);
+  const tag = `${c.code}_${c.year}_${ctx.stage}`;
+  return [
+    { name: `STK_통제기술서_${tag}.docx`, bytes: docxReplaceBody(cdTpl, buildControlDocBody(c, d, lang, ctx)) },
+    { name: `STK_테스트수행_${tag}.docx`, bytes: docxReplaceBody(tpTpl, buildTestDocBody(c, d, lang, ctx)) },
+  ];
+}
+/* ==DOCX BUILDER END== */
+
+/* ICS 에서 부르는 입구. 서식 파일은 같은 사이트(templates/)에서 받는다. */
+const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+async function icsBuildDocx(c, doc, lang, users, departments, stage) {
+  const ctx = {
+    dept: deptName(c.dept, lang, departments),
+    name: cName(c, lang),
+    desc: cDesc(c, lang),
+    recommended: recommendedSample(c.importance, c.frequency),
+    stage,
+    date: new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10),
+    preparer: personByEmail(c.accessor, lang, users),
+  };
+  const fetchTpl = async (path) => {
+    const res = await fetch(path, { cache: "no-cache" });
+    if (!res.ok) throw new Error("서식 파일을 불러오지 못했습니다: " + path + " (" + res.status + ")");
+    return new Uint8Array(await res.arrayBuffer());
+  };
+  return buildIcsDocxFiles(c, doc, lang, ctx, fetchTpl);
+}
+/* 만든 Word 를 요청 항목의 첨부 폴더(Documentation)에 올린다. 제출할 때 부른다. */
+async function icsSaveDocx(c, spId, doc, lang, users, departments, stage) {
+  const files = await icsBuildDocx(c, doc, lang, users, departments, stage);
+  for (const f of files) {
+    await icsUploadAttachment(spId, new File([f.bytes], f.name, { type: DOCX_MIME }), "Documentation");
+  }
+  return files.map((f) => f.name);
+}
+/* 화면에서 바로 내려받기. */
+async function icsDownloadDocx(c, doc, lang, users, departments, stage) {
+  const files = await icsBuildDocx(c, doc, lang, users, departments, stage);
+  for (const f of files) {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([f.bytes], { type: DOCX_MIME }));
+    a.download = f.name;
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+    await new Promise((r) => setTimeout(r, 250));
   }
 }
 
@@ -11391,6 +11806,8 @@ async function loadIcsControls() {
     match.selfCommentEn = stripSpRichText(f.SelfCommentEn) || "";
     match.selfDate = f.SelfDate ? String(f.SelfDate) : null;  // 원본 ISO 유지 - 표시 시점에 formatDateTime 으로 포맷
     match.actualSample = f.SampleCount !== undefined && f.SampleCount !== "" && f.SampleCount !== null ? Number(f.SampleCount) : null;
+    // FSA 샘플링 건수 — ISA(SampleCount)와 따로 둔다. 열이 없으면 null.
+    match.fsaActualSample = f.FsaSampleCount !== undefined && f.FsaSampleCount !== "" && f.FsaSampleCount !== null ? Number(f.FsaSampleCount) : null;
     // 통제기술서·테스트수행 서식(JSON 한 덩어리). 열이 없거나 값이 깨졌으면 없는 것으로 둔다.
     match.isaDoc = null;
     if (f.IsaDocJson) {
