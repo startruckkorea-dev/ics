@@ -3041,23 +3041,20 @@ function StageCard({ stage, control: c, title, risk, who, actor, when, text, emp
             {when ? <span className="text-[11px] text-slate-500">{formatDateTime(when, lang)}</span> : null}
           </div>
         </div>
-        {/* 승인·반려는 구분선 바로 아래, 알약 없이 글자로 둔다(09-21 요청).
-            네 카드가 같은 자리에서 시작하므로 위아래로 훑을 때 결과가 세로로 정렬된다. */}
-        <div className="px-3.5 pt-2.5">
-          <span className="text-[14px] font-bold" style={{ color: o.fg }}>{t("detail." + o.key)}</span>
+        {/* 구분선 아래 한 줄 — 왼쪽은 사람, 오른쪽 끝은 승인·반려(글자).
+            결과를 따로 한 줄로 두니 카드가 길어져, 사람과 같은 줄에 붙였다(09-21 요청).
+            오른쪽 끝에 두므로 네 카드의 결과가 세로로 정렬된다. */}
+        <div className="flex items-center gap-2 px-3.5 pt-2">
+          {who ? <span className="text-[12px] text-slate-600">{who}</span> : null}
+          {actor ? (
+            <span className="text-[11px] font-semibold rounded-md px-1.5 py-0.5"
+                  style={{ color: "#8A5A0C", backgroundColor: "#FBEDDC" }}>
+              {t("self.processedBy")} {actor}
+            </span>
+          ) : null}
+          <span className="ml-auto text-[13px] font-bold flex-shrink-0" style={{ color: o.fg }}>{t("detail." + o.key)}</span>
         </div>
-        {(who || actor) && (
-          <div className="flex items-center gap-2 flex-wrap px-3.5 pt-1.5">
-            {who ? <span className="text-[12px] text-slate-600">{who}</span> : null}
-            {actor ? (
-              <span className="text-[11px] font-semibold rounded-md px-1.5 py-0.5"
-                    style={{ color: "#8A5A0C", backgroundColor: "#FBEDDC" }}>
-                {t("self.processedBy")} {actor}
-              </span>
-            ) : null}
-          </div>
-        )}
-        <p className="px-3.5 py-2.5 text-sm whitespace-pre-wrap"
+        <p className="px-3.5 pt-1.5 pb-2.5 text-sm whitespace-pre-wrap"
            style={{ color: body ? "#334155" : "#94A3B8" }}>
           {body || (started ? t("detail.noComment") : empty)}
         </p>
