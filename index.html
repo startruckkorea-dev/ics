@@ -985,6 +985,7 @@ const STR = {
     },
     detail: {
       desc: "통제 설명", accessor: "1차 담당자(Accessor)", reviewer: "2차 검토자(Reviewer)",
+      noComment: "의견 없음",
       outcomeApproved: "승인", outcomeReturned: "반려", outcomePending: "검토 대기",
       outcomeNone: "진행 전", outcomeSubmitted: "제출 완료", outcomeNotSubmitted: "미제출",
       samplingInfo: "샘플링 정보", freq: "빈도", importance: "중요도", recommended: "권장 건수", actual: "실제 샘플링",
@@ -1452,6 +1453,7 @@ const STR = {
     },
     detail: {
       desc: "Description", accessor: "1st Accessor", reviewer: "2nd Reviewer",
+      noComment: "No comment",
       outcomeApproved: "Approved", outcomeReturned: "Returned", outcomePending: "Awaiting review",
       outcomeNone: "Not started", outcomeSubmitted: "Submitted", outcomeNotSubmitted: "Not submitted",
       samplingInfo: "Sampling info", freq: "Frequency", importance: "Importance", recommended: "Recommended", actual: "Actual sample",
@@ -3017,17 +3019,24 @@ function StageCard({ stage, control: c, title, risk, who, actor, when, text, emp
   const { lang, t } = useLang();
   const o = stageOutcome(stage, c);
   const body = String(text || "").trim();
+  /* 「승인」 인데 「아직 진행되지 않았습니다」 가 뜨던 자리 — 검토자가 의견 없이
+     승인하면 본문이 비는데, 그때 진행 전 안내를 내보내 앞뒤가 맞지 않았다(09-21).
+     끝난 단계는 「의견 없음」 으로 적는다. */
+  const started = o.key !== "outcomeNone" && o.key !== "outcomeNotSubmitted";
   return (
     <div className="rounded-xl border border-slate-200 bg-white overflow-hidden flex">
       <div className="w-1 flex-shrink-0" style={{ backgroundColor: o.fg }} />
       <div className="flex-1 min-w-0">
+        {/* 승인·반려는 줄 맨 오른쪽에 둔다 — APS 결재 이력이 상태를 그 자리에 두어,
+            여러 건을 위아래로 훑을 때 결과가 한 줄로 정렬되어 읽힌다.
+            제목 옆에 붙여 두었더니 단계마다 위치가 들쭉날쭉했다(09-21 지적). */}
         <div className="flex items-center gap-2 flex-wrap px-3.5 py-2 border-b border-slate-100">
           <span className="text-[13px] font-bold text-slate-800">{title}</span>
-          <span className="text-[11px] font-bold rounded-md px-2 py-0.5"
-                style={{ color: o.fg, backgroundColor: o.bg }}>{t("detail." + o.key)}</span>
           <div className="ml-auto flex items-center gap-2 flex-shrink-0">
             {risk ? <RiskBadge risk={risk} /> : null}
             {when ? <span className="text-[11px] text-slate-500">{formatDateTime(when, lang)}</span> : null}
+            <span className="text-[11px] font-bold rounded-md px-2 py-0.5"
+                  style={{ color: o.fg, backgroundColor: o.bg }}>{t("detail." + o.key)}</span>
           </div>
         </div>
         {(who || actor) && (
@@ -3042,7 +3051,9 @@ function StageCard({ stage, control: c, title, risk, who, actor, when, text, emp
           </div>
         )}
         <p className="px-3.5 py-2.5 text-sm whitespace-pre-wrap"
-           style={{ color: body ? "#334155" : "#94A3B8" }}>{body || empty}</p>
+           style={{ color: body ? "#334155" : "#94A3B8" }}>
+          {body || (started ? t("detail.noComment") : empty)}
+        </p>
       </div>
     </div>
   );
