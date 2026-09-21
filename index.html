@@ -5615,6 +5615,16 @@ function SelfAssessForm({ control, draft, setDraft, onCancel, onSubmit, onSkip }
         value={draft.comment}
         onChange={(e) => setDraft({ ...draft, comment: e.target.value })}
       />
+      {/* 제출 조건 안내는 입력란 바로 아래에 둔다. 서식 탭·첨부 목록 아래에 있으니
+          「선택 입력」 안내에 딸린 말처럼 읽히고, 색도 청록이라 안내문과 구별되지 않았다
+          (09-21 지적). 모자란 것이 있다는 뜻이므로 짙은 빨강으로 강조한다. */}
+      {missing.length > 0 && (
+        <p className="mt-2 flex items-start gap-1.5 text-[12px] font-semibold rounded-lg px-3 py-2 border"
+           style={{ color: "#9F1D1D", backgroundColor: "#FEF2F2", borderColor: "#FBD5D5" }}>
+          <AlertTriangle size={13} className="flex-shrink-0 mt-px" />
+          <span>{t("self.needTitle")} {missing.join(" · ")}</span>
+        </p>
+      )}
       </div>
 
       {/* 서식은 평가 근거 아래에 접어 둔다 — 평가 자체의 흐름을 가리지 않게. */}
@@ -5641,11 +5651,6 @@ function SelfAssessForm({ control, draft, setDraft, onCancel, onSubmit, onSkip }
         </ul>
       )}
 
-      {missing.length > 0 && (
-        <p className="text-xs mb-2 text-right" style={{ color: BRAND.accent }}>
-          {t("self.needTitle")} {missing.join(" · ")}
-        </p>
-      )}
       {/* 왼쪽은 ISA 생략, 오른쪽은 취소·제출. 생략은 「연 1회」 일 때만 나온다 —
           폼에서 점검 빈도를 바꾸면 그 값(curFreq)을 따른다. */}
       <div className="flex justify-between items-center gap-2 mt-4 pt-4 border-t border-slate-200">
