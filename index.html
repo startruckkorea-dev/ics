@@ -421,6 +421,21 @@ function normalizeIsaDoc(raw) {
   tp.samples = Array.isArray(tp.samples) ? tp.samples : [];
   return { ver: 1, cd, tp };
 }
+/* 서식을 SharePoint 에 넣을 문자열로 만든다.
+   IsaDocJson 열이 「향상된 서식 있는 텍스트」 로 만들어져 있으면(09-21), 저장할 때 SharePoint 가
+   값을 HTML 로 보고 정리한다. 담당자가 쓴 「금액 < 1억」·「A&B」 같은 글자가 태그·엔티티로
+   오인되어 잘리거나 바뀌면 JSON 이 깨져 서식 전체를 읽지 못하게 된다.
+   <·>·& 를 JSON 이 허용하는 \u 표기로 바꿔 HTML 로 해석될 글자를 아예 없앤다.
+   읽을 때는 JSON.parse 가 원래 글자로 돌려주므로 따로 풀 필요가 없고,
+   서식 있는 텍스트가 감싸는 <div> 와 &quot; 는 stripSpRichText 가 걷어 낸다.
+   일반 텍스트 열이어도 그대로 동작한다. */
+function isaDocSerialize(doc) {
+  return JSON.stringify(doc)
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e")
+    .replace(/&/g, "\\u0026");
+}
+
 /* 한 칸이라도 채웠는지 — 저장할지 판단하고, 목록에 「서식 작성됨」 을 표시하는 데 쓴다. */
 function isaDocFilled(doc) {
   if (!doc) return false;
@@ -4579,7 +4594,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
       let docSaved = docFilled;
       if (docFilled) {
         try {
-          await icsUpdateItem(ICS_LISTS.requests, spId, { IsaDocJson: JSON.stringify(docObj) });
+          await icsUpdateItem(ICS_LISTS.requests, spId, { IsaDocJson: isaDocSerialize(docObj) });
         } catch (e) {
           docSaved = false;
           console.warn("[ICS] 서식 저장 실패(평가는 저장됨):", e.message);
@@ -5972,7 +5987,7 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
       let docSaved = docFilled;
       if (docFilled) {
         try {
-          await icsUpdateItem(ICS_LISTS.requests, c.requestSpId, { IsaDocJson: JSON.stringify(docObj) });
+          await icsUpdateItem(ICS_LISTS.requests, c.requestSpId, { IsaDocJson: isaDocSerialize(docObj) });
         } catch (e) {
           docSaved = false;
           console.warn("[ICS] FSA 서식 저장 실패(평가는 저장됨):", e.message);
