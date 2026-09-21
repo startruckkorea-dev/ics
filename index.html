@@ -4939,7 +4939,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
                             style={{ color: "#64748B", backgroundColor: "#F1F5F9", borderColor: "#CBD3DD" }}>
                         {t("self.skipBadge")}
                       </span>
-                    : <RiskBadge risk={c.selfRisk} />}
+                    : null /* 신호등은 아래 카드 머리줄에 있다(09-21) */}
                   <StatusBadge status={c.status} kind="isa" />
                 </div>
               </div>
@@ -5836,7 +5836,7 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
                   <p className="font-medium text-slate-800">{cName(c, lang)}</p>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
-                  <RiskBadge risk={c.fsaRisk} />
+                  {/* 신호등은 아래 카드 머리줄에 있어 여기서는 뺐다(09-21). 상태만 남긴다. */}
                   <StatusBadge status={c.fsaStatus} kind="fsa" />
                 </div>
               </div>
@@ -6071,7 +6071,7 @@ function FSAReviewPage({ controls, setControls, currentUser, addLog, isArchived,
                   <p className="font-medium text-slate-800">{cName(c, lang)}</p>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
-                  <RiskBadge risk={c.fsaReviewRisk} />
+                  {/* 신호등은 아래 카드 머리줄에 있어 여기서는 뺐다(09-21). 상태만 남긴다. */}
                   <StatusBadge status={c.fsaStatus} kind="fsa" />
                 </div>
               </div>
@@ -6302,7 +6302,7 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, sh
                   <p className="font-medium text-slate-800">{cName(c, lang)}</p>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
-                  <RiskBadge risk={c.reviewRisk} />
+                  {/* 신호등은 아래 카드 머리줄에 있어 여기서는 뺐다(09-21). 상태만 남긴다. */}
                   <StatusBadge status={c.status} kind="isa" />
                 </div>
               </div>
