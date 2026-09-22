@@ -3117,7 +3117,8 @@ function StageLine({ stage, control: c, hideRisk, compact, onOpen }) {
   const result = skipped ? (lang === "en" ? "→ FSA" : "FSA 수행") : t("detail." + o.key);
   /* hideRisk — 반려된 건을 작성 목록에 띄울 때는 신호등을 빼고 「단계 · 일시 · 결과」 만(09-22 요청).
      onOpen — 누르면 반려 사유 팝업을 연다. 누를 수 있다는 것을 끝의 꺾쇠와 마우스 모양으로 알린다. */
-  /* compact — ISA 1차 자가평가 화면용: 「[ISA] 2차 검토 · 반려/승인」 만(신호등 · 시간 없이, 09-22 요청).
+  /* compact — 「[ISA] 2차 검토 · 반려/승인」 만(신호등 · 시간 없이, 09-22 요청). ISA 1차에서 시작해
+     ISA 2차 검토 · FSA 최종 · FSA 2차검토 목록 모두 이 모양이다(같은 날 요청).
      자세한 내용은 반려 줄을 누르거나 카드를 눌러 세부 내용에서 본다. */
   if (compact) hideRisk = true;
   const cols = compact ? ["30px", "78px", "64px"] : hideRisk ? ["30px", "78px", "88px", "64px"] : ["30px", "78px", "60px", "88px", "64px"];
@@ -6450,7 +6451,7 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
                       FSA 판정처럼 읽혔고, FSA 는 아직 판정 전이라 보여 줄 값도 없다(09-21 지적).
                       반려 상태 표시만 남긴다. */}
                   <div className="flex items-center gap-2 min-w-0">
-                    {c.fsaStatus === "returned" && <StageLine stage="fsaReview" control={c} hideRisk onOpen={() => setReasonFor(c.id)} />}
+                    {c.fsaStatus === "returned" && <StageLine stage="fsaReview" control={c} compact onOpen={() => setReasonFor(c.id)} />}
                     {reasonFor === c.id && <ReturnReasonPopup control={c} phase="FSA" onClose={() => setReasonFor(null)} />}
                   </div>
                 </div>
@@ -6488,7 +6489,7 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
                   <p className="font-medium text-slate-800">{cName(c, lang)}</p>
                 </div>
                 <div className="flex items-center gap-2 min-w-0">
-                  <StageLine stage={c.fsaStatus === "submitted_self" ? "fsaSelf" : "fsaReview"} control={c} />
+                  <StageLine stage={c.fsaStatus === "submitted_self" ? "fsaSelf" : "fsaReview"} control={c} compact />
                 </div>
               </div>
               <div className="space-y-2">
@@ -6704,7 +6705,7 @@ function FSAReviewPage({ controls, setControls, currentUser, addLog, isArchived,
                   <p className="font-medium text-slate-800">{cName(c, lang)}</p>
                 </div>
                 <div className="flex items-center gap-2 min-w-0">
-                  <StageLine stage="fsaReview" control={c} />
+                  <StageLine stage="fsaReview" control={c} compact />
                 </div>
               </div>
             </div>
@@ -6904,7 +6905,7 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, sh
                   <p className="font-medium text-slate-800">{cName(c, lang)}</p>
                 </div>
                 <div className="flex items-center gap-2 min-w-0">
-                  <StageLine stage="isaReview" control={c} />
+                  <StageLine stage="isaReview" control={c} compact />
                 </div>
               </div>
             </div>
