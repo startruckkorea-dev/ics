@@ -5287,7 +5287,9 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
                     <div className="flex gap-2 text-[15px] min-w-0">
                       <span className="text-slate-400 w-[76px] flex-shrink-0 text-[13px] pt-0.5">{t("manage.fieldDesc")}</span>
                       {/* 한 줄로 두고 작성 단추에 닿으면 … 로 줄인다. 전체는 마우스를 올리거나 작성 폼 위에서 본다. */}
-                      <span className="text-slate-500 truncate min-w-0" title={cDesc(c, lang) || ""} data-desc-line>{cDesc(c, lang) || "-"}</span>
+                      {/* 작성 중(editing)이면 단추가 없으니 줄이지 않고 전부 보인다 — 작성하면서 설명 전체를 봐야 한다(09-22). */}
+                      <span className={"text-slate-500 min-w-0 " + (editing === c.id ? "whitespace-pre-wrap break-words" : "truncate")}
+                            title={editing === c.id ? "" : cDesc(c, lang) || ""} data-desc-line>{cDesc(c, lang) || "-"}</span>
                     </div>
                   </div>
                   {showWrite && (
@@ -6437,7 +6439,8 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
                 {/* 통제 설명과 「최종 자가평가 작성」 을 한 줄로 — 단추는 설명 오른쪽, 설명은 단추에 닿으면 … (09-22 요청).
                     ISA 1차 자가평가 카드와 같은 모양. 전체 설명은 마우스를 올리거나 카드를 눌러 세부 내용에서 본다. */}
                 <div className={"flex items-center gap-4 mt-1 " + (editing === c.id ? "mb-1" : "")}>
-                  <p className="text-sm text-slate-500 truncate min-w-0 flex-1" title={cDesc(c, lang) || ""} data-desc-line>{cDesc(c, lang) || "-"}</p>
+                  <p className={"text-sm text-slate-500 min-w-0 flex-1 " + (editing === c.id ? "whitespace-pre-wrap break-words" : "truncate")}
+                     title={editing === c.id ? "" : cDesc(c, lang) || ""} data-desc-line>{cDesc(c, lang) || "-"}</p>
                   {!isArchived && editing !== c.id && (
                     <button onClick={() => startEdit(c)} data-write-btn
                             className="text-sm font-medium px-4 py-2 rounded-lg text-white whitespace-nowrap flex-shrink-0" style={{ backgroundColor: BRAND.accent }}>
