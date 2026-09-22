@@ -1188,9 +1188,6 @@ const STR = {
       waitingIsa: "ISA 2차 검토가 완료된 후 최종 자가평가를 진행할 수 있습니다.",
       noNeedsAction: "현재 최종평가가 필요한 항목이 없습니다.", noSubmitted: "제출된 최종평가가 없습니다.",
       rejectReasonTitle: "FSA 검토자 반려 사유",
-      sameAsIsa: "ISA 1차와 동일",
-      sameAsIsaHint: "ISA 에서 판단한 리스크 수준 · 근거 · 샘플링 건수를 그대로 가져오고, ISA 샘플링 자료를 근거로 씁니다.",
-      isaAttachUsed: "근거로 쓰는 ISA 샘플링 자료",
     },
     fsaReview: {
       title: "FSA 2차검토",
@@ -1671,9 +1668,6 @@ const STR = {
       waitingIsa: "The final self-assessment becomes available once ISA 2nd review is complete.",
       noNeedsAction: "No items currently need a final assessment.", noSubmitted: "No final assessments submitted yet.",
       rejectReasonTitle: "FSA reviewer's return reason",
-      sameAsIsa: "Same as ISA 1st",
-      sameAsIsaHint: "Copies the ISA risk level, rationale and sample count, and uses the ISA sampling files as evidence.",
-      isaAttachUsed: "ISA sampling files used as evidence",
     },
     fsaReview: {
       title: "FSA 2nd Review",
@@ -3425,26 +3419,25 @@ function ControlDetailBody({ control: c }) {
         <div><span className="text-slate-400">{t("detail.reviewer")}</span><p className="text-slate-700 font-medium">{personByEmail(c.reviewer, lang, users)}</p></div>
       </div>
 
-      {/* 샘플링 정보 — 점검 빈도·중요도·권장 건수는 통제 공통, 실제 건수와 첨부는 단계마다 따로.
-          하나로 합쳐 두었더니 FSA 를 제출하면 ISA 건수가 덮여 어느 단계 값인지 알 수 없었다(09-21). */}
+      {/* 샘플링 정보 — ISA · FSA 가 점검 빈도 · 중요도 · 권장 건수 · 실제 건수 · 첨부를 각자 갖는다(09-22 요청).
+          FSA 는 ISA 값을 불러와 바꿀 수 있고, 따로 저장된다. FSA 를 아직 안 했으면 「-」. */}
       <div className="border-t border-slate-100 pt-4">
         <p className="text-xs font-semibold text-slate-500 mb-2">{t("detail.samplingInfo")}</p>
-        <div className="grid grid-cols-3 gap-3 text-sm bg-slate-50 rounded-lg p-3 mb-2">
-          <div><span className="text-xs text-slate-400">{t("detail.freq")}</span><p className="text-slate-700 font-medium">{freqLabel(c.frequency, lang)}</p></div>
-          <div><span className="text-xs text-slate-400">{t("detail.importance")}</span><p className="text-slate-700 font-medium">{importanceLabel(c.importance, lang)}</p></div>
-          <div><span className="text-xs text-slate-400">{t("detail.recommended")}</span><p className="text-slate-700 font-medium">{recommendedSample(c.importance, c.frequency)}{t("common.items")}</p></div>
-        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
           {[
-            { phase: "ISA", count: c.actualSample, atts: c.attachments || [], sub: "" },
-            { phase: "FSA", count: c.fsaActualSample, atts: c.fsaAttachments || [], sub: "FSA" },
+            { phase: "ISA", freq: c.frequency, imp: c.importance, count: c.actualSample, atts: c.attachments || [], sub: "" },
+            { phase: "FSA", freq: c.fsaFrequency, imp: c.fsaImportance, count: c.fsaActualSample, atts: c.fsaAttachments || [], sub: "FSA" },
           ].map((b) => (
             <div key={b.phase} className="rounded-lg border border-slate-200 p-3">
               <div className="flex items-center gap-2 mb-2">
                 <span className="text-[10px] font-bold tracking-wide rounded px-1.5 py-0.5 text-white"
                       style={{ backgroundColor: b.phase === "FSA" ? BRAND.accent : BRAND.navy }}>{b.phase}</span>
-                <span className="text-xs text-slate-500">{t("detail.actual")}</span>
-                <span className="text-sm font-semibold text-slate-800 ml-auto">{b.count != null ? `${b.count}${t("common.items")}` : "-"}</span>
+              </div>
+              <div className="grid grid-cols-4 gap-2 text-[12px] bg-slate-50 rounded-md px-2.5 py-2 mb-2" data-sampling-box={b.phase}>
+                <div><p className="text-[10.5px] text-slate-400">{t("detail.freq")}</p><p className="font-medium text-slate-700">{b.freq ? freqLabel(b.freq, lang) : "-"}</p></div>
+                <div><p className="text-[10.5px] text-slate-400">{t("detail.importance")}</p><p className="font-medium text-slate-700">{b.imp ? importanceLabel(b.imp, lang) : "-"}</p></div>
+                <div><p className="text-[10.5px] text-slate-400">{t("detail.recommended")}</p><p className="font-medium text-slate-700">{b.freq && b.imp ? `${recommendedSample(b.imp, b.freq)}${t("common.items")}` : "-"}</p></div>
+                <div><p className="text-[10.5px] text-slate-400">{t("detail.actual")}</p><p className="font-semibold text-slate-800">{b.count != null ? `${b.count}${t("common.items")}` : "-"}</p></div>
               </div>
               <p className="text-[11px] font-medium text-slate-500 mb-1 flex items-center gap-1"><Paperclip size={11} /> {t("detail.attachments")} ({b.atts.length})</p>
               {b.atts.length > 0 ? (
@@ -6085,15 +6078,26 @@ function SelfAssessForm({ control, draft, setDraft, onCancel, onSubmit, onSkip }
 function FSAForm({ draft, setDraft, onCancel, onSubmit, control }) {
   const { lang, t } = useLang();
   const fileInputRef = useRef(null);
-  const recommended = control ? recommendedSample(control.importance, control.frequency) : 0;
-  /* ISA 1차 자가평가와 같은 모양으로 만든다(09-21 요청). 점검 빈도·중요도는 통제 공통 값이라
-     FSA 에서는 보여 주기만 한다(ISA 이후에 바꾸면 이미 끝난 ISA 의 권장 건수가 흔들린다). */
+  /* 점검 빈도 · 중요도 · 샘플링 건수 — ISA 에서 쓴 값을 그대로 불러오되 FSA 에서 바꿀 수 있다(09-22 요청).
+     FSA 값은 통제 항목(ISA 값)을 건드리지 않고 그 해 요청(ICS_Requests)의 FsaFrequency · FsaImportance ·
+     FsaSampleCount 에 따로 저장한다 — 세부 내용의 샘플링 정보도 ISA · FSA 로 나눠 보인다. */
+  const curFreq = draft.frequency ?? (control && (control.fsaFrequency || control.frequency));
+  const curImp = draft.importance ?? (control && (control.fsaImportance || control.importance));
+  const recommended = control ? recommendedSample(curImp, curFreq) : 0;
+  // 기준을 바꾸면 권장 건수도 맞춘다. 담당자가 실제 건수를 따로 조정했으면 덮지 않는다(ISA 와 같다).
+  function changeCriteria(patch) {
+    const nextFreq = patch.frequency ?? curFreq;
+    const nextImp = patch.importance ?? curImp;
+    const prevReco = recommendedSample(curImp, curFreq);
+    const next = { ...draft, ...patch };
+    if (Number(draft.sampleSize) === prevReco) next.sampleSize = recommendedSample(nextImp, nextFreq);
+    setDraft(next);
+  }
   const isaSkipped = control ? isIsaSkipped(control) : false;
-  const isaAtts = (control && control.attachments) || [];
 
   const commentLen = (draft.comment || "").trim().length;
   const sampleNum = Number(draft.sampleSize);
-  const hasAttach = (draft.attachments || []).length > 0 || (draft.sameAsIsa && isaAtts.length > 0);
+  const hasAttach = (draft.attachments || []).length > 0;
   const attachBytes = (draft.attachments || []).reduce((n, a) => n + (a.rawSize || 0), 0);
   const missing = [];
   if (!draft.risk) missing.push(t("self.needRisk"));
@@ -6101,18 +6105,6 @@ function FSAForm({ draft, setDraft, onCancel, onSubmit, control }) {
   if (!(sampleNum > 0)) missing.push(t("self.needSample"));
   if (!hasAttach) missing.push(t("self.needAttach"));
 
-  /* 「ISA 1차와 동일」 — ISA 에서 판단한 리스크·근거·샘플링 건수를 그대로 가져온다.
-     샘플링 자료도 ISA 에 올린 것을 근거로 쓴다(따로 다시 올리지 않아도 된다).
-     체크를 풀면 가져온 값은 그대로 두고 고칠 수 있게 한다. ISA 를 생략한 항목에는 가져올 값이 없어 보이지 않는다. */
-  function toggleSame(on) {
-    if (!on) { setDraft({ ...draft, sameAsIsa: false }); return; }
-    setDraft({
-      ...draft, sameAsIsa: true,
-      risk: control.selfRisk || draft.risk,
-      comment: (lang === "en" ? control.selfCommentEn || control.selfComment : control.selfComment) || draft.comment,
-      sampleSize: control.actualSample ?? draft.sampleSize,
-    });
-  }
 
   function handleFiles(e) {
     const files = Array.from(e.target.files || []);
@@ -6131,19 +6123,9 @@ function FSAForm({ draft, setDraft, onCancel, onSubmit, control }) {
     setDraft({ ...draft, attachments: draft.attachments.filter((_, i) => i !== idx) });
   }
   const labelCls = "text-[13px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5";
-  const roSel = "w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-500 bg-slate-50";
 
   return (
     <div className="bg-white border border-slate-300 rounded-xl p-5 mt-3 shadow-sm">
-      {control && !isaSkipped && (
-        <label className="flex items-center gap-2.5 mb-4 px-3.5 py-2.5 rounded-xl border cursor-pointer select-none"
-               style={{ borderColor: draft.sameAsIsa ? BRAND.accent : "#CBD3DD", backgroundColor: draft.sameAsIsa ? "#F0FBF8" : "#F8FAFC" }}>
-          <input type="checkbox" className="w-4 h-4 accent-teal-600" data-same-as-isa
-                 checked={!!draft.sameAsIsa} onChange={(e) => toggleSame(e.target.checked)} />
-          <span className="text-sm font-semibold" style={{ color: draft.sameAsIsa ? BRAND.accent : "#334155" }}>{t("fsa.sameAsIsa")}</span>
-          <span className="text-[12px] text-slate-500">{t("fsa.sameAsIsaHint")}</span>
-        </label>
-      )}
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-x-6 gap-y-5">
         <div>
@@ -6171,11 +6153,15 @@ function FSAForm({ draft, setDraft, onCancel, onSubmit, control }) {
         <div className="grid grid-cols-2 gap-3 items-end xl:pl-6 xl:border-l xl:border-slate-200">
           <div>
             <p className={labelCls}>{t("manage.fieldFreq")}</p>
-            <div className={roSel}>{control ? freqLabel(control.frequency, lang) : "-"}</div>
+            <select className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-100 focus:border-teal-400 bg-white" value={curFreq || ""} onChange={(e) => changeCriteria({ frequency: e.target.value })} data-fsa-freq>
+              {FREQUENCY_OPTIONS.map((o) => <option key={o.id} value={o.id}>{o[lang]}</option>)}
+            </select>
           </div>
           <div>
             <p className={labelCls}>{t("manage.fieldImportance")}</p>
-            <div className={roSel}>{control ? importanceLabel(control.importance, lang) : "-"}</div>
+            <select className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-100 focus:border-teal-400 bg-white" value={curImp || ""} onChange={(e) => changeCriteria({ importance: e.target.value })} data-fsa-imp>
+              {IMPORTANCE_OPTIONS.map((o) => <option key={o.id} value={o.id}>{o[lang]}</option>)}
+            </select>
           </div>
           <div>
             <p className={labelCls + " truncate"}>
@@ -6247,21 +6233,6 @@ function FSAForm({ draft, setDraft, onCancel, onSubmit, control }) {
         />
       )}
 
-      {/* ISA 와 동일을 골랐으면 ISA 에 올린 샘플링 자료를 근거로 쓴다는 것을 보여 준다. */}
-      {draft.sameAsIsa && isaAtts.length > 0 && (
-        <div className="mt-3">
-          <p className="text-[11px] font-medium text-slate-500 mb-1">{t("fsa.isaAttachUsed")}</p>
-          <ul className="space-y-1.5">
-            {isaAtts.map((a, i) => (
-              <li key={i} className="flex items-center gap-2 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
-                <span className="text-[10px] font-bold rounded px-1.5 py-0.5 text-white" style={{ backgroundColor: BRAND.navy }}>ISA</span>
-                <Paperclip size={12} className="text-slate-400 flex-shrink-0" />
-                <span className="truncate">{a.name}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
 
       {(draft.attachments || []).length > 0 && (
         <ul className="mt-3 space-y-1.5">
@@ -6320,9 +6291,10 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
       risk: c.fsaRisk,
       comment: c.fsaComment || "",
       attachments: c.fsaAttachments || [],
-      // FSA 샘플링 건수는 따로 둔다. 처음이면 권장 건수로 시작한다.
-      sampleSize: c.fsaActualSample ?? recommendedSample(c.importance, c.frequency),
-      sameAsIsa: false,
+      // FSA 기준은 따로 둔다. 처음이면 ISA 값(점검 빈도 · 중요도 · 실제 샘플링 건수)을 그대로 불러온다.
+      frequency: c.fsaFrequency || c.frequency,
+      importance: c.fsaImportance || c.importance,
+      sampleSize: c.fsaActualSample ?? c.actualSample ?? recommendedSample(c.importance, c.frequency),
       doc,
     });
   }
@@ -6353,15 +6325,17 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
         /* SampleCount(ISA 샘플링 건수)는 건드리지 않는다. 예전에는 FSA 제출이 그 값을 덮어
            ISA 가 몇 건을 봤는지 사라졌다(09-21). FSA 건수는 아래에서 FsaSampleCount 에 따로 둔다. */
       });
-      /* FsaSampleCount 는 새 열이라 없는 환경에서도 최종 제출이 끝나야 한다 — 따로 저장한다. */
-      let fsaCountSaved = true;
-      try {
-        await icsUpdateItem(ICS_LISTS.requests, c.requestSpId, { FsaSampleCount: Number(draft.sampleSize) || 0 });
-      } catch (e) {
-        fsaCountSaved = false;
-        console.warn("[ICS] FSA 샘플링 건수 저장 실패(FsaSampleCount 열 확인):", e.message);
-      }
-      if (draft.sameAsIsa) addLog(currentUser.email, "fsa_same_as_isa", c.code, c.name, c.nameEn);
+      /* FSA 기준(샘플링 건수 · 점검 빈도 · 중요도)은 새 열이라 없는 환경에서도 최종 제출이 끝나야 한다 —
+         열마다 따로 저장해, 한 열이 없어도 나머지는 남는다. 통제 항목(ISA 값)은 건드리지 않는다. */
+      const fsaFreq = draft.frequency || c.fsaFrequency || c.frequency;
+      const fsaImp = draft.importance || c.fsaImportance || c.importance;
+      const saveFsaCol = async (field, value) => {
+        try { await icsUpdateItem(ICS_LISTS.requests, c.requestSpId, { [field]: value }); return true; }
+        catch (e) { console.warn(`[ICS] FSA ${field} 저장 실패(열 확인):`, e.message); return false; }
+      };
+      const fsaCountSaved = await saveFsaCol("FsaSampleCount", Number(draft.sampleSize) || 0);
+      const fsaFreqSaved = await saveFsaCol("FsaFrequency", fsaFreq);
+      const fsaImpSaved = await saveFsaCol("FsaImportance", fsaImp);
 
       /* 서식 저장은 ISA 와 같은 방식 — 평가 저장과 분리해, 열이 없거나 실패해도
          최종 제출은 끝나게 하고 안내만 띄운다. 한 칸도 안 채웠으면 저장하지 않는다. */
@@ -6387,7 +6361,7 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
       setControls((prev) =>
         prev.map((x) =>
           x.id === c.id
-            ? { ...x, fsaStatus: "submitted_self", fsaRisk: draft.risk, fsaComment: draft.comment, fsaCommentEn: draft.comment, fsaDate: today, fsaAttachments: finalAttachments, fsaActualSample: fsaCountSaved ? Number(draft.sampleSize) || 0 : x.fsaActualSample, isaDoc: docSaved ? docObj : x.isaDoc }
+            ? { ...x, fsaStatus: "submitted_self", fsaRisk: draft.risk, fsaComment: draft.comment, fsaCommentEn: draft.comment, fsaDate: today, fsaAttachments: finalAttachments, fsaActualSample: fsaCountSaved ? Number(draft.sampleSize) || 0 : x.fsaActualSample, fsaFrequency: fsaFreqSaved ? fsaFreq : x.fsaFrequency, fsaImportance: fsaImpSaved ? fsaImp : x.fsaImportance, isaDoc: docSaved ? docObj : x.isaDoc }
             : x
         )
       );
@@ -7781,50 +7755,16 @@ function buildControlDocHtml(c, lang, users, departments) {
     ${R(L("2차 검토자(Reviewer)", "Reviewer"), esc(personByEmail(c.reviewer, lang, users)))}
     ${F(L("통제 목표", "Control objective"), val(cDesc(c, lang)))}
 
-    ${S("ICS Control Documentation")}
-    ${R(L("통제 세트(주기)", "Control set (cycle)"), val(d.cd.setCycle))}
-    ${R(L("시행일", "Effective date"), val(d.cd.effDate))}
-    ${R(L("리스크 유형", "Risk type"), d.cd.riskType ? esc(opt(RISK_TYPE_OPTIONS, d.cd.riskType)) : dash)}
-    ${R(L("핵심통제 여부", "Key control"), d.cd.keyControl ? esc(opt(KEY_CONTROL_OPTIONS, d.cd.keyControl)) : dash)}
-    ${R(L("통제 구분", "Control level"), d.cd.level ? esc(opt(CONTROL_LEVEL_OPTIONS, d.cd.level)) : dash)}
-    ${R(L("경영진 주장(Assertion)", "Assertion"), d.cd.assertions.length ? d.cd.assertions.map((a) => esc(opt(ASSERTION_OPTIONS, a))).join(", ") : dash)}
-    ${R(L("통제 방법", "Control method"), d.cd.method ? esc(opt(CONTROL_METHOD_OPTIONS, d.cd.method)) : dash)}
-    ${R(L("통제 유형", "Control type"), d.cd.ctype ? esc(opt(CONTROL_TYPE_OPTIONS, d.cd.ctype)) : dash)}
-    ${R(L("수행 주기", "Frequency"), d.cd.cycle ? esc(opt(PERFORM_CYCLE_OPTIONS, d.cd.cycle)) : dash)}
-    ${R(L("관련 문서", "Related documents"), val(d.cd.relatedDocs))}
-    ${R(L("관련 시스템", "Related systems"), val(d.cd.relatedSystems))}
-    <div style="font-size:10.5px;color:#64748b;margin:7px 0 3px">${esc(L("누가 — 통제를 수행하는 사람", "Who performs the control"))}</div>
-    ${perf.length ? `<table style="width:100%;border-collapse:collapse;font-size:11px">
-      <tr style="background:#f8fafc;color:#64748b">
-        <th style="text-align:left;padding:4px 6px;border:1px solid #e2e8f0;width:170px">${esc(L("역할/직책", "Role"))}</th>
-        <th style="text-align:left;padding:4px 6px;border:1px solid #e2e8f0">${esc(L("역할 설명", "Description"))}</th>
-        <th style="text-align:left;padding:4px 6px;border:1px solid #e2e8f0;width:130px">${esc(L("부서", "Department"))}</th></tr>
-      ${perf.map((p) => `<tr><td style="padding:4px 6px;border:1px solid #e2e8f0">${esc(p.role)}</td><td style="padding:4px 6px;border:1px solid #e2e8f0">${pre(p.desc)}</td><td style="padding:4px 6px;border:1px solid #e2e8f0">${esc(p.dept)}</td></tr>`).join("")}
-    </table>` : `<div style="font-size:11px;color:#94a3b8">-</div>`}
-    ${F(L("어디서 — 프로세스 환경", "Where — process environment"), val(d.cd.processEnv))}
-    ${F(L("무엇을 — 통제 내용 설명", "What — control activity"), val(d.cd.activity))}
-    ${F(L("어떻게 — 테스트 절차 설명", "How — test procedure"), val(d.cd.testProc))}
-    ${R(L("통제 증빙", "Control evidence"), val(d.cd.evidence))}
-    ${R(L("필요 표본 수", "Required samples"), esc(recommendedSample(c.importance, c.frequency)) + esc(L("건", "")))}
-    ${R(L("표본추출방식", "Sampling method"), d.cd.sampling ? esc(opt(SAMPLING_METHOD_OPTIONS, d.cd.sampling)) : dash)}
-    ${R(L("표본 모집단 영역/출처", "Sample population"), val(d.cd.population))}
-
-    ${S(L("운영 효과성 테스트 문서 (표본 항목)", "Operating effectiveness test"))}
-    ${R(L("통제 세트(주기)", "Control set (cycle)"), val(d.tp.setCycle))}
-    ${F(L("테스트 절차 참조", "Test procedure reference"), val(d.tp.testRef))}
-    ${samples.length ? `<table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:4px">
-      <tr style="background:#f8fafc;color:#64748b">
-        <th style="padding:4px 6px;border:1px solid #e2e8f0;width:36px">No.</th>
-        <th style="text-align:left;padding:4px 6px;border:1px solid #e2e8f0;width:110px">${esc(L("표본 추출일", "Date"))}</th>
-        <th style="text-align:left;padding:4px 6px;border:1px solid #e2e8f0">${esc(L("증빙 문서 참조", "Evidence"))}</th>
-        <th style="text-align:left;padding:4px 6px;border:1px solid #e2e8f0;width:80px">${esc(L("평가", "Result"))}</th>
-        <th style="text-align:left;padding:4px 6px;border:1px solid #e2e8f0">${esc(L("코멘트", "Comment"))}</th></tr>
-      ${samples.map((r, i) => `<tr><td style="padding:4px 6px;border:1px solid #e2e8f0;text-align:center">${i + 1}</td><td style="padding:4px 6px;border:1px solid #e2e8f0">${esc(r.date)}</td><td style="padding:4px 6px;border:1px solid #e2e8f0">${esc(r.ref)}</td><td style="padding:4px 6px;border:1px solid #e2e8f0">${esc(r.result)}</td><td style="padding:4px 6px;border:1px solid #e2e8f0">${pre(r.comment)}</td></tr>`).join("")}
-    </table>` : `<div style="font-size:11px;color:#94a3b8">-</div>`}
-    ${F(L("테스트 절차 결과", "Test result"), val(d.tp.resultText))}
+    ${S(L("통제기술서 · 운영 효과성 테스트 문서", "Control documentation · Test document"))}
+    ${R(L("서식", "Documents"), isaDocFilled(d)
+      ? esc(L("이 문서 뒤에 회사 서식(통제기술서 · 운영 효과성 테스트 문서) PDF 로 붙습니다.", "Attached after this page in the company format (PDF)."))
+      : dash)}
 
     ${S(L("평가 이력", "Assessment history"))}
-    ${R(L("샘플링 건수", "Sample count"), esc((c.actualSample == null ? "-" : c.actualSample)) + " / " + esc(recommendedSample(c.importance, c.frequency)))}
+    ${R(L("ISA 샘플링", "ISA sampling"), esc(freqLabel(c.frequency, lang)) + " · " + esc(importanceLabel(c.importance, lang)) + " · " + esc((c.actualSample == null ? "-" : c.actualSample)) + " / " + esc(recommendedSample(c.importance, c.frequency)))}
+    ${R(L("FSA 샘플링", "FSA sampling"), c.fsaFrequency || c.fsaActualSample != null
+      ? esc(freqLabel(c.fsaFrequency || c.frequency, lang)) + " · " + esc(importanceLabel(c.fsaImportance || c.importance, lang)) + " · " + esc((c.fsaActualSample == null ? "-" : c.fsaActualSample)) + " / " + esc(recommendedSample(c.fsaImportance || c.importance, c.fsaFrequency || c.frequency))
+      : dash)}
     ${stage(L("ISA 1차 자가평가", "ISA 1st self-assessment"), "isaSelf", c.selfRisk, personByEmail(c.accessor, lang, users), "", c.selfDate, lang === "en" ? c.selfCommentEn || c.selfComment : c.selfComment)}
     ${stage(L("ISA 2차 검토", "ISA 2nd review"), "isaReview", c.reviewRisk, personByEmail(c.reviewer, lang, users), c.reviewActor, c.reviewDate, lang === "en" ? c.reviewCommentEn || c.reviewComment : c.reviewComment)}
     ${stage(L("FSA 최종 자가평가", "FSA final self-assessment"), "fsaSelf", c.fsaRisk, personByEmail(c.accessor, lang, users), "", c.fsaDate, lang === "en" ? c.fsaCommentEn || c.fsaComment : c.fsaComment)}
@@ -7885,6 +7825,16 @@ async function exportControlPackagePdf(controls, lang, users, departments, onPro
       }
 
       // 첨부 자료 — 1차에서 올린 샘플링 자료를 뒤에 붙인다.
+      /* 통제기술서 · 운영 효과성 테스트 문서 — 세부 내용의 「PDF 출력」 과 같은 회사 서식 PDF 를 이 통제 뒤에 붙인다(09-22 요청).
+         예전에는 본문에 간단한 목록으로만 들어갔다. 만들지 못하면 건너뛰고 나머지는 계속한다. */
+      if (isaDocFilled(normalizeIsaDoc(c.isaDoc))) {
+        try {
+          const stage = c.fsaStatus && c.fsaStatus !== "not_started" ? "FSA" : "ISA";
+          const f = await icsBuildDocPdf(c, c.isaDoc, lang, users, departments, stage);
+          const src = await PDFLib.PDFDocument.load(f.bytes);
+          (await doc.copyPages(src, src.getPageIndices())).forEach((pg) => doc.addPage(pg));
+        } catch (e) { console.warn("[ICS] 서식 PDF 붙이기 실패:", c.code, e.message); }
+      }
       for (const a of (c.attachments || [])) {
         if (!a.name || !c.requestSpId) continue;
         if (onProgress) onProgress(done, controls.length, c.code + " · " + a.name);
@@ -12137,6 +12087,9 @@ async function loadIcsControls() {
     match.actualSample = f.SampleCount !== undefined && f.SampleCount !== "" && f.SampleCount !== null ? Number(f.SampleCount) : null;
     // FSA 샘플링 건수 — ISA(SampleCount)와 따로 둔다. 열이 없으면 null.
     match.fsaActualSample = f.FsaSampleCount !== undefined && f.FsaSampleCount !== "" && f.FsaSampleCount !== null ? Number(f.FsaSampleCount) : null;
+    // FSA 점검 빈도 · 중요도 — ISA 값(통제 항목)과 따로. 열이 없거나 비어 있으면 null(→ ISA 값을 불러와 시작).
+    match.fsaFrequency = f.FsaFrequency ? String(f.FsaFrequency) : null;
+    match.fsaImportance = f.FsaImportance ? String(f.FsaImportance) : null;
     // 통제기술서·테스트수행 서식(JSON 한 덩어리). 열이 없거나 값이 깨졌으면 없는 것으로 둔다.
     match.isaDoc = null;
     if (f.IsaDocJson) {
