@@ -1112,7 +1112,8 @@ const STR = {
       docTestRef: "테스트 절차 참조",
       docSamples: "표본 항목", docSampleNo: "번호", docSampleDate: "표본 추출일",
       docSampleRef: "증빙 문서 참조", docSampleResult: "표본 항목 평가", docSampleComment: "코멘트",
-      docSampleFill: "권장 건수만큼 행 만들기",
+      docSampleFill: "샘플링 건수({n}건)만큼 행 만들기",
+      docCycleAuto: "통제기술서의 「수행 주기」 에서 자동으로 들어갑니다",
       docTestResult: "테스트 절차 결과",
       docFilledBadge: "서식 작성됨",
       docSaveFailed: "평가는 저장되었으나 서식(통제기술서·테스트수행)은 저장하지 못했습니다. IT팀에 알려주세요.",
@@ -1591,7 +1592,8 @@ const STR = {
       docTestRef: "Test procedure reference",
       docSamples: "Sample items", docSampleNo: "No.", docSampleDate: "Sampling date",
       docSampleRef: "Evidence reference", docSampleResult: "Result", docSampleComment: "Comment",
-      docSampleFill: "Create rows for the recommended count",
+      docSampleFill: "Create {n} rows (sample count)",
+      docCycleAuto: "Filled automatically from 「Frequency」 in the control documentation",
       docTestResult: "Test procedure result",
       docFilledBadge: "Documentation filled",
       docSaveFailed: "The assessment was saved, but the documentation could not be. Please notify IT.",
@@ -5303,7 +5305,8 @@ function SubmitProgressModal({ step }) {
 /* 통제기술서·테스트수행 서식. 자가평가 폼 안에 접어 두고, 필요할 때 펼쳐 채운다.
    평가 제출 조건에는 넣지 않는다 — 서식이 비어 있다고 평가를 막으면
    급한 항목까지 함께 멈춘다. 채운 내용만 평가와 함께 저장된다. */
-function IsaDocForms({ control, doc, setDoc, recommended }) {
+/* sampleCount — 평가 폼에 적은 「샘플링 건수」. 표본 행은 이 건수를 기준으로 만든다(없으면 권장 건수). */
+function IsaDocForms({ control, doc, setDoc, recommended, sampleCount }) {
   const { lang, t } = useLang();
   const { departments, users } = useAppData();
   const cd = doc.cd, tp = doc.tp;
@@ -5327,11 +5330,22 @@ function IsaDocForms({ control, doc, setDoc, recommended }) {
      직접 쓰는 것은 역할 설명뿐이다. 둘째 줄부터는 예전처럼 직접 입력한다. */
   const autoRole = personByEmail(control.accessor, lang, users);
   const autoDept = deptName(control.dept, lang, departments);
+  /* 테스트 문서의 「통제 세트(주기)」 는 통제기술서의 「수행 주기」 를 그대로 따른다(09-21 요청).
+     같은 값을 두 번 적게 하지 않고, 둘이 어긋나지 않게 한다. 저장 · Word · 세부 내용에도 이 값이 간다. */
+  const cycleOpt = PERFORM_CYCLE_OPTIONS.find((o) => o.id === doc.cd.cycle);
+  const autoSetCycle = cycleOpt ? cycleOpt[lang] : "";
+  // 두 자동 값을 한 번에 맞춘다 — 따로 setDoc 하면 같은 doc 을 바탕으로 해 서로 덮어쓴다.
   useEffect(() => {
     const p0 = doc.cd.performers[0] || { role: "", desc: "", dept: "" };
-    if (p0.role === autoRole && p0.dept === autoDept) return;
-    setDoc({ ...doc, cd: { ...doc.cd, performers: doc.cd.performers.map((p, i) => (i === 0 ? { ...p, role: autoRole, dept: autoDept } : p)) } });
-  }, [autoRole, autoDept]);
+    const needP = !(p0.role === autoRole && p0.dept === autoDept);
+    const needC = (doc.tp.setCycle || "") !== autoSetCycle;
+    if (!needP && !needC) return;
+    setDoc({
+      ...doc,
+      cd: needP ? { ...doc.cd, performers: doc.cd.performers.map((p, i) => (i === 0 ? { ...p, role: autoRole, dept: autoDept } : p)) } : doc.cd,
+      tp: needC ? { ...doc.tp, setCycle: autoSetCycle } : doc.tp,
+    });
+  }, [autoRole, autoDept, autoSetCycle]);
 
   // 어느 쪽에 내용이 들어갔는지 탭에 점으로 표시한다.
   const cdFilled = isaDocFilled({ cd: doc.cd, tp: emptyIsaDoc().tp });
@@ -5439,8 +5453,11 @@ function IsaDocForms({ control, doc, setDoc, recommended }) {
   function setSample(i, patch) { setTp({ samples: tp.samples.map((r, j) => (j === i ? { ...r, ...patch } : r)) }); }
   function delSample(i) { setTp({ samples: tp.samples.filter((_, j) => j !== i) }); }
   // 권장 건수만큼 빈 행을 만들어 둔다. 이미 쓴 행은 그대로 둔다.
+  /* 표본 행 목표 — 평가 폼의 샘플링 건수(예: 3건)를 따른다. 예전에는 권장 건수(5건)로 고정이라
+     3건만 보는데도 5행이 만들어졌다(09-21 지적). 건수가 비어 있거나 0 이면 권장 건수로. */
+  const sampleTarget = Number(sampleCount) > 0 ? Math.floor(Number(sampleCount)) : Number(recommended || 0);
   function fillSamples() {
-    const need = Math.max(0, Number(recommended || 0) - tp.samples.length);
+    const need = Math.max(0, sampleTarget - tp.samples.length);
     if (!need) return;
     setTp({ samples: [...tp.samples, ...Array.from({ length: need }, () => ({ date: "", ref: "", result: "", comment: "" }))] });
   }
@@ -5600,7 +5617,11 @@ function IsaDocForms({ control, doc, setDoc, recommended }) {
           </>)}
 
           {table(<>
-            {row(t("self.docSetCycle"), <input className={cellIn} value={tp.setCycle} onChange={(e) => setTp({ setCycle: e.target.value })} placeholder={lang === "en" ? "e.g. 2026 ISA" : "예: 2026 ISA"} />)}
+            {row(t("self.docSetCycle"),
+              <div className="flex items-center gap-3 w-full rounded-md px-2 py-1.5" style={{ backgroundColor: "#F1F3F5" }} data-auto-cycle>
+                <span className="text-[14px] text-slate-600 font-medium">{autoSetCycle || "-"}</span>
+                <span className="text-[11px] text-slate-400">{t("self.docCycleAuto")}</span>
+              </div>)}
             {row(t("self.docCtrlName"), ro(cName(control, lang)))}
             {row(t("self.docTestRef"), <textarea rows={2} className={cellIn + " resize-none"} value={tp.testRef} onChange={(e) => setTp({ testRef: e.target.value })} />)}
           </>)}
@@ -5608,10 +5629,10 @@ function IsaDocForms({ control, doc, setDoc, recommended }) {
           <div>
             <div className="flex items-center gap-2 mb-1.5">
               <span className="text-[13px] font-bold text-slate-700">{t("self.docSamples")}</span>
-              <span className="text-[11px] text-slate-400">({tp.samples.length} / {recommended})</span>
-              {tp.samples.length < recommended && (
+              <span className="text-[11px] text-slate-400">({tp.samples.length} / {sampleTarget})</span>
+              {tp.samples.length < sampleTarget && (
                 <button type="button" onClick={fillSamples} className="ml-auto text-xs font-semibold" style={{ color: BRAND.accent }}>
-                  {t("self.docSampleFill")}
+                  {t("self.docSampleFill").replace("{n}", sampleTarget)}
                 </button>
               )}
             </div>
@@ -5845,6 +5866,7 @@ function SelfAssessForm({ control, draft, setDraft, onCancel, onSubmit, onSkip }
         doc={normalizeIsaDoc(draft.doc)}
         setDoc={(d) => setDraft({ ...draft, doc: d })}
         recommended={recommended}
+        sampleCount={draft.sampleSize}
       />
 
       {(draft.attachments || []).length > 0 && (
@@ -6101,6 +6123,7 @@ function FSAForm({ draft, setDraft, onCancel, onSubmit, control }) {
           doc={normalizeIsaDoc(draft.doc)}
           setDoc={(d) => setDraft({ ...draft, doc: d })}
           recommended={recommended}
+          sampleCount={draft.sampleSize}
         />
       )}
 
