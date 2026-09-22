@@ -1071,7 +1071,7 @@ const STR = {
       submittingHint: "완료될 때까지 창을 닫거나 새로고침하지 마세요.",
       stepPrepare: "평가 내용을 확인하는 중…",
       stepUpload: "첨부파일 업로드",
-      stepSave: "평가 내용을 저장하는 중…",
+      stepSave: "평가 내용을 저장하는 중…", stepDocPdf: "통제기술서 · 테스트 문서 PDF 를 만드는 중…",
       writeBtn: "자가평가 작성", rejectReasonTitle: "검토자 반려 사유",
       lockedByRequest: "수정 요청이 결재 중입니다. 결재가 완료되거나 요청을 철회하면 자가평가를 작성할 수 있습니다.",
       riskLevel: "리스크 수준 선택", commentPlaceholder: "평가 근거 및 특이사항을 입력하세요.",
@@ -1551,7 +1551,7 @@ const STR = {
       submittingHint: "Please keep this window open until it finishes.",
       stepPrepare: "Checking the assessment…",
       stepUpload: "Uploading attachment",
-      stepSave: "Saving the assessment…",
+      stepSave: "Saving the assessment…", stepDocPdf: "Creating the documentation PDF…",
       writeBtn: "Write assessment", rejectReasonTitle: "Reviewer's return reason",
       lockedByRequest: "A change request is under approval. You can write the assessment once it is decided or the request is cancelled.",
       riskLevel: "Select risk level", commentPlaceholder: "Enter your rationale and any notable findings.",
@@ -6290,6 +6290,10 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
   const [draft, setDraft] = useState({ risk: null, comment: "" });
   const [detail, setDetail] = useState(null);
   const [reasonFor, setReasonFor] = useState(null);      // 반려 사유 팝업을 연 통제
+  /* 제출 진행 팝업 — ISA 1차와 같은 SubmitProgressModal(09-22 요청). 예전에는 FSA 제출에 연결돼 있지 않아
+     파일을 올리는 동안 화면에 아무 변화가 없었다. savingFsa 는 제출 중인 통제 id(두 번 눌러도 한 번만 나간다). */
+  const [savingFsa, setSavingFsa] = useState(null);
+  const [savingStep, setSavingStep] = useState("");
 
   const myEmail = (currentUser.email || "").toLowerCase();
   // FSA 최종 자가평가도 역할과 무관하게 본인이 1차 담당자(Accessor)로 배정된 항목만 대상이다.
@@ -6321,19 +6325,27 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
   async function submit(c) {
     // 리스크 수준은 선택 사항이다. 비워두면 대시보드에 「미평가」로 집계된다.
     const today = new Date().toISOString();  // SharePoint 저장값과 동일한 ISO — 표시 시점에 formatDateTime 이 KST 로 변환
+    if (savingFsa) return;                    // 제출 중 두 번 누름 방지
+    setSavingFsa(c.id);
+    setSavingStep(t("self.stepPrepare"));
     setEditing(null);
     try {
       // ISA 자가평가 첨부와 겹치지 않도록 별도 하위 폴더(FSA)에 업로드해서 SharePoint에 구분되게 쌓이게 한다.
       const finalAttachments = [];
+      const _toUpload = (draft.attachments || []).filter((a) => !a.webUrl && a.file).length;
+      let _uploaded = 0;
       for (const att of draft.attachments || []) {
         if (att.webUrl) {
           finalAttachments.push({ name: att.name, webUrl: att.webUrl });
         } else if (att.file) {
+          _uploaded += 1;
+          setSavingStep(`${t("self.stepUpload")} (${_uploaded} / ${_toUpload}) · ${att.file.name}`);
           const uploaded = await icsUploadAttachment(c.requestSpId, att.file, "FSA");
           finalAttachments.push({ name: att.file.name, webUrl: uploaded.webUrl });
         }
       }
       const fsaAttachedFilesField = finalAttachments.map((a) => `${a.name}|${a.webUrl}`).join(";");
+      setSavingStep(t("self.stepSave"));
 
       await icsUpdateItem(ICS_LISTS.requests, c.requestSpId, {
         FsaStatus: "submitted_self",
@@ -6371,9 +6383,10 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
           console.warn("[ICS] FSA 서식 저장 실패(평가는 저장됨):", e.message);
         }
         try {
+          setSavingStep(t("self.stepDocPdf"));
           await icsSaveDocPdf(c, c.requestSpId, docObj, lang, users, departments, "FSA");
         } catch (e) {
-          console.warn("[ICS] FSA 서식 Word 저장 실패(평가는 저장됨):", e.message);
+          console.warn("[ICS] FSA 서식 PDF 저장 실패(평가는 저장됨):", e.message);
           showToast(t("self.docxSaveFailed"));
         }
       }
@@ -6390,6 +6403,10 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
       showToast(lang === "en" ? "Final self-assessment submitted." : "최종 자가평가가 제출되었습니다.");
     } catch (e) {
       alert("SharePoint 저장에 실패했습니다: " + e.message);
+    } finally {
+      // 성공 · 실패 어느 쪽이든 팝업을 닫는다 — 오류 창 뒤에 팝업이 남아 화면이 잠기지 않게.
+      setSavingFsa(null);
+      setSavingStep("");
     }
   }
 
@@ -6415,6 +6432,7 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
 
   return (
     <div>
+      {savingFsa && <SubmitProgressModal step={savingStep} />}
       <SectionHeader
         icon={ShieldCheck}
         title={t("fsa.title")}
