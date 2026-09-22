@@ -3086,27 +3086,36 @@ function stageFields(c, stage, lang) {
 }
 function StageLine({ stage, control: c }) {
   const { lang, t } = useLang();
-  const o = stageOutcome(stage, c);
+  /* 목록의 한 줄 요약은 폭과 열을 고정한다(09-21 지적).
+     예전에는 사유가 있는 줄만 길어지고, 앞 글자 길이에 따라 신호등 · 일시가 밀려 줄마다 들쭉날쭉했다.
+     칸: [단계] [단계 이름] [결과] [신호등] [일시] — 모든 줄에서 같은 자리에 선다.
+     사유는 줄에서 빼고 마우스를 올리면 보이게 한다(전체는 세부 내용에 있다). */
   const phase = stage.startsWith("fsa") ? "FSA" : "ISA";
-  const { risk, when, text } = stageFields(c, stage, lang);
+  // ISA 를 생략한 연 1회 통제는 상태만 「완료」 일 뿐 2차 검토를 한 적이 없다.
+  // 「2차 검토 승인」 으로 보이면 사실과 다르므로 생략으로 적는다.
+  const skipped = phase === "ISA" && isIsaSkipped(c);
+  const o = skipped ? { key: "", fg: "#64748B", bg: "#E2E8F0" } : stageOutcome(stage, c);
+  const { risk, when, text } = stageFields(c, stage === "isaReview" && skipped ? "isaSelf" : stage, lang);
   const body = String(text || "").trim();
-  // 짧은 일시(KST) — 「09.21 10:32」
   let short = "";
   if (when) {
     const k = new Date(new Date(when).getTime() + 9 * 3600 * 1000).toISOString();
     short = `${k.slice(5, 7)}.${k.slice(8, 10)} ${k.slice(11, 16)}`;
   }
+  // 앞에 이미 「ISA」 표시가 있으므로 「생략」 만 적는다. 결과 칸 폭(78px)에 맞게 짧게.
+  const step = skipped ? (lang === "en" ? "Skipped" : "생략") : STAGE_STEP[stage][lang];
+  const result = skipped ? (lang === "en" ? "→ FSA" : "FSA 수행") : t("detail." + o.key);
   return (
-    <div data-stage-line={stage} className="flex items-center gap-1.5 min-w-0 max-w-[520px] text-[12px] rounded-lg border px-2.5 py-1"
-         style={{ borderColor: o.bg, backgroundColor: "#F8FAFC" }}
-         title={body ? `${phase} ${STAGE_STEP[stage][lang]} · ${t("detail." + o.key)}\n${body}` : ""}>
-      <span className="text-[10px] font-bold tracking-wide rounded px-1.5 py-0.5 text-white flex-shrink-0"
+    <div data-stage-line={stage} data-skipped={skipped ? "1" : undefined}
+         className="grid items-center gap-2 rounded-lg border bg-white px-2.5 py-1.5 text-[12px] flex-shrink-0"
+         style={{ gridTemplateColumns: "30px 84px 78px 58px 72px", width: 382, borderColor: "#E2E8F0", borderLeft: `3px solid ${o.fg}` }}
+         title={body ? `${phase} ${step} · ${result}\n${body}` : ""}>
+      <span className="text-[10px] font-bold tracking-wide rounded py-0.5 text-white text-center"
             style={{ backgroundColor: phase === "FSA" ? BRAND.accent : BRAND.navy }}>{phase}</span>
-      <span className="font-semibold text-slate-700 flex-shrink-0">{STAGE_STEP[stage][lang]}</span>
-      <span className="font-bold flex-shrink-0" style={{ color: o.fg }}>{t("detail." + o.key)}</span>
-      {risk ? <span className="flex-shrink-0"><RiskBadge risk={risk} /></span> : null}
-      {short ? <span className="flex-shrink-0 font-medium" style={{ color: "#1E293B" }}>{short}</span> : null}
-      {body ? <span className="truncate text-slate-500">“{body}”</span> : null}
+      <span className="font-semibold text-slate-700 truncate">{step}</span>
+      <span className="font-bold truncate" style={{ color: o.fg }}>{result}</span>
+      <span className="flex">{risk ? <RiskBadge risk={risk} /> : <span className="text-slate-300 pl-2">—</span>}</span>
+      <span className="text-right font-medium tabular-nums" style={{ color: "#1E293B" }}>{short || <span className="text-slate-300">—</span>}</span>
     </div>
   );
 }
@@ -5225,15 +5234,8 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
                   <p className="font-medium text-slate-800">{cName(c, lang)}</p>
                 </div>
                 <div className="flex items-center gap-2 min-w-0">
-                  {/* 생략한 항목은 리스크 수준이 없다. 배지 자리에 생략 표시를 대신 둔다. */}
-                  {isIsaSkipped(c)
-                    ? <span title={t("self.skipBadgeTitle")}
-                            className="text-[11px] font-semibold px-2 py-0.5 rounded-md border"
-                            style={{ color: "#64748B", backgroundColor: "#F1F5F9", borderColor: "#CBD3DD" }}>
-                        {t("self.skipBadge")}
-                      </span>
-                    : null}
-                  {/* 가장 최근 ISA 단계를 한 줄로 — 제출만 됐으면 1차, 검토가 끝났으면 2차 */}
+                  {/* 가장 최근 ISA 단계를 한 줄로 — 제출만 됐으면 1차, 검토가 끝났으면 2차.
+                      ISA 생략 건은 줄 안에 「ISA 생략 · FSA 에서 수행」 으로 나오므로 배지를 따로 붙이지 않는다. */}
                   <StageLine stage={c.status === "completed" ? "isaReview" : "isaSelf"} control={c} />
                 </div>
               </div>
@@ -5507,14 +5509,15 @@ function IsaDocForms({ control, doc, setDoc, recommended }) {
             {row(t("self.docCycle"), <ChoiceRow name="cycle" options={PERFORM_CYCLE_OPTIONS} value={cd.cycle} onPick={(id) => pickOne("cycle", id)} />)}
 
             {qrow(lang === "en" ? "Who? — Who performs the control?" : "누가? — 누가 통제를 수행합니까?")}
-            <div className="grid border-b border-slate-300 text-[12.5px] font-semibold text-slate-600" style={{ gridTemplateColumns: `${LABEL_W} 1fr 180px 36px`, backgroundColor: "#EEF1F4" }}>
+            {/* 지우기 단추 때문에 부서 오른쪽에 빈 열이 하나 더 있어 표 끝이 비어 보였다(09-21 지적).
+                세 열로 줄이고, 지우기 단추는 부서 칸 안 오른쪽 끝에 둔다(둘째 줄부터만). */}
+            <div className="grid border-b border-slate-300 text-[12.5px] font-semibold text-slate-600" style={{ gridTemplateColumns: `${LABEL_W} 1fr 200px`, backgroundColor: "#EEF1F4" }}>
               <div className="px-3 py-2 text-center border-r border-slate-300">{t("self.docRole")}</div>
               <div className="px-3 py-2 text-center border-r border-slate-300">{t("self.docRoleDesc")}</div>
-              <div className="px-3 py-2 text-center border-r border-slate-300">{t("self.docRoleDept")}</div>
-              <div />
+              <div className="px-3 py-2 text-center">{t("self.docRoleDept")}</div>
             </div>
             {cd.performers.map((p, i) => (
-              <div key={i} className="grid border-b border-slate-300" style={{ gridTemplateColumns: `${LABEL_W} 1fr 180px 36px` }}>
+              <div key={i} className="grid border-b border-slate-300" style={{ gridTemplateColumns: `${LABEL_W} 1fr 200px` }}>
                 {/* 첫 줄은 통제 항목에서 가져온 값이라 고칠 수 없다. */}
                 <div className="px-1 py-1 border-r border-slate-300">
                   <input className={cellIn + (i === 0 ? " text-slate-500" : "")} readOnly={i === 0}
@@ -5524,14 +5527,13 @@ function IsaDocForms({ control, doc, setDoc, recommended }) {
                 <div className="px-1 py-1 border-r border-slate-300">
                   <input className={cellIn} placeholder={t("self.docRoleDesc")} value={p.desc} onChange={(e) => setPerformer(i, { desc: e.target.value })} />
                 </div>
-                <div className="px-1 py-1 border-r border-slate-300">
-                  <input className={cellIn + (i === 0 ? " text-slate-500" : "")} readOnly={i === 0}
+                <div className="px-1 py-1 relative flex items-center">
+                  <input className={cellIn + (i === 0 ? " text-slate-500" : " pr-8")} readOnly={i === 0}
                          title={i === 0 ? t("self.docAuto") : ""} placeholder={t("self.docRoleDept")}
                          value={p.dept} onChange={(e) => setPerformer(i, { dept: e.target.value })} />
-                </div>
-                <div className="flex items-center justify-center">
                   {i === 0 ? null : (
-                    <button type="button" onClick={() => delPerformer(i)} title={t("self.docDelRow")}><span className={delCls}><X size={13} /></span></button>
+                    <button type="button" onClick={() => delPerformer(i)} title={t("self.docDelRow")}
+                            className="absolute right-1.5 top-1/2 -translate-y-1/2"><span className={delCls}><X size={13} /></span></button>
                   )}
                 </div>
               </div>
@@ -6086,7 +6088,10 @@ function FSAForm({ draft, setDraft, onCancel, onSubmit, control }) {
         )}
       </div>
 
-      {control && (
+      {/* 통제기술서 · 테스트수행 서식은 ISA 1차 자가평가에서 쓰고 제출 때 첨부 파일로 남는다.
+          FSA 에서 다시 보일 필요가 없어 뺐다(09-21 요청). 다만 ISA 를 생략한 연 1회 통제는
+          ISA 에서 쓸 기회가 없었으므로, 그 항목에만 FSA 에서 쓰게 남긴다. */}
+      {control && isaSkipped && (
         <IsaDocForms
           control={control}
           doc={normalizeIsaDoc(draft.doc)}
@@ -6213,7 +6218,8 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
       /* 서식 저장은 ISA 와 같은 방식 — 평가 저장과 분리해, 열이 없거나 실패해도
          최종 제출은 끝나게 하고 안내만 띄운다. 한 칸도 안 채웠으면 저장하지 않는다. */
       const docObj = normalizeIsaDoc(draft.doc);
-      const docFilled = isaDocFilled(docObj);
+      // FSA 에서 서식을 쓰는 것은 ISA 를 생략한 항목뿐이다. 나머지는 ISA 에서 저장한 판을 그대로 둔다.
+      const docFilled = isIsaSkipped(c) && isaDocFilled(docObj);
       let docSaved = docFilled;
       if (docFilled) {
         try {
