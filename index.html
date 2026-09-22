@@ -1088,7 +1088,7 @@ const STR = {
       skipHint: "연 1회 통제는 ISA 를 생략하고 FSA 에서 수행할 수 있습니다.",
       docCdTitle: "통제기술서 (ICS Control Documentation)",
       docTpTitle: "운영 효과성 테스트 문서 (표본 항목)",
-      docOptional: "선택 입력 · 채운 내용은 평가와 함께 저장됩니다",
+      docOptional: "선택 입력 — 채운 내용은 평가와 함께 저장되고, 제출하면 PDF 로 첨부됩니다(세부 내용에서 PDF 출력 가능)",
       docAuto: "통제 항목에서 가져온 값",
       docCorp: "법인명", docDept: "부서", docYear: "회계연도",
       docCode: "코드 번호", docCtrlName: "통제명",
@@ -1568,7 +1568,7 @@ const STR = {
       skipHint: "Annual controls may skip ISA and be assessed at FSA instead.",
       docCdTitle: "ICS Control Documentation",
       docTpTitle: "Operating effectiveness test document (samples)",
-      docOptional: "Optional — saved together with your assessment",
+      docOptional: "Optional — saved with your assessment and attached as a PDF on submit (PDF export available in the details)",
       docAuto: "Taken from the control item",
       docCorp: "Entity", docDept: "Department", docYear: "Fiscal year",
       docCode: "Code", docCtrlName: "Control name",
@@ -5362,7 +5362,7 @@ function IsaDocForms({ control, doc, setDoc, recommended, sampleCount }) {
     return (
       <button type="button" data-doctab={id} aria-pressed={on}
         onClick={() => setOpenDoc(id)}
-        className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] font-semibold border transition-colors w-[290px]"
+        className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] font-semibold border transition-colors w-[330px] whitespace-nowrap"
         style={{ borderColor: on ? BRAND.accent : "#CBD3DD", backgroundColor: on ? BRAND.accent : "#fff", color: on ? "#fff" : "#475569" }}>
         <Icon size={14} />
         <span className="truncate">{label}</span>
@@ -5474,8 +5474,8 @@ function IsaDocForms({ control, doc, setDoc, recommended, sampleCount }) {
       <div className="flex items-center gap-2 flex-wrap border border-slate-200 bg-slate-50 px-3 py-2.5 rounded-xl">
         <DocTab id="cd" icon={FileText} label={t("self.docCdTitle")} filled={cdFilled} />
         <DocTab id="tp" icon={ClipboardList} label={t("self.docTpTitle")} filled={tpFilled} />
-        <span className="ml-auto text-[11px] font-semibold rounded-md px-2 py-1 border"
-              style={{ color: BRAND.accent, backgroundColor: "#F0FBF8", borderColor: "#BFE7DD" }}>
+        {/* 알약 없이 글자로 — 위의 제출 조건 안내와 같은 모양(09-21 요청). PDF 로 남는다는 것도 함께 적는다. */}
+        <span data-doc-note className="ml-auto text-[11px] font-medium text-right" style={{ color: "#B42318" }}>
           {t("self.docOptional")}
         </span>
       </div>
