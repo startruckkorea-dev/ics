@@ -3468,7 +3468,13 @@ function ControlDetailBody({ control: c }) {
 
       {/* 통제기술서·테스트수행 서식 — 작성 화면과 같은 탭, 읽기 전용 */}
       <div className="border-t border-slate-100 pt-4">
-        <p className="text-xs font-semibold text-slate-500 mb-2">{t("detail.docTitle")}</p>
+        {/* 어느 단계에서 쓴 서식인지 앞에 배지로(09-22 요청) — 샘플링 정보의 ISA · FSA 상자와 같은 모양.
+            서식은 ISA 1차에서 쓰고, ISA 를 생략한 항목만 FSA 에서 쓴다. */}
+        <p className="text-xs font-semibold text-slate-500 mb-2 flex items-center gap-1.5" data-doc-phase={isIsaSkipped(c) ? "FSA" : "ISA"}>
+          <span className="text-[10px] font-bold tracking-wide rounded px-1.5 py-0.5 text-white"
+                style={{ backgroundColor: isIsaSkipped(c) ? BRAND.accent : BRAND.navy }}>{isIsaSkipped(c) ? "FSA" : "ISA"}</span>
+          {t("detail.docTitle")}
+        </p>
         <IsaDocView control={c} />
       </div>
 
