@@ -8071,30 +8071,34 @@ function isaDocPrintHtml(kind, c, d, lang, users, departments) {
   const e = (v) => String(v == null ? "" : v).replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m]));
   const pre = (v) => e(v).replace(/\n/g, "<br>");
   const TD = "border:1px solid #9aa4b1;padding:6px 9px;font-size:12.5px;vertical-align:middle;";
-  const lab = (t, extra = "") => `<td style="${TD}background:#E6E6E6;text-align:right;font-weight:600;color:#333;width:150px;${extra}">${e(t)}</td>`;
+  const lab = (t, extra = "") => `<td style="${TD}background:#E6E6E6;text-align:right;font-weight:600;color:#333;${extra}">${e(t)}</td>`;
   const val = (v, span = 1, extra = "") => `<td colspan="${span}" style="${TD}color:#1f2937;${extra}">${String(v || "").trim() ? pre(v) : "&nbsp;"}</td>`;
   const sec = (t, span) => `<tr><td colspan="${span}" style="${TD}background:#004355;color:#fff;font-weight:700;text-align:center;font-size:13.5px;padding:8px">${e(t)}</td></tr>`;
   const q = (h, t, span) => `<tr><td colspan="${span}" style="${TD}background:#F2F2F2"><b>${e(h)}</b>&nbsp;&nbsp;<span style="color:#555">${e(t)}</span></td></tr>`;
-  const tbl = (rows, w) => `<table style="width:100%;border-collapse:collapse;border:2px solid #333;margin-bottom:14px;table-layout:fixed">${w ? `<colgroup>${w.map((x) => `<col style="width:${x}">`).join("")}</colgroup>` : ""}${rows.join("")}</table>`;
-  const chk = (on) => `<span style="display:inline-block;width:13px;height:13px;border:1.3px solid #333;margin-right:5px;vertical-align:-2px;text-align:center;line-height:11px;font-size:11px;font-weight:700">${on ? "✓" : ""}</span>`;
+  /* 열 폭은 비율로 — px 합이 문서 폭과 같으면 바깥 굵은 테두리만큼 넘쳐 오른쪽이 잘렸다(09-22 지적). */
+  const tbl = (rows, w) => `<table style="width:100%;box-sizing:border-box;border-collapse:collapse;border:2px solid #333;margin-bottom:14px;table-layout:fixed">${w ? `<colgroup>${w.map((x) => `<col style="width:${x}">`).join("")}</colgroup>` : ""}${rows.join("")}</table>`;
+  /* 체크 칸은 글자(✓) 대신 선으로 그린다 — 캡처 도구가 글자 기준선을 달리 잡아 체크가 칸 밖으로 밀렸다(09-22 지적).
+     고른 칸은 짙은 바탕에 흰 체크, 안 고른 칸은 빈 네모. */
+  const chk = (on) => `<span style="position:relative;display:inline-block;flex:none;box-sizing:border-box;width:12px;height:12px;border:1.3px solid #333;margin-right:6px;background:${on ? "#1f2937" : "#fff"}">${on
+    ? '<span style="position:absolute;left:3.4px;top:0.6px;width:3.2px;height:6.6px;border:solid #fff;border-width:0 1.7px 1.7px 0;transform:rotate(45deg);box-sizing:content-box"></span>' : ""}</span>`;
   const opts = (arr, isOn, desc) => `<div style="display:flex;flex-wrap:wrap;gap:4px 18px">${arr.map((o) =>
-      `<span style="white-space:nowrap">${chk(isOn(o.id))}${e(o[lang])}${desc && (lang === "en" ? o.den : o.dko) ? `<span style="color:#666;font-size:11px"> — ${e(lang === "en" ? o.den : o.dko)}</span>` : ""}</span>`).join("")}</div>`;
+      `<span style="display:inline-flex;align-items:center;white-space:nowrap;line-height:1.35">${chk(isOn(o.id))}${e(o[lang])}${desc && (lang === "en" ? o.den : o.dko) ? `<span style="color:#666;font-size:11px;margin-left:6px">— ${e(lang === "en" ? o.den : o.dko)}</span>` : ""}</span>`).join("")}</div>`;
   const dept = deptName(c.dept, lang, departments);
   const head = (title, sub) => `<div style="text-align:center;margin:4px 0 14px"><div style="font-size:19px;font-weight:700;color:#111">${e(title)}</div>${sub ? `<div style="font-size:13px;color:#444;margin-top:2px">${e(sub)}</div>` : ""}</div>`;
 
   if (kind === "cd") {
     const cd = d.cd;
     const perf = cd.performers.filter((p) => String(p.role || p.desc || p.dept || "").trim());
-    return `<div style="font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;width:760px;padding:6px 4px">
+    return `<div style="font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;width:760px;box-sizing:border-box;padding:6px 6px">
       ${head("ICS Control Documentation")}
       ${tbl([
         `<tr>${lab(L("법인명", "Entity"))}${val("STK")}${lab(L("부서", "Department"))}${val(dept)}</tr>`,
         `<tr>${lab(L("회계연도", "Fiscal year"))}${val(c.year)}${lab(L("시행일", "Effective date"))}${val(cd.effDate)}</tr>`,
         `<tr>${lab(L("통제 세트(주기)", "Control set (cycle)"))}${val(cd.setCycle, 3)}</tr>`,
-      ], ["150px", "230px", "150px", "230px"])}
+      ], ["20%", "30%", "20%", "30%"])}
       ${tbl([sec(L("통제 목표", "Control Objective"), 2),
         `<tr>${lab(L("코드 번호", "Code"))}${val(c.code)}</tr>`,
-        `<tr>${lab(L("통제 목표", "Control objective"))}${val(cDesc(c, lang))}</tr>`], ["150px", "610px"])}
+        `<tr>${lab(L("통제 목표", "Control objective"))}${val(cDesc(c, lang))}</tr>`], ["20%", "80%"])}
       ${tbl([sec(L("통제 설계", "Control Design"), 2),
         `<tr>${lab(L("통제명", "Control name"))}${val(cName(c, lang))}</tr>`,
         `<tr>${lab(L("리스크 유형", "Risk type"))}<td style="${TD}">${opts(RISK_TYPE_OPTIONS, (id) => cd.riskType === id)}</td></tr>`,
@@ -8108,7 +8112,7 @@ function isaDocPrintHtml(kind, c, d, lang, users, departments) {
         q(L("얼마나 자주?", "How often?"), L("통제가 얼마나 자주 수행되어야 합니까?", "How often should the control be performed?"), 2),
         `<tr>${lab(L("수행 주기", "Frequency"))}<td style="${TD}">${opts(PERFORM_CYCLE_OPTIONS, (id) => cd.cycle === id)}</td></tr>`,
         q(L("누가?", "Who?"), L("누가 통제를 수행합니까?", "Who performs the control?"), 2),
-        `<tr><td colspan="2" style="padding:0;border:1px solid #9aa4b1"><table style="width:100%;border-collapse:collapse;table-layout:fixed"><colgroup><col style="width:190px"><col><col style="width:150px"></colgroup>
+        `<tr><td colspan="2" style="padding:0;border:1px solid #9aa4b1"><table style="width:100%;box-sizing:border-box;border-collapse:collapse;table-layout:fixed"><colgroup><col style="width:25%"><col><col style="width:20%"></colgroup>
           <tr>${["역할/직책|Role", "역할 설명|Role description", "부서|Department"].map((h) => `<td style="${TD}background:#E6E6E6;text-align:center;font-weight:600">${e(L(...h.split("|")))}</td>`).join("")}</tr>
           ${(perf.length ? perf : [{}, {}]).map((p) => `<tr>${val(p.role)}${val(p.desc)}${val(p.dept)}</tr>`).join("")}
         </table></td></tr>`,
@@ -8116,7 +8120,7 @@ function isaDocPrintHtml(kind, c, d, lang, users, departments) {
         `<tr>${lab(L("프로세스 환경", "Process environment"))}${val(cd.processEnv, 1, "height:52px")}</tr>`,
         q(L("무엇을?", "What?"), L("통제 요건을 충족하기 위해 어떤 활동이 수행됩니까?", "Which activities are performed to meet the control requirement?"), 2),
         `<tr>${lab(L("통제 내용 설명", "Control activity"))}${val(cd.activity, 1, "height:90px")}</tr>`,
-      ], ["150px", "610px"])}
+      ], ["20%", "80%"])}
       ${tbl([sec(L("테스트 설계", "Test Design"), 2),
         q(L("어떻게?", "How?"), L("통제의 운영 효과성을 평가하기 위해 어떤 테스트 절차를 수행합니까?", "Which test procedures assess the operating effectiveness?"), 2),
         `<tr>${lab(L("테스트 절차 설명", "Test procedure"))}${val(cd.testProc, 1, "height:66px")}</tr>`,
@@ -8124,7 +8128,7 @@ function isaDocPrintHtml(kind, c, d, lang, users, departments) {
         `<tr>${lab(L("필요 표본 수", "Required samples"))}${val(recommendedSample(c.importance, c.frequency) + L("건 (수행 주기에 따라)", " (by frequency)"))}</tr>`,
         `<tr>${lab(L("표본추출방식", "Sampling method"))}<td style="${TD}">${opts(SAMPLING_METHOD_OPTIONS, (id) => cd.sampling === id, true)}</td></tr>`,
         `<tr>${lab(L("표본 모집단 영역/출처", "Sample population / source"))}${val(cd.population)}</tr>`,
-      ], ["150px", "610px"])}
+      ], ["20%", "80%"])}
     </div>`;
   }
   // 운영 효과성 테스트 문서
@@ -8132,25 +8136,25 @@ function isaDocPrintHtml(kind, c, d, lang, users, departments) {
   const rows = tp.samples.filter((r) => String(r.date || r.ref || r.result || r.comment || "").trim());
   const list = rows.length ? rows : Array.from({ length: Math.max(1, Number(c.actualSample) || recommendedSample(c.importance, c.frequency)) }, () => ({}));
   const res = (v) => { const o = SAMPLE_RESULT_OPTIONS.find((x) => x.id === v); return o ? o[lang] : (v || ""); };
-  return `<div style="font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;width:760px;padding:6px 4px">
+  return `<div style="font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;width:760px;box-sizing:border-box;padding:6px 6px">
     ${head(L("운영 효과성 테스트 문서", "Operating Effectiveness Test"), L("- 표본 항목 -", "- Sample items -"))}
     ${tbl([
       `<tr>${lab(L("법인명", "Entity"))}${val("STK")}${lab(L("부서", "Department"))}${val(dept)}</tr>`,
       `<tr>${lab(L("회계연도", "Fiscal year"))}${val(c.year)}${lab(L("코드 번호", "Code"))}${val(c.code)}</tr>`,
-    ], ["150px", "230px", "150px", "230px"])}
+    ], ["20%", "30%", "20%", "30%"])}
     ${tbl([
       `<tr>${lab(L("통제 세트(주기)", "Control set (cycle)"))}${val(tp.setCycle)}</tr>`,
       `<tr>${lab(L("통제명", "Control name"))}${val(cName(c, lang))}</tr>`,
       `<tr>${lab(L("테스트 절차 참조", "Test procedure reference"))}${val(tp.testRef, 1, "height:52px")}</tr>`,
-    ], ["150px", "610px"])}
+    ], ["20%", "80%"])}
     ${tbl([
       `<tr>${[["번호", "No.", "50px"], ["표본 추출일<br><span style='font-weight:400;font-size:11px'>(yyyy-mm-dd)</span>", "Date", "110px"],
         ["표본 항목 증빙 문서 참조<br><span style='font-weight:400;font-size:11px'>(예: 문서명 약칭/번호)</span>", "Evidence reference", ""],
         ["표본 항목 평가<br><span style='font-weight:400;font-size:11px'>(적정 / 부적정)</span>", "Result", "110px"], ["코멘트", "Comment", "170px"]]
         .map(([k, en]) => `<td style="${TD}background:#E6E6E6;text-align:center;font-weight:600">${lang === "en" ? e(en) : k}</td>`).join("")}</tr>`,
       ...list.map((r, i) => `<tr><td style="${TD}text-align:center">${i + 1}</td>${val(r.date, 1, "text-align:center")}${val(r.ref)}${val(res(r.result), 1, "text-align:center")}${val(r.comment)}</tr>`),
-    ], ["50px", "110px", "", "110px", "170px"])}
-    ${tbl([`<tr>${lab(L("테스트 절차 결과", "Test procedure result"))}${val(tp.resultText, 1, "height:80px")}</tr>`], ["150px", "610px"])}
+    ], ["7%", "15%", "", "15%", "22%"])}
+    ${tbl([`<tr>${lab(L("테스트 절차 결과", "Test procedure result"))}${val(tp.resultText, 1, "height:80px")}</tr>`], ["20%", "80%"])}
   </div>`;
 }
 
