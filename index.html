@@ -1159,6 +1159,7 @@ const STR = {
       recommendedShort: "권장",
     },
     review: {
+      openDetailHint: "카드를 누르면 1차 자가평가 · 첨부 자료를 볼 수 있습니다",
       title: "ISA 2차 검토",
       subtitleAdmin: "전체 통제 항목의 2차 검토 현황입니다.",
       subtitleUser: "님에게 배정된 검토 대상입니다.",
@@ -1641,6 +1642,7 @@ const STR = {
       recommendedShort: "recommended",
     },
     review: {
+      openDetailHint: "Click the card to see the 1st self-assessment and attachments",
       title: "ISA 2nd Review",
       subtitleAdmin: "2nd-round review status for all control items.",
       subtitleUser: ", here are the items awaiting your review.",
@@ -6822,51 +6824,23 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, sh
           <div className="space-y-3">
             {pending.map((c) => (
               <div key={c.id} className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
-                <div className="flex items-start justify-between gap-3 mb-2 cursor-pointer" onClick={() => setDetail(c)}>
-                  <div>
+                {/* 1차 자가평가 요약(작성자 · 신호등 · 의견 · 샘플링 · 첨부) 상자는 뺐다 — 카드를 누르면 여는 세부 내용에
+                    같은 내용이 모두 있다(09-22 요청). 검토하기 · 반려는 오른쪽 위 상태 배지 아래로. */}
+                <div className={"flex items-start justify-between gap-3 cursor-pointer" + (editing === c.id || returning === c.id ? " mb-3" : "")} onClick={() => setDetail(c)}>
+                  <div className="min-w-0">
                     <p className="text-xs text-slate-400 font-mono mb-0.5">{c.code} · {deptName(c.dept, lang, departments)} · {catName(c.cat, lang)}</p>
                     <p className="font-medium text-slate-800">{cName(c, lang)}</p>
+                    <p className="text-[11px] text-slate-400 mt-1">{t("review.openDetailHint")}</p>
                   </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    {!isMyReview(c) && (
-                      <span className="text-[11px] px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100 whitespace-nowrap">{lang === "en" ? "Dept. permission" : "부서 권한"}</span>
-                    )}
-                    <StatusBadge status={c.status} kind="isa" />
-                  </div>
-                </div>
-                <div className="bg-slate-50 rounded-lg p-3 mb-3">
-                  <div className="flex items-center justify-between mb-1">
-                    <p className="text-xs font-medium text-slate-500">{t("review.selfAssessmentBy")} ({personByEmail(c.accessor, lang, users)})</p>
-                    <RiskBadge risk={c.selfRisk} />
-                  </div>
-                  <p className="text-sm text-slate-600 mb-2 whitespace-pre-wrap">{lang === "en" ? c.selfCommentEn || c.selfComment : c.selfComment}</p>
-                  <div className="flex items-center gap-3 text-xs text-slate-500">
-                    <span>{t("self.sampleCount")} {c.actualSample ?? "-"}{t("common.items")} ({t("self.recommendedShort")} {recommendedSample(c.importance, c.frequency)}{t("common.items")})</span>
-                  </div>
-                  {/* 첨부 목록 오른쪽에 검토하기 · 반려(09-22 요청) — 카드 아래에 따로 한 줄을 차지했다.
-                      검토 · 반려 입력 중이면 단추 대신 아래에 입력 칸이 열린다. */}
-                  <div className="mt-2 flex items-end gap-3">
-                    <div className="flex-1 min-w-0">
-                      {(c.attachments || []).length > 0 ? (
-                        <ul className="space-y-1">
-                          {c.attachments.map((a, i) => (
-                            <li key={i} className="flex items-center gap-2 text-xs text-slate-600 bg-white border border-slate-100 rounded-lg px-3 py-1.5">
-                              <Paperclip size={12} className="text-slate-400 flex-shrink-0" />
-                              {a.webUrl ? (
-                                <button type="button" onClick={() => icsDownloadAttachment(c.requestSpId, a.name)} className="truncate hover:underline text-left bg-transparent border-0 p-0 cursor-pointer" style={{ color: BRAND.accent }}>{a.name}</button>
-                              ) : (
-                                <span className="truncate">{a.name}</span>
-                              )}
-                              {a.size && <span className="text-slate-400 flex-shrink-0 ml-auto">{a.size}</span>}
-                            </li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <p className="text-xs text-slate-400 flex items-center gap-1"><Paperclip size={11} /> {t("review.noAttachments")}</p>
+                  <div className="flex flex-col items-end gap-2 flex-shrink-0">
+                    <div className="flex items-center gap-2">
+                      {!isMyReview(c) && (
+                        <span className="text-[11px] px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100 whitespace-nowrap">{lang === "en" ? "Dept. permission" : "부서 권한"}</span>
                       )}
+                      <StatusBadge status={c.status} kind="isa" />
                     </div>
                     {!isArchived && editing !== c.id && returning !== c.id && (
-                      <div className="flex gap-2 flex-shrink-0" data-review-actions>
+                      <div className="flex gap-2" data-review-actions onClick={(e) => e.stopPropagation()}>
                         <button onClick={() => startEdit(c)} className="text-sm font-medium px-4 py-2 rounded-lg text-white whitespace-nowrap" style={{ backgroundColor: BRAND.accent }}>{t("review.reviewBtn")}</button>
                         <button onClick={() => setReturning(c.id)} className="text-sm font-medium px-4 py-2 rounded-lg text-red-600 border border-red-200 bg-white hover:bg-red-50 whitespace-nowrap">{t("review.rejectBtn")}</button>
                       </div>
