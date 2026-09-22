@@ -1057,6 +1057,7 @@ const STR = {
       subtitleAdmin: "전체 통제 항목의 1차 평가 현황입니다.",
       subtitleUser: "님이 담당하는 통제 항목을 자가평가합니다.",
       needsAction: "평가 필요", submitted: "제출 완료",
+      todoSearch: "코드 · 통제영역 · 통제명 검색", todoNoMatch: "검색 결과가 없습니다.",
       openDetail: "클릭하면 상세 내용을 볼 수 있습니다",
       commentLabel: "1차 자가평가 의견",
       processedBy: "실제 처리:",
@@ -1537,6 +1538,7 @@ const STR = {
       subtitleAdmin: "1st-round assessment status for all control items.",
       subtitleUser: ", here are the control items assigned to you.",
       needsAction: "Needs assessment", submitted: "Submitted",
+      todoSearch: "Search code · area · control name", todoNoMatch: "No matching items.",
       openDetail: "Click to view details",
       commentLabel: "1st self-assessment comment",
       processedBy: "processed by",
@@ -4607,6 +4609,18 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
   }
 
   const todo = f.apply(myControls.filter((c) => c.status === "not_started" || c.status === "returned"));
+  /* 평가 필요 — 검색(코드 · 통제영역 · 통제명, 한·영 모두)과 10개씩 나누기(09-22 요청) */
+  const TODO_PAGE_SIZE = 10;
+  const [todoQ, setTodoQ] = useState("");
+  const [todoPageRaw, setTodoPage] = useState(0);
+  const _tq = todoQ.trim().toLowerCase();
+  const todoShown = !_tq ? todo : todo.filter((c) =>
+    [c.code, catName(c.cat, "ko"), catName(c.cat, "en"), c.name, c.nameEn]
+      .some((v) => String(v || "").toLowerCase().includes(_tq)));
+  const todoPages = Math.max(1, Math.ceil(todoShown.length / TODO_PAGE_SIZE));
+  const todoPage = Math.min(todoPageRaw, todoPages - 1);   // 제출해 줄어들어도 빈 쪽에 남지 않게
+  const todoPaged = todoShown.slice(todoPage * TODO_PAGE_SIZE, (todoPage + 1) * TODO_PAGE_SIZE);
+  useEffect(() => { setTodoPage(0); }, [todoQ]);
   const inProgress = f.apply(myControls.filter((c) => c.status === "submitted_self" || c.status === "completed"));
 
   function startEdit(c) {
@@ -5131,14 +5145,34 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
       <AssessmentFilterBar f={f} t={t} minItems={myControls.length} />
 
       <div className="mb-6">
-        <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
-          <AlertTriangle size={15} className="text-amber-500" /> {t("self.needsAction")} ({todo.length})
-        </h3>
+        {/* 제목 왼쪽 · 검색 오른쪽(09-22 요청). 코드 · 통제영역 · 통제명으로 찾는다. */}
+        <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+          <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+            <AlertTriangle size={15} className="text-amber-500" /> {t("self.needsAction")} ({todoQ.trim() ? `${todoShown.length} / ${todo.length}` : todo.length})
+          </h3>
+          {todo.length > 0 && (
+            <div className="relative w-[300px] max-w-full">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              <input value={todoQ} onChange={(e) => setTodoQ(e.target.value)} data-todo-search
+                     placeholder={t("self.todoSearch")}
+                     className="w-full border border-slate-300 rounded-lg pl-8 pr-8 py-1.5 text-[13px] text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-teal-100 focus:border-teal-400" />
+              {todoQ && (
+                <button type="button" onClick={() => setTodoQ("")} title={t("common.resetFilter")}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"><X size={14} /></button>
+              )}
+            </div>
+          )}
+        </div>
         {todo.length === 0 ? (
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm"><EmptyState text={t("self.noNeedsAction")} /></div>
+        ) : todoShown.length === 0 ? (
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm"><EmptyState text={t("self.todoNoMatch")} /></div>
         ) : (
           <div className="space-y-3">
-            {todo.map((c) => (
+            {todoPaged.map((c) => {
+              // 작성 단추를 낼 상황이면 통제 설명 줄 오른쪽에 붙인다(카드 아래 따로 두니 한 줄을 더 차지했다).
+              const showWrite = !isArchived && saving !== c.id && editing !== c.id && !changeReqsLoading && changeReqs[c.code]?.status !== "pending";
+              return (
               <div key={c.id} className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
                 <div className="flex items-start justify-between gap-3 mb-2">
                   <p className="text-[13px] text-slate-400 font-mono">{c.code} · {deptName(c.dept, lang, departments)}</p>
@@ -5175,19 +5209,29 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
 
                 {/* 수정 요청으로 바꿀 수 있는 값들을 라벨과 함께 보여준다.
                     담당자가 무엇을 요청할 수 있는지 화면에서 바로 알 수 있게 하기 위함이다. */}
-                <div className="space-y-1 mb-3">
-                  <div className="flex gap-2 text-[15px]">
-                    <span className="text-slate-400 w-[76px] flex-shrink-0 text-[13px] pt-0.5">{t("list.colCat")}</span>
-                    <span className="text-slate-700">{catName(c.cat, lang)}</span>
+                <div className={"flex items-end gap-4 " + (showWrite ? "" : "mb-3")}>
+                  <div className="space-y-1 flex-1 min-w-0">
+                    <div className="flex gap-2 text-[15px]">
+                      <span className="text-slate-400 w-[76px] flex-shrink-0 text-[13px] pt-0.5">{t("list.colCat")}</span>
+                      <span className="text-slate-700">{catName(c.cat, lang)}</span>
+                    </div>
+                    <div className="flex gap-2 text-[15px]">
+                      <span className="text-slate-400 w-[76px] flex-shrink-0 text-[13px] pt-0.5">{t("list.colName")}</span>
+                      <span className="font-medium text-slate-800">{cName(c, lang)}</span>
+                    </div>
+                    <div className="flex gap-2 text-[15px] min-w-0">
+                      <span className="text-slate-400 w-[76px] flex-shrink-0 text-[13px] pt-0.5">{t("manage.fieldDesc")}</span>
+                      {/* 한 줄로 두고 작성 단추에 닿으면 … 로 줄인다. 전체는 마우스를 올리거나 작성 폼 위에서 본다. */}
+                      <span className="text-slate-500 truncate min-w-0" title={cDesc(c, lang) || ""} data-desc-line>{cDesc(c, lang) || "-"}</span>
+                    </div>
                   </div>
-                  <div className="flex gap-2 text-[15px]">
-                    <span className="text-slate-400 w-[76px] flex-shrink-0 text-[13px] pt-0.5">{t("list.colName")}</span>
-                    <span className="font-medium text-slate-800">{cName(c, lang)}</span>
-                  </div>
-                  <div className="flex gap-2 text-[15px]">
-                    <span className="text-slate-400 w-[76px] flex-shrink-0 text-[13px] pt-0.5">{t("manage.fieldDesc")}</span>
-                    <span className="text-slate-500 whitespace-pre-wrap min-w-0">{cDesc(c, lang) || "-"}</span>
-                  </div>
+                  {showWrite && (
+                    <button onClick={() => startEdit(c)} data-write-btn
+                            className="text-sm font-medium px-4 py-2 rounded-lg text-white whitespace-nowrap flex-shrink-0"
+                            style={{ backgroundColor: BRAND.accent }}>
+                      {t("self.writeBtn")}
+                    </button>
+                  )}
                 </div>
 
                 {/* 반려 내용은 오른쪽 위 한 줄 요약으로 옮겼다(09-21). 전체는 세부 내용에 있다. */}
@@ -5216,20 +5260,23 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
                     <Lock size={14} className="flex-shrink-0" />
                     <span>{t("self.lockedByRequest")}</span>
                   </div>
-                ) : (
-                  // 작성 버튼은 카드 하단 우측에 둔다. 상단 배지와 붙으면 구분이 어렵다.
-                  !isArchived && (
-                    <div className="flex justify-end">
-                      <button onClick={() => startEdit(c)}
-                              className="text-sm font-medium px-4 py-2 rounded-lg text-white whitespace-nowrap"
-                              style={{ backgroundColor: BRAND.accent }}>
-                        {t("self.writeBtn")}
-                      </button>
-                    </div>
-                  )
-                )}
+                ) : null /* 작성 단추는 통제 설명 줄 오른쪽으로 옮겼다(09-22) */}
               </div>
-            ))}
+              );
+            })}
+          </div>
+        )}
+        {/* 10개씩 나눈다 — 검색 결과 기준 */}
+        {todoShown.length > TODO_PAGE_SIZE && (
+          <div className="flex items-center justify-between mt-3 px-1 text-xs text-slate-500" data-todo-pager>
+            <span>{todoPage * TODO_PAGE_SIZE + 1}–{Math.min((todoPage + 1) * TODO_PAGE_SIZE, todoShown.length)} / {todoShown.length}{t("common.items")}</span>
+            <div className="flex items-center gap-2">
+              <button onClick={() => setTodoPage((p) => Math.max(0, p - 1))} disabled={todoPage === 0}
+                      className="px-2.5 py-1 rounded-lg border border-slate-200 bg-white disabled:opacity-40 hover:border-teal-400 hover:text-teal-600"><ChevronLeft size={14} /></button>
+              <span>{todoPage + 1} / {todoPages}</span>
+              <button onClick={() => setTodoPage((p) => Math.min(todoPages - 1, p + 1))} disabled={todoPage >= todoPages - 1}
+                      className="px-2.5 py-1 rounded-lg border border-slate-200 bg-white disabled:opacity-40 hover:border-teal-400 hover:text-teal-600"><ChevronRight size={14} /></button>
+            </div>
           </div>
         )}
       </div>
