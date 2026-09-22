@@ -3090,7 +3090,7 @@ function stageFields(c, stage, lang) {
     default: return { risk: c.fsaReviewRisk, when: c.fsaReviewDate, text: pick(c.fsaReviewComment, c.fsaReviewCommentEn) };
   }
 }
-function StageLine({ stage, control: c, hideRisk, onOpen }) {
+function StageLine({ stage, control: c, hideRisk, compact, onOpen }) {
   const { lang, t } = useLang();
   /* 목록의 한 줄 요약은 폭과 열을 고정한다(09-21 지적).
      예전에는 사유가 있는 줄만 길어지고, 앞 글자 길이에 따라 신호등 · 일시가 밀려 줄마다 들쭉날쭉했다.
@@ -3115,7 +3115,10 @@ function StageLine({ stage, control: c, hideRisk, onOpen }) {
   const result = skipped ? (lang === "en" ? "→ FSA" : "FSA 수행") : t("detail." + o.key);
   /* hideRisk — 반려된 건을 작성 목록에 띄울 때는 신호등을 빼고 「단계 · 일시 · 결과」 만(09-22 요청).
      onOpen — 누르면 반려 사유 팝업을 연다. 누를 수 있다는 것을 끝의 꺾쇠와 마우스 모양으로 알린다. */
-  const cols = hideRisk ? ["30px", "78px", "88px", "64px"] : ["30px", "78px", "60px", "88px", "64px"];
+  /* compact — ISA 1차 자가평가 화면용: 「[ISA] 2차 검토 · 반려/승인」 만(신호등 · 시간 없이, 09-22 요청).
+     자세한 내용은 반려 줄을 누르거나 카드를 눌러 세부 내용에서 본다. */
+  if (compact) hideRisk = true;
+  const cols = compact ? ["30px", "78px", "64px"] : hideRisk ? ["30px", "78px", "88px", "64px"] : ["30px", "78px", "60px", "88px", "64px"];
   if (onOpen) cols.push("12px");
   const width = cols.reduce((n, x) => n + parseInt(x, 10), 0) + (cols.length - 1) * 8 + 23;
   const Tag = onOpen ? "button" : "div";
@@ -3130,7 +3133,7 @@ function StageLine({ stage, control: c, hideRisk, onOpen }) {
       <span className="font-semibold text-slate-700 truncate">{step}</span>
       {!hideRisk && <span className="flex">{risk ? <RiskBadge risk={risk} /> : <span className="text-slate-400 pl-2">—</span>}</span>}
       {/* 신호등과 일시가 붙어 보였다(09-21) — 일시 칸을 넓히고 오른쪽으로 붙여 사이를 띄운다. */}
-      <span className="font-medium tabular-nums text-right" style={{ color: "#1E293B" }}>{short || <span className="text-slate-400">—</span>}</span>
+      {!compact && <span className="font-medium tabular-nums text-right" style={{ color: "#1E293B" }}>{short || <span className="text-slate-400">—</span>}</span>}
       <span className="font-bold truncate text-right" style={{ color: o.fg }}>{result}</span>
       {onOpen && <ChevronRight size={12} className="text-slate-400" />}
     </Tag>
@@ -5263,7 +5266,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
                   {reasonFor === c.id && <ReturnReasonPopup control={c} phase="ISA" onClose={() => setReasonFor(null)} />}
                   {/* 반려된 건은 상태 배지 대신 한 줄 요약(누가·언제·왜) */}
                   {c.status === "returned"
-                    ? <StageLine stage="isaReview" control={c} hideRisk onOpen={() => setReasonFor(c.id)} />
+                    ? <StageLine stage="isaReview" control={c} compact onOpen={() => setReasonFor(c.id)} />
                     : <StatusBadge status={c.status} kind="isa" />}
                   </div>
                 </div>
@@ -5355,7 +5358,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
                 <div className="flex items-center gap-2 min-w-0">
                   {/* 가장 최근 ISA 단계를 한 줄로 — 제출만 됐으면 1차, 검토가 끝났으면 2차.
                       ISA 생략 건은 줄 안에 「ISA 생략 · FSA 에서 수행」 으로 나오므로 배지를 따로 붙이지 않는다. */}
-                  <StageLine stage={c.status === "completed" ? "isaReview" : "isaSelf"} control={c} />
+                  <StageLine stage={c.status === "completed" ? "isaReview" : "isaSelf"} control={c} compact />
                 </div>
               </div>
               <div>
