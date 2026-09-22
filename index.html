@@ -3543,9 +3543,21 @@ function injectDataValidations(arrayBuffer, colMap) {
   }).join("");
 
   const block = `<dataValidations count="${entries.length}">${dv}</dataValidations>`;
-  // dataValidations 는 sheetData 뒤에 와야 한다. pageMargins 가 있으면 그 앞에 넣는다.
-  if (xml.includes("<pageMargins")) xml = xml.replace("<pageMargins", block + "<pageMargins");
-  else xml = xml.replace("</worksheet>", block + "</worksheet>");
+  /* 넣는 자리 — OOXML 규격은 worksheet 안의 요소 순서를 정해 두었고, Excel 은 순서가 틀리면 시트를 「XML 오류」 로
+     보고 복구하면서 드롭다운을 버린다(09-22 신고: "Replaced Part: /xl/worksheets/sheet1.xml part with XML error").
+     예전에는 pageMargins 앞에만 넣고 없으면 맨 끝에 붙였는데, SheetJS 는 pageMargins 없이 sheetData 뒤에
+     <ignoredErrors> 를 쓴다 — 그 뒤에 붙어 규격을 어겼다(ce8a2f1 부터).
+     dataValidations 보다 뒤에 와야 하는 요소 중 가장 먼저 나오는 것 앞에 넣는다. 없으면 맨 끝. */
+  const AFTER_DV = ["hyperlinks", "printOptions", "pageMargins", "pageSetup", "headerFooter", "rowBreaks", "colBreaks",
+    "customProperties", "cellWatches", "ignoredErrors", "smartTags", "drawing", "legacyDrawing", "legacyDrawingHF",
+    "picture", "oleObjects", "controls", "webPublishItems", "tableParts", "extLst"];
+  let at = -1;
+  for (const tag of AFTER_DV) {
+    const m = xml.search(new RegExp("<" + tag + "[\\s>/]"));
+    if (m >= 0 && (at < 0 || m < at)) at = m;
+  }
+  if (at < 0) at = xml.lastIndexOf("</worksheet>");
+  xml = xml.slice(0, at) + block + xml.slice(at);
 
   files[path] = new TextEncoder().encode(xml);
   return fflate.zipSync(files);
@@ -3864,10 +3876,11 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
     try {
       out = injectDataValidations(buf, {
         // 열 인덱스(0부터) → 「선택값」 시트의 참조 범위
-        1: `선택값!$A$2:$A$${deptNames.length + 1}`,   // 부서
-        2: `선택값!$B$2:$B$${catNames.length + 1}`,    // COSO영역
-        9: `선택값!$C$2:$C$${freqNames.length + 1}`,   // 점검빈도
-        10: `선택값!$D$2:$D$${impNames.length + 1}`,   // 중요도
+        // 시트 이름은 작은따옴표로 감싼다 — 규격상 영문 · 숫자가 아닌 이름은 따옴표가 안전하다.
+        1: `'선택값'!$A$2:$A$${deptNames.length + 1}`,   // 부서
+        2: `'선택값'!$B$2:$B$${catNames.length + 1}`,    // COSO영역
+        9: `'선택값'!$C$2:$C$${freqNames.length + 1}`,   // 점검빈도
+        10: `'선택값'!$D$2:$D$${impNames.length + 1}`,   // 중요도
       });
     } catch (e) {
       // 유효성 주입에 실패해도 양식 자체는 정상이므로 그대로 내려받게 한다.
