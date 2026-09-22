@@ -1001,6 +1001,7 @@ const STR = {
     detail: {
       desc: "통제 설명", accessor: "1차 담당자(Accessor)", reviewer: "2차 검토자(Reviewer)",
       noComment: "의견 없음",
+      returnTitle: "반려 사유", returnOpen: "눌러서 반려 사유 보기",
       docTitle: "통제기술서 · 테스트수행 문서", noDoc: "작성된 서식이 없습니다.",
       wordBtn: "PDF 출력", wordHint: "통제기술서 · 운영 효과성 테스트 문서를 회사 서식 PDF 한 개로 만듭니다.",
       outcomeApproved: "승인", outcomeReturned: "반려", outcomePending: "검토 대기",
@@ -1482,6 +1483,7 @@ const STR = {
     detail: {
       desc: "Description", accessor: "1st Accessor", reviewer: "2nd Reviewer",
       noComment: "No comment",
+      returnTitle: "Return reason", returnOpen: "Click to see the return reason",
       docTitle: "Control documentation · Test document", noDoc: "No documentation written yet.",
       wordBtn: "Export PDF", wordHint: "Creates one PDF with the control documentation and the test document.",
       outcomeApproved: "Approved", outcomeReturned: "Returned", outcomePending: "Awaiting review",
@@ -3088,7 +3090,7 @@ function stageFields(c, stage, lang) {
     default: return { risk: c.fsaReviewRisk, when: c.fsaReviewDate, text: pick(c.fsaReviewComment, c.fsaReviewCommentEn) };
   }
 }
-function StageLine({ stage, control: c }) {
+function StageLine({ stage, control: c, hideRisk, onOpen }) {
   const { lang, t } = useLang();
   /* 목록의 한 줄 요약은 폭과 열을 고정한다(09-21 지적).
      예전에는 사유가 있는 줄만 길어지고, 앞 글자 길이에 따라 신호등 · 일시가 밀려 줄마다 들쭉날쭉했다.
@@ -3111,19 +3113,76 @@ function StageLine({ stage, control: c }) {
   // 앞에 이미 「ISA」 표시가 있으므로 「생략」 만 적는다. 결과 칸 폭(78px)에 맞게 짧게.
   const step = skipped ? (lang === "en" ? "Skipped" : "생략") : STAGE_STEP[stage][lang];
   const result = skipped ? (lang === "en" ? "→ FSA" : "FSA 수행") : t("detail." + o.key);
+  /* hideRisk — 반려된 건을 작성 목록에 띄울 때는 신호등을 빼고 「단계 · 일시 · 결과」 만(09-22 요청).
+     onOpen — 누르면 반려 사유 팝업을 연다. 누를 수 있다는 것을 끝의 꺾쇠와 마우스 모양으로 알린다. */
+  const cols = hideRisk ? ["30px", "78px", "88px", "64px"] : ["30px", "78px", "60px", "88px", "64px"];
+  if (onOpen) cols.push("12px");
+  const width = cols.reduce((n, x) => n + parseInt(x, 10), 0) + (cols.length - 1) * 8 + 23;
+  const Tag = onOpen ? "button" : "div";
   return (
-    <div data-stage-line={stage} data-skipped={skipped ? "1" : undefined}
-         className="grid items-center gap-2 rounded-lg border px-2.5 py-1.5 text-[12px] flex-shrink-0"
-         style={{ gridTemplateColumns: "30px 78px 60px 88px 64px", width: 384, backgroundColor: "#ECEFF3", borderColor: "#E2E8F0", borderLeft: `3px solid ${o.fg}` }}
-         title={body ? `${phase} ${step} · ${result}\n${body}` : ""}>
+    <Tag data-stage-line={stage} data-skipped={skipped ? "1" : undefined} {...(onOpen ? { type: "button" } : {})}
+         onClick={onOpen ? (e) => { e.stopPropagation(); onOpen(); } : undefined}
+         className={"grid items-center gap-2 rounded-lg border px-2.5 py-1.5 text-[12px] flex-shrink-0 text-left" + (onOpen ? " cursor-pointer hover:brightness-95 transition" : "")}
+         style={{ gridTemplateColumns: cols.join(" "), width, backgroundColor: "#ECEFF3", borderColor: "#E2E8F0", borderLeft: `3px solid ${o.fg}` }}
+         title={onOpen ? t("detail.returnOpen") : body ? `${phase} ${step} · ${result}\n${body}` : ""}>
       <span className="text-[10px] font-bold tracking-wide rounded py-0.5 text-white text-center"
             style={{ backgroundColor: phase === "FSA" ? BRAND.accent : BRAND.navy }}>{phase}</span>
       <span className="font-semibold text-slate-700 truncate">{step}</span>
-      <span className="flex">{risk ? <RiskBadge risk={risk} /> : <span className="text-slate-400 pl-2">—</span>}</span>
+      {!hideRisk && <span className="flex">{risk ? <RiskBadge risk={risk} /> : <span className="text-slate-400 pl-2">—</span>}</span>}
       {/* 신호등과 일시가 붙어 보였다(09-21) — 일시 칸을 넓히고 오른쪽으로 붙여 사이를 띄운다. */}
       <span className="font-medium tabular-nums text-right" style={{ color: "#1E293B" }}>{short || <span className="text-slate-400">—</span>}</span>
       <span className="font-bold truncate text-right" style={{ color: o.fg }}>{result}</span>
-    </div>
+      {onOpen && <ChevronRight size={12} className="text-slate-400" />}
+    </Tag>
+  );
+}
+
+/* 반려 사유 팝업 — 무엇을 냈고(1차 · 최종 자가평가) 왜 돌아왔는지(2차 검토)를 세부 내용과 같은 카드로 보여 준다. */
+function ReturnReasonPopup({ control: c, phase, onClose }) {
+  const { lang, t } = useLang();
+  const { users } = useAppData();
+  const isa = phase !== "FSA";
+  return (
+    <span onClick={(e) => e.stopPropagation()}>
+      <Modal title={`${c.code} · ${t("detail.returnTitle")}`} onClose={onClose}>
+        <p className="text-sm font-medium text-slate-800 mb-3">{cName(c, lang)}</p>
+        <div className="space-y-2">
+          {isa ? (
+            <StageCard
+              stage="isaSelf" control={c} title={t("detail.selfAssessment")}
+              risk={c.selfRisk} who={personByEmail(c.accessor, lang, users)} when={c.selfDate}
+              text={lang === "en" ? c.selfCommentEn || c.selfComment : c.selfComment}
+              empty={t("detail.noSelf")}
+            />
+          ) : (
+            <StageCard
+              stage="fsaSelf" control={c} title={t("detail.fsa")}
+              risk={c.fsaRisk} who={personByEmail(c.accessor, lang, users)} when={c.fsaDate}
+              text={lang === "en" ? c.fsaCommentEn || c.fsaComment : c.fsaComment}
+              empty={t("detail.noFsa")}
+            />
+          )}
+          {isa ? (
+            <StageCard
+              stage="isaReview" control={c} title={t("detail.review")}
+              risk={c.reviewRisk} who={personByEmail(c.reviewer, lang, users)} actor={c.reviewActor} when={c.reviewDate}
+              text={lang === "en" ? c.reviewCommentEn || c.reviewComment : c.reviewComment}
+              empty={t("detail.noReview")}
+            />
+          ) : (
+            <StageCard
+              stage="fsaReview" control={c} title={t("fsaReview.title")}
+              risk={c.fsaReviewRisk} who={personByEmail(c.reviewer, lang, users)} actor={c.fsaReviewActor} when={c.fsaReviewDate}
+              text={lang === "en" ? c.fsaReviewCommentEn || c.fsaReviewComment : c.fsaReviewComment}
+              empty={t("detail.noFsaReview")}
+            />
+          )}
+        </div>
+        <div className="flex justify-end mt-4">
+          <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-semibold text-white rounded-lg" style={{ backgroundColor: BRAND.accent }}>{t("common.close")}</button>
+        </div>
+      </Modal>
+    </span>
   );
 }
 
@@ -4611,6 +4670,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
   const todo = f.apply(myControls.filter((c) => c.status === "not_started" || c.status === "returned"));
   /* 평가 필요 — 검색(코드 · 통제영역 · 통제명, 한·영 모두)과 10개씩 나누기(09-22 요청) */
   const TODO_PAGE_SIZE = 10;
+  const [reasonFor, setReasonFor] = useState(null);      // 반려 사유 팝업을 연 통제
   const [todoQ, setTodoQ] = useState("");
   const [todoPageRaw, setTodoPage] = useState(0);
   const _tq = todoQ.trim().toLowerCase();
@@ -5200,9 +5260,10 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
                         <ClipboardEdit size={13} /> {t("self.reqBtn")}
                       </button>
                     ))}
+                  {reasonFor === c.id && <ReturnReasonPopup control={c} phase="ISA" onClose={() => setReasonFor(null)} />}
                   {/* 반려된 건은 상태 배지 대신 한 줄 요약(누가·언제·왜) */}
                   {c.status === "returned"
-                    ? <StageLine stage="isaReview" control={c} />
+                    ? <StageLine stage="isaReview" control={c} hideRisk onOpen={() => setReasonFor(c.id)} />
                     : <StatusBadge status={c.status} kind="isa" />}
                   </div>
                 </div>
@@ -6231,6 +6292,7 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
   const [editing, setEditing] = useState(null);
   const [draft, setDraft] = useState({ risk: null, comment: "" });
   const [detail, setDetail] = useState(null);
+  const [reasonFor, setReasonFor] = useState(null);      // 반려 사유 팝업을 연 통제
 
   const myEmail = (currentUser.email || "").toLowerCase();
   // FSA 최종 자가평가도 역할과 무관하게 본인이 1차 담당자(Accessor)로 배정된 항목만 대상이다.
@@ -6383,7 +6445,8 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
                       FSA 판정처럼 읽혔고, FSA 는 아직 판정 전이라 보여 줄 값도 없다(09-21 지적).
                       반려 상태 표시만 남긴다. */}
                   <div className="flex items-center gap-2 min-w-0">
-                    {c.fsaStatus === "returned" && <StageLine stage="fsaReview" control={c} />}
+                    {c.fsaStatus === "returned" && <StageLine stage="fsaReview" control={c} hideRisk onOpen={() => setReasonFor(c.id)} />}
+                    {reasonFor === c.id && <ReturnReasonPopup control={c} phase="FSA" onClose={() => setReasonFor(null)} />}
                   </div>
                 </div>
                 {/* 통제 설명과 「최종 자가평가 작성」 을 한 줄로 — 단추는 설명 오른쪽, 설명은 단추에 닿으면 … (09-22 요청).
