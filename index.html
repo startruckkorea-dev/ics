@@ -397,6 +397,49 @@ const SAMPLE_RESULT_OPTIONS = [
 /* 통제 항목의 점검 빈도를 서식의 수행 주기 기본값으로 옮긴다. 담당자가 바꿀 수 있다. */
 const FREQ_TO_CYCLE = { continuous: "adhoc_day", monthly: "monthly", quarterly: "quarterly", semiannual: "monthly", annual: "annual" };
 
+/* ── 서식 필수 검사 (ISA 1차 자가평가, 09-22 요청) ────────────────────────────────
+   통제기술서 · 운영 효과성 테스트 문서의 모든 입력 칸이 채워져야 ISA 1차를 제출할 수 있다.
+   자동으로 들어가는 칸(법인명 · 부서 · 회계연도 · 코드 · 통제명 · 통제 목표 · 필요 표본 수 · 테스트 문서의 통제 세트)은 빼고,
+   표본 행의 코멘트는 「적정」 이면 쓸 말이 없는 경우가 많아 선택으로 둔다.
+   표본 항목은 샘플링 건수만큼 행이 있고, 각 행에 추출일 · 증빙 참조 · 평가가 모두 있어야 한다.
+   돌려주는 값: { cd: [비어 있는 칸 이름], tp: [...] } */
+function isaDocMissing(doc, sampleCount, lang) {
+  const d = normalizeIsaDoc(doc);
+  const L = (ko, en) => (lang === "en" ? en : ko);
+  const has = (v) => String(v == null ? "" : v).trim() !== "";
+  const cd = [], tp = [];
+  const need = (ok, ko, en, arr) => { if (!ok) arr.push(L(ko, en)); };
+  const c = d.cd;
+  need(has(c.setCycle), "통제 세트(주기)", "Control set (cycle)", cd);
+  need(has(c.effDate), "시행일", "Effective date", cd);
+  need(has(c.riskType), "리스크 유형", "Risk type", cd);
+  need(has(c.keyControl), "핵심통제 여부", "Key control", cd);
+  need(has(c.level), "통제 구분", "Control level", cd);
+  need((c.assertions || []).length > 0, "경영진 주장", "Assertion", cd);
+  need(has(c.method), "통제 방법", "Control method", cd);
+  need(has(c.ctype), "통제 유형", "Control type", cd);
+  need(has(c.relatedDocs), "관련 문서", "Related documents", cd);
+  need(has(c.relatedSystems), "관련 시스템", "Related systems", cd);
+  need(has(c.cycle), "수행 주기", "Frequency", cd);
+  const rows = (c.performers || []).filter((p) => has(p.role) || has(p.desc) || has(p.dept));
+  need(rows.length > 0 && rows.every((p) => has(p.role) && has(p.desc) && has(p.dept)), "누가(역할 · 설명 · 부서)", "Who (role · description · dept.)", cd);
+  need(has(c.processEnv), "어디서(프로세스 환경)", "Where (process environment)", cd);
+  need(has(c.activity), "무엇을(통제 내용)", "What (control activity)", cd);
+  need(has(c.testProc), "어떻게(테스트 절차)", "How (test procedure)", cd);
+  need(has(c.evidence), "통제 증빙", "Control evidence", cd);
+  need(has(c.sampling), "표본추출방식", "Sampling method", cd);
+  need(has(c.population), "표본 모집단", "Sample population", cd);
+  const t = d.tp;
+  need(has(t.testRef), "테스트 절차 참조", "Test procedure reference", tp);
+  const used = (t.samples || []).filter((r) => has(r.date) || has(r.ref) || has(r.result) || has(r.comment));
+  const full = used.filter((r) => has(r.date) && has(r.ref) && has(r.result));
+  const want = Math.max(1, Math.floor(Number(sampleCount) || 0));
+  if (full.length < want || full.length < used.length)
+    tp.push(L(`표본 항목(${full.length}/${want}건 · 추출일 · 증빙 참조 · 평가)`, `Sample items (${full.length}/${want} · date · evidence · result)`));
+  need(has(t.resultText), "테스트 절차 결과", "Test procedure result", tp);
+  return { cd, tp };
+}
+
 function emptyIsaDoc() {
   return {
     ver: 1,
@@ -1108,6 +1151,9 @@ const STR = {
       docCdTitle: "통제기술서 (ICS Control Documentation)",
       docTpTitle: "운영 효과성 테스트 문서 (표본 항목)",
       docOptional: "선택 입력 — 채운 내용은 평가와 함께 저장되고, 제출하면 PDF 로 첨부됩니다(세부 내용에서 PDF 출력 가능)",
+      docRequired: "필수 입력 — 두 서식의 모든 칸을 채워야 제출할 수 있습니다. 제출하면 PDF 로 첨부됩니다(세부 내용에서 PDF 출력 가능)",
+      docMissTitle: "아직 비어 있는 칸", docComplete: "모든 칸을 채웠습니다",
+      docCdShort: "통제기술서", docTpShort: "테스트 문서", docMissUnit: "칸 미입력",
       docAuto: "통제 항목에서 가져온 값",
       docCorp: "법인명", docDept: "부서", docYear: "회계연도",
       docCode: "코드 번호", docCtrlName: "통제명",
@@ -1600,6 +1646,9 @@ const STR = {
       docCdTitle: "ICS Control Documentation",
       docTpTitle: "Operating effectiveness test document (samples)",
       docOptional: "Optional — saved with your assessment and attached as a PDF on submit (PDF export available in the details)",
+      docRequired: "Required — fill in every field of both documents to submit. Attached as a PDF on submit (PDF export available in the details)",
+      docMissTitle: "Still empty", docComplete: "All fields are filled",
+      docCdShort: "Control documentation", docTpShort: "Test document", docMissUnit: " empty",
       docAuto: "Taken from the control item",
       docCorp: "Entity", docDept: "Department", docYear: "Fiscal year",
       docCode: "Code", docCtrlName: "Control name",
@@ -4766,6 +4815,12 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
     }
     // 리스크 수준은 선택 사항이다. 비워두면 대시보드에 「미평가」로 집계된다.
     const today = new Date().toISOString();  // SharePoint 저장값과 동일한 ISO — 표시 시점에 formatDateTime 이 KST 로 변환
+    // 서식 필수(09-22) — 버튼이 잠겨 있어도 한 번 더 막는다(오래된 화면 · 다른 경로 대비).
+    const _dm = isaDocMissing(draft.doc, draft.sampleSize, lang);
+    if (_dm.cd.length || _dm.tp.length) {
+      alert(`${t("self.docMissTitle")}\n\n${t("self.docCdShort")}: ${_dm.cd.join(", ") || "-"}\n${t("self.docTpShort")}: ${_dm.tp.join(", ") || "-"}`);
+      return;
+    }
     setSaving(c.id);
     setSavingStep(t("self.stepPrepare"));
     setEditing(null);
@@ -5509,7 +5564,7 @@ function SubmitProgressModal({ step }) {
    평가 제출 조건에는 넣지 않는다 — 서식이 비어 있다고 평가를 막으면
    급한 항목까지 함께 멈춘다. 채운 내용만 평가와 함께 저장된다. */
 /* sampleCount — 평가 폼에 적은 「샘플링 건수」. 표본 행은 이 건수를 기준으로 만든다(없으면 권장 건수). */
-function IsaDocForms({ control, doc, setDoc, recommended, sampleCount }) {
+function IsaDocForms({ control, doc, setDoc, recommended, sampleCount, required }) {
   const { lang, t } = useLang();
   const { departments, users } = useAppData();
   const cd = doc.cd, tp = doc.tp;
@@ -5553,6 +5608,8 @@ function IsaDocForms({ control, doc, setDoc, recommended, sampleCount }) {
   // 어느 쪽에 내용이 들어갔는지 탭에 점으로 표시한다.
   const cdFilled = isaDocFilled({ cd: doc.cd, tp: emptyIsaDoc().tp });
   const tpFilled = isaDocFilled({ cd: emptyIsaDoc().cd, tp: doc.tp });
+  // 필수 모드(ISA 1차) — 탭마다 남은 칸 수, 팝업 위에 비어 있는 칸 이름
+  const miss = required ? isaDocMissing(doc, sampleCount, lang) : { cd: [], tp: [] };
 
   function DocTab({ id, icon: Icon, label, filled }) {
     const on = openDoc === id;
@@ -5563,7 +5620,11 @@ function IsaDocForms({ control, doc, setDoc, recommended, sampleCount }) {
         style={{ borderColor: on ? BRAND.accent : "#CBD3DD", backgroundColor: on ? BRAND.accent : "#fff", color: on ? "#fff" : "#475569" }}>
         <Icon size={14} />
         <span className="truncate">{label}</span>
-        {filled && <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: on ? "#fff" : BRAND.accent }} />}
+        {required && (miss[id] || []).length > 0
+          ? <span className="flex-shrink-0 min-w-[18px] h-[18px] px-1 rounded-full text-[10.5px] font-bold inline-flex items-center justify-center"
+                  style={{ backgroundColor: on ? "#fff" : "#B42318", color: on ? "#B42318" : "#fff" }}
+                  title={t("self.docMissTitle")} data-doc-miss={id}>{miss[id].length}</span>
+          : filled && <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: on ? "#fff" : required ? "#16A34A" : BRAND.accent }} />}
       </button>
     );
   }
@@ -5673,7 +5734,7 @@ function IsaDocForms({ control, doc, setDoc, recommended, sampleCount }) {
         <DocTab id="tp" icon={ClipboardList} label={t("self.docTpTitle")} filled={tpFilled} />
         {/* 알약 없이 글자로 — 위의 제출 조건 안내와 같은 모양(09-21 요청). PDF 로 남는다는 것도 함께 적는다. */}
         <span data-doc-note className="ml-auto text-[11px] font-medium text-right" style={{ color: "#B42318" }}>
-          {t("self.docOptional")}
+          {required ? t("self.docRequired") : t("self.docOptional")}
         </span>
       </div>
 
@@ -5684,6 +5745,17 @@ function IsaDocForms({ control, doc, setDoc, recommended, sampleCount }) {
             <DocTab id="cd" icon={FileText} label={t("self.docCdTitle")} filled={cdFilled} />
             <DocTab id="tp" icon={ClipboardList} label={t("self.docTpTitle")} filled={tpFilled} />
           </div>
+          {required && (miss[openDoc] || []).length > 0 && (
+            <p className="-mt-2 mb-4 text-[11.5px] font-medium leading-relaxed flex items-start gap-1.5" style={{ color: "#B42318" }} data-doc-miss-list>
+              <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
+              <span>{t("self.docMissTitle")} — {miss[openDoc].join(" · ")}</span>
+            </p>
+          )}
+          {required && (miss[openDoc] || []).length === 0 && (
+            <p className="-mt-2 mb-4 text-[11.5px] font-medium flex items-center gap-1.5" style={{ color: "#16A34A" }} data-doc-complete>
+              <CheckCircle2 size={13} /> {t("self.docComplete")}
+            </p>
+          )}
 
       {/* ── 통제기술서 — 회사 서식과 같은 구성 ── */}
       {openDoc === "cd" && (
@@ -5931,6 +6003,10 @@ function SelfAssessForm({ control, draft, setDraft, onCancel, onSubmit, onSkip }
   if (commentLen < COMMENT_MIN) missing.push(t("self.needComment"));
   if (!(sampleNum > 0)) missing.push(t("self.needSample"));
   if (!hasAttach) missing.push(t("self.needAttach"));
+  // 통제기술서 · 테스트 문서 — ISA 1차에서는 모든 칸이 필수(09-22). 칸 이름은 서식 탭 · 팝업에서 보인다.
+  const docMiss = isaDocMissing(draft.doc, draft.sampleSize, lang);
+  if (docMiss.cd.length) missing.push(`${t("self.docCdShort")} ${docMiss.cd.length}${t("self.docMissUnit")}`);
+  if (docMiss.tp.length) missing.push(`${t("self.docTpShort")} ${docMiss.tp.length}${t("self.docMissUnit")}`);
 
   function handleFiles(e) {
     const files = Array.from(e.target.files || []);
@@ -6072,6 +6148,7 @@ function SelfAssessForm({ control, draft, setDraft, onCancel, onSubmit, onSkip }
         setDoc={(d) => setDraft({ ...draft, doc: d })}
         recommended={recommended}
         sampleCount={draft.sampleSize}
+        required
       />
 
       {(draft.attachments || []).length > 0 && (
