@@ -3110,13 +3110,14 @@ function StageLine({ stage, control: c }) {
   return (
     <div data-stage-line={stage} data-skipped={skipped ? "1" : undefined}
          className="grid items-center gap-2 rounded-lg border px-2.5 py-1.5 text-[12px] flex-shrink-0"
-         style={{ gridTemplateColumns: "30px 84px 58px 72px 64px", width: 368, backgroundColor: "#ECEFF3", borderColor: "#E2E8F0", borderLeft: `3px solid ${o.fg}` }}
+         style={{ gridTemplateColumns: "30px 78px 60px 88px 64px", width: 384, backgroundColor: "#ECEFF3", borderColor: "#E2E8F0", borderLeft: `3px solid ${o.fg}` }}
          title={body ? `${phase} ${step} · ${result}\n${body}` : ""}>
       <span className="text-[10px] font-bold tracking-wide rounded py-0.5 text-white text-center"
             style={{ backgroundColor: phase === "FSA" ? BRAND.accent : BRAND.navy }}>{phase}</span>
       <span className="font-semibold text-slate-700 truncate">{step}</span>
       <span className="flex">{risk ? <RiskBadge risk={risk} /> : <span className="text-slate-400 pl-2">—</span>}</span>
-      <span className="font-medium tabular-nums" style={{ color: "#1E293B" }}>{short || <span className="text-slate-400">—</span>}</span>
+      {/* 신호등과 일시가 붙어 보였다(09-21) — 일시 칸을 넓히고 오른쪽으로 붙여 사이를 띄운다. */}
+      <span className="font-medium tabular-nums text-right" style={{ color: "#1E293B" }}>{short || <span className="text-slate-400">—</span>}</span>
       <span className="font-bold truncate text-right" style={{ color: o.fg }}>{result}</span>
     </div>
   );
