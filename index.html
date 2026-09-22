@@ -1002,7 +1002,7 @@ const STR = {
       desc: "통제 설명", accessor: "1차 담당자(Accessor)", reviewer: "2차 검토자(Reviewer)",
       noComment: "의견 없음",
       docTitle: "통제기술서 · 테스트수행 문서", noDoc: "작성된 서식이 없습니다.",
-      wordBtn: "Word 내려받기", wordHint: "회사 서식(통제기술서 · 운영 효과성 테스트 문서) Word 두 개를 만듭니다.",
+      wordBtn: "PDF 출력", wordHint: "통제기술서 · 운영 효과성 테스트 문서를 회사 서식 PDF 한 개로 만듭니다.",
       outcomeApproved: "승인", outcomeReturned: "반려", outcomePending: "검토 대기",
       outcomeNone: "진행 전", outcomeSubmitted: "제출 완료", outcomeNotSubmitted: "미제출",
       samplingInfo: "샘플링 정보", freq: "빈도", importance: "중요도", recommended: "권장 건수", actual: "실제 샘플링",
@@ -1482,7 +1482,7 @@ const STR = {
       desc: "Description", accessor: "1st Accessor", reviewer: "2nd Reviewer",
       noComment: "No comment",
       docTitle: "Control documentation · Test document", noDoc: "No documentation written yet.",
-      wordBtn: "Download Word", wordHint: "Creates the two company-format Word files (control documentation · test document).",
+      wordBtn: "Export PDF", wordHint: "Creates one PDF with the control documentation and the test document.",
       outcomeApproved: "Approved", outcomeReturned: "Returned", outcomePending: "Awaiting review",
       outcomeNone: "Not started", outcomeSubmitted: "Submitted", outcomeNotSubmitted: "Not submitted",
       samplingInfo: "Sampling info", freq: "Frequency", importance: "Importance", recommended: "Recommended", actual: "Actual sample",
@@ -3211,7 +3211,7 @@ function IsaDocView({ control: c }) {
     const on = open === id;
     return (
       <button type="button" data-docview={id} aria-expanded={on} onClick={() => setOpen(on ? "" : id)}
-        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold border transition-colors"
+        className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold border transition-colors w-full min-w-0"
         style={{ borderColor: on ? BRAND.accent : "#CBD3DD", backgroundColor: on ? BRAND.accent : "#fff", color: on ? "#fff" : "#475569" }}>
         <Icon size={13} />
         <span className="truncate">{label}</span>
@@ -3229,7 +3229,7 @@ function IsaDocView({ control: c }) {
   const stage = c.fsaStatus && c.fsaStatus !== "not_started" ? "FSA" : "ISA";
   async function downloadWord() {
     setDlBusy(true);
-    try { await icsDownloadDocx(c, c.isaDoc, lang, users, departments, stage); }
+    try { await icsDownloadDocPdf(c, c.isaDoc, lang, users, departments, stage); }
     catch (e) { alert(e.message); }
     finally { setDlBusy(false); }
   }
@@ -3240,14 +3240,20 @@ function IsaDocView({ control: c }) {
 
   return (
     <div>
-      <div className={"flex items-center gap-2 flex-wrap border border-slate-200 bg-slate-50 px-3 py-2 " + (open ? "rounded-t-xl" : "rounded-xl")}>
-        <Tab id="cd" icon={FileText} label={t("self.docCdTitle")} filled={cdFilled} />
-        <Tab id="tp" icon={ClipboardList} label={t("self.docTpTitle")} filled={tpFilled} />
+      {/* 두 탭은 같은 폭(두 칸 격자) — 글자 길이만큼 늘어 폭이 제각각이었다(09-21 지적).
+          PDF 출력 단추는 아래 줄 오른쪽 끝. */}
+      <div className={"border border-slate-200 bg-slate-50 px-3 py-2 " + (open ? "rounded-t-xl" : "rounded-xl")}>
+        <div className="grid grid-cols-2 gap-2">
+          <Tab id="cd" icon={FileText} label={t("self.docCdTitle")} filled={cdFilled} />
+          <Tab id="tp" icon={ClipboardList} label={t("self.docTpTitle")} filled={tpFilled} />
+        </div>
+        <div className="flex justify-end mt-2">
         <button type="button" onClick={downloadWord} disabled={dlBusy}
-          className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold text-white disabled:opacity-50"
-          style={{ backgroundColor: "#2B579A" }} title={t("detail.wordHint")}>
-          {dlBusy ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />} {t("detail.wordBtn")}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold text-white disabled:opacity-50"
+          style={{ backgroundColor: BRAND.navy }} title={t("detail.wordHint")}>
+          {dlBusy ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />} {t("detail.wordBtn")}
         </button>
+        </div>
       </div>
 
       {open === "cd" && (
@@ -4711,7 +4717,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
         /* 같은 내용을 회사 서식 Word 두 개로 만들어 첨부 폴더(Documentation)에 둔다(09-21 요청).
            실패해도 평가 제출은 끝난다 — 서식 값은 위에서 이미 저장했고, 세부 내용에서 언제든 다시 내려받을 수 있다. */
         try {
-          await icsSaveDocx(c, spId, docObj, lang, users, departments, "ISA");
+          await icsSaveDocPdf(c, spId, docObj, lang, users, departments, "ISA");
         } catch (e) {
           console.warn("[ICS] 서식 Word 저장 실패(평가는 저장됨):", e.message);
           showToast(t("self.docxSaveFailed"));
@@ -5356,7 +5362,7 @@ function IsaDocForms({ control, doc, setDoc, recommended, sampleCount }) {
     return (
       <button type="button" data-doctab={id} aria-pressed={on}
         onClick={() => setOpenDoc(id)}
-        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] font-semibold border transition-colors"
+        className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] font-semibold border transition-colors w-[290px]"
         style={{ borderColor: on ? BRAND.accent : "#CBD3DD", backgroundColor: on ? BRAND.accent : "#fff", color: on ? "#fff" : "#475569" }}>
         <Icon size={14} />
         <span className="truncate">{label}</span>
@@ -6256,7 +6262,7 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
           console.warn("[ICS] FSA 서식 저장 실패(평가는 저장됨):", e.message);
         }
         try {
-          await icsSaveDocx(c, c.requestSpId, docObj, lang, users, departments, "FSA");
+          await icsSaveDocPdf(c, c.requestSpId, docObj, lang, users, departments, "FSA");
         } catch (e) {
           console.warn("[ICS] FSA 서식 Word 저장 실패(평가는 저장됨):", e.message);
           showToast(t("self.docxSaveFailed"));
@@ -8053,6 +8059,180 @@ async function buildIcsDocxFiles(c, doc, lang, ctx, fetchTpl) {
   ];
 }
 /* ==DOCX BUILDER END== */
+
+/* ── 통제기술서 · 운영 효과성 테스트 문서 PDF ─────────────────────────────
+   Word 대신 PDF 로 낸다(09-21 요청 — 인쇄 · 보관용으로 바로 쓰고, Word 로 고칠 일은 없다).
+   화면을 캡처하지 않고 회사 서식(Word)과 같은 구성의 인쇄용 문서를 따로 짠다 —
+   짙은 청록 구역 머리, 회색 라벨 칸(오른쪽 정렬), 물음 줄, 체크 칸(☒ · ☐).
+   쪽마다 맨 위에 IT Ticket · GW 와 같은 남색 띠(왼쪽 문서명 · 오른쪽 출력 일시 · 아래 파란 줄)를 찍는다.
+   두 문서는 각자 새 쪽에서 시작한다. */
+function isaDocPrintHtml(kind, c, d, lang, users, departments) {
+  const L = (ko, en) => (lang === "en" ? en : ko);
+  const e = (v) => String(v == null ? "" : v).replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m]));
+  const pre = (v) => e(v).replace(/\n/g, "<br>");
+  const TD = "border:1px solid #9aa4b1;padding:6px 9px;font-size:12.5px;vertical-align:middle;";
+  const lab = (t, extra = "") => `<td style="${TD}background:#E6E6E6;text-align:right;font-weight:600;color:#333;width:150px;${extra}">${e(t)}</td>`;
+  const val = (v, span = 1, extra = "") => `<td colspan="${span}" style="${TD}color:#1f2937;${extra}">${String(v || "").trim() ? pre(v) : "&nbsp;"}</td>`;
+  const sec = (t, span) => `<tr><td colspan="${span}" style="${TD}background:#004355;color:#fff;font-weight:700;text-align:center;font-size:13.5px;padding:8px">${e(t)}</td></tr>`;
+  const q = (h, t, span) => `<tr><td colspan="${span}" style="${TD}background:#F2F2F2"><b>${e(h)}</b>&nbsp;&nbsp;<span style="color:#555">${e(t)}</span></td></tr>`;
+  const tbl = (rows, w) => `<table style="width:100%;border-collapse:collapse;border:2px solid #333;margin-bottom:14px;table-layout:fixed">${w ? `<colgroup>${w.map((x) => `<col style="width:${x}">`).join("")}</colgroup>` : ""}${rows.join("")}</table>`;
+  const chk = (on) => `<span style="display:inline-block;width:13px;height:13px;border:1.3px solid #333;margin-right:5px;vertical-align:-2px;text-align:center;line-height:11px;font-size:11px;font-weight:700">${on ? "✓" : ""}</span>`;
+  const opts = (arr, isOn, desc) => `<div style="display:flex;flex-wrap:wrap;gap:4px 18px">${arr.map((o) =>
+      `<span style="white-space:nowrap">${chk(isOn(o.id))}${e(o[lang])}${desc && (lang === "en" ? o.den : o.dko) ? `<span style="color:#666;font-size:11px"> — ${e(lang === "en" ? o.den : o.dko)}</span>` : ""}</span>`).join("")}</div>`;
+  const dept = deptName(c.dept, lang, departments);
+  const head = (title, sub) => `<div style="text-align:center;margin:4px 0 14px"><div style="font-size:19px;font-weight:700;color:#111">${e(title)}</div>${sub ? `<div style="font-size:13px;color:#444;margin-top:2px">${e(sub)}</div>` : ""}</div>`;
+
+  if (kind === "cd") {
+    const cd = d.cd;
+    const perf = cd.performers.filter((p) => String(p.role || p.desc || p.dept || "").trim());
+    return `<div style="font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;width:760px;padding:6px 4px">
+      ${head("ICS Control Documentation")}
+      ${tbl([
+        `<tr>${lab(L("법인명", "Entity"))}${val("STK")}${lab(L("부서", "Department"))}${val(dept)}</tr>`,
+        `<tr>${lab(L("회계연도", "Fiscal year"))}${val(c.year)}${lab(L("시행일", "Effective date"))}${val(cd.effDate)}</tr>`,
+        `<tr>${lab(L("통제 세트(주기)", "Control set (cycle)"))}${val(cd.setCycle, 3)}</tr>`,
+      ], ["150px", "230px", "150px", "230px"])}
+      ${tbl([sec(L("통제 목표", "Control Objective"), 2),
+        `<tr>${lab(L("코드 번호", "Code"))}${val(c.code)}</tr>`,
+        `<tr>${lab(L("통제 목표", "Control objective"))}${val(cDesc(c, lang))}</tr>`], ["150px", "610px"])}
+      ${tbl([sec(L("통제 설계", "Control Design"), 2),
+        `<tr>${lab(L("통제명", "Control name"))}${val(cName(c, lang))}</tr>`,
+        `<tr>${lab(L("리스크 유형", "Risk type"))}<td style="${TD}">${opts(RISK_TYPE_OPTIONS, (id) => cd.riskType === id)}</td></tr>`,
+        `<tr>${lab(L("핵심통제 여부", "Key control"))}<td style="${TD}">${opts(KEY_CONTROL_OPTIONS, (id) => cd.keyControl === id)}</td></tr>`,
+        `<tr>${lab(L("통제 구분", "Control level"))}<td style="${TD}">${opts(CONTROL_LEVEL_OPTIONS, (id) => cd.level === id)}</td></tr>`,
+        `<tr>${lab(L("경영진 주장(Assertion)", "Assertion"))}<td style="${TD}">${opts(ASSERTION_OPTIONS, (id) => cd.assertions.includes(id))}</td></tr>`,
+        `<tr>${lab(L("통제 방법", "Control method"))}<td style="${TD}">${opts(CONTROL_METHOD_OPTIONS, (id) => cd.method === id)}</td></tr>`,
+        `<tr>${lab(L("통제 유형", "Control type"))}<td style="${TD}">${opts(CONTROL_TYPE_OPTIONS, (id) => cd.ctype === id)}</td></tr>`,
+        `<tr>${lab(L("관련 문서", "Related documents"))}${val(cd.relatedDocs)}</tr>`,
+        `<tr>${lab(L("관련 시스템", "Related systems"))}${val(cd.relatedSystems)}</tr>`,
+        q(L("얼마나 자주?", "How often?"), L("통제가 얼마나 자주 수행되어야 합니까?", "How often should the control be performed?"), 2),
+        `<tr>${lab(L("수행 주기", "Frequency"))}<td style="${TD}">${opts(PERFORM_CYCLE_OPTIONS, (id) => cd.cycle === id)}</td></tr>`,
+        q(L("누가?", "Who?"), L("누가 통제를 수행합니까?", "Who performs the control?"), 2),
+        `<tr><td colspan="2" style="padding:0;border:1px solid #9aa4b1"><table style="width:100%;border-collapse:collapse;table-layout:fixed"><colgroup><col style="width:190px"><col><col style="width:150px"></colgroup>
+          <tr>${["역할/직책|Role", "역할 설명|Role description", "부서|Department"].map((h) => `<td style="${TD}background:#E6E6E6;text-align:center;font-weight:600">${e(L(...h.split("|")))}</td>`).join("")}</tr>
+          ${(perf.length ? perf : [{}, {}]).map((p) => `<tr>${val(p.role)}${val(p.desc)}${val(p.dept)}</tr>`).join("")}
+        </table></td></tr>`,
+        q(L("어디서?", "Where?"), L("프로세스의 어느 단계에서 통제가 수행됩니까?", "At which step of the process is the control performed?"), 2),
+        `<tr>${lab(L("프로세스 환경", "Process environment"))}${val(cd.processEnv, 1, "height:52px")}</tr>`,
+        q(L("무엇을?", "What?"), L("통제 요건을 충족하기 위해 어떤 활동이 수행됩니까?", "Which activities are performed to meet the control requirement?"), 2),
+        `<tr>${lab(L("통제 내용 설명", "Control activity"))}${val(cd.activity, 1, "height:90px")}</tr>`,
+      ], ["150px", "610px"])}
+      ${tbl([sec(L("테스트 설계", "Test Design"), 2),
+        q(L("어떻게?", "How?"), L("통제의 운영 효과성을 평가하기 위해 어떤 테스트 절차를 수행합니까?", "Which test procedures assess the operating effectiveness?"), 2),
+        `<tr>${lab(L("테스트 절차 설명", "Test procedure"))}${val(cd.testProc, 1, "height:66px")}</tr>`,
+        `<tr>${lab(L("통제 증빙", "Control evidence"))}${val(cd.evidence)}</tr>`,
+        `<tr>${lab(L("필요 표본 수", "Required samples"))}${val(recommendedSample(c.importance, c.frequency) + L("건 (수행 주기에 따라)", " (by frequency)"))}</tr>`,
+        `<tr>${lab(L("표본추출방식", "Sampling method"))}<td style="${TD}">${opts(SAMPLING_METHOD_OPTIONS, (id) => cd.sampling === id, true)}</td></tr>`,
+        `<tr>${lab(L("표본 모집단 영역/출처", "Sample population / source"))}${val(cd.population)}</tr>`,
+      ], ["150px", "610px"])}
+    </div>`;
+  }
+  // 운영 효과성 테스트 문서
+  const tp = d.tp;
+  const rows = tp.samples.filter((r) => String(r.date || r.ref || r.result || r.comment || "").trim());
+  const list = rows.length ? rows : Array.from({ length: Math.max(1, Number(c.actualSample) || recommendedSample(c.importance, c.frequency)) }, () => ({}));
+  const res = (v) => { const o = SAMPLE_RESULT_OPTIONS.find((x) => x.id === v); return o ? o[lang] : (v || ""); };
+  return `<div style="font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;width:760px;padding:6px 4px">
+    ${head(L("운영 효과성 테스트 문서", "Operating Effectiveness Test"), L("- 표본 항목 -", "- Sample items -"))}
+    ${tbl([
+      `<tr>${lab(L("법인명", "Entity"))}${val("STK")}${lab(L("부서", "Department"))}${val(dept)}</tr>`,
+      `<tr>${lab(L("회계연도", "Fiscal year"))}${val(c.year)}${lab(L("코드 번호", "Code"))}${val(c.code)}</tr>`,
+    ], ["150px", "230px", "150px", "230px"])}
+    ${tbl([
+      `<tr>${lab(L("통제 세트(주기)", "Control set (cycle)"))}${val(tp.setCycle)}</tr>`,
+      `<tr>${lab(L("통제명", "Control name"))}${val(cName(c, lang))}</tr>`,
+      `<tr>${lab(L("테스트 절차 참조", "Test procedure reference"))}${val(tp.testRef, 1, "height:52px")}</tr>`,
+    ], ["150px", "610px"])}
+    ${tbl([
+      `<tr>${[["번호", "No.", "50px"], ["표본 추출일<br><span style='font-weight:400;font-size:11px'>(yyyy-mm-dd)</span>", "Date", "110px"],
+        ["표본 항목 증빙 문서 참조<br><span style='font-weight:400;font-size:11px'>(예: 문서명 약칭/번호)</span>", "Evidence reference", ""],
+        ["표본 항목 평가<br><span style='font-weight:400;font-size:11px'>(적정 / 부적정)</span>", "Result", "110px"], ["코멘트", "Comment", "170px"]]
+        .map(([k, en]) => `<td style="${TD}background:#E6E6E6;text-align:center;font-weight:600">${lang === "en" ? e(en) : k}</td>`).join("")}</tr>`,
+      ...list.map((r, i) => `<tr><td style="${TD}text-align:center">${i + 1}</td>${val(r.date, 1, "text-align:center")}${val(r.ref)}${val(res(r.result), 1, "text-align:center")}${val(r.comment)}</tr>`),
+    ], ["50px", "110px", "", "110px", "170px"])}
+    ${tbl([`<tr>${lab(L("테스트 절차 결과", "Test procedure result"))}${val(tp.resultText, 1, "height:80px")}</tr>`], ["150px", "610px"])}
+  </div>`;
+}
+
+/* 두 문서를 한 PDF 로. 돌려주는 값: { name, bytes } */
+async function icsBuildDocPdf(c, doc, lang, users, departments, stage) {
+  if (typeof html2canvas !== "function" || typeof PDFLib === "undefined") throw new Error(lang === "en" ? "Could not load the PDF library." : "PDF 라이브러리를 불러오지 못했습니다.");
+  const d = normalizeIsaDoc(doc);
+  const { PDFDocument } = PDFLib;
+  const A4W = 595, A4H = 842, margin = 30, hdrH = 22;
+  const printW = A4W - margin * 2, printH = A4H - margin * 2 - hdrH;
+  const ds = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 16).replace("T", " ");
+  const b64 = (u) => { const bin = atob(String(u).slice(String(u).indexOf(",") + 1)); const o = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) o[i] = bin.charCodeAt(i); return o; };
+  // IT Ticket · GW 와 같은 상단 띠 — 남색 그라데이션 · 흰 글자 · 아래 파란 줄
+  const band = (left) => {
+    const hc = document.createElement("canvas"); hc.width = 1190; hc.height = 28;
+    const hx = hc.getContext("2d");
+    const g = hx.createLinearGradient(0, 0, hc.width, 0); g.addColorStop(0, "#0f2744"); g.addColorStop(1, "#0a4a8a");
+    hx.fillStyle = g; hx.fillRect(0, 0, hc.width, hc.height);
+    hx.fillStyle = "#3b82f6"; hx.fillRect(0, hc.height - 2, hc.width, 2);
+    hx.fillStyle = "#fff"; hx.font = '500 13px "Malgun Gothic","Apple SD Gothic Neo",sans-serif'; hx.textBaseline = "middle";
+    hx.fillText(left, 14, 13);
+    hx.textAlign = "right"; hx.font = '400 12px "Malgun Gothic","Apple SD Gothic Neo",sans-serif'; hx.fillStyle = "rgba(255,255,255,.6)";
+    hx.fillText(ds, hc.width - 14, 13);
+    return b64(hc.toDataURL("image/png"));
+  };
+  const host = document.createElement("div");
+  host.style.cssText = "position:fixed;left:-9999px;top:0;width:780px;background:#fff;z-index:-1";
+  document.body.appendChild(host);
+  try {
+    const pdf = await PDFDocument.create();
+    const parts = [
+      ["cd", `STK ICS · ${c.code} · ICS Control Documentation · ${stage}`],
+      ["tp", `STK ICS · ${c.code} · ${lang === "en" ? "Operating Effectiveness Test" : "운영 효과성 테스트 문서"} · ${stage}`],
+    ];
+    for (const [kind, title] of parts) {
+      host.innerHTML = isaDocPrintHtml(kind, c, d, lang, users, departments);
+      const root = host.firstElementChild;
+      const cvs = await html2canvas(root, { scale: 2, useCORS: true, backgroundColor: "#fff", scrollY: 0, windowWidth: 780 });
+      const hdr = await pdf.embedPng(band(title));
+      const pxPerPt = cvs.width / printW, sliceH = Math.round(printH * pxPerPt);
+      /* 쪽은 표 · 행 경계에서만 나눈다 — 아무 데서나 자르면 표 머리만 쪽 끝에 남고 행이 두 쪽에 걸쳐 잘린다.
+         구역 표의 끝을 먼저 찾고, 한 쪽에 안 들어가는 긴 표는 행 끝에서 나눈다. */
+      const k = cvs.height / root.offsetHeight;
+      const top0 = root.getBoundingClientRect().top;
+      const cutsOf = (sel) => [...root.querySelectorAll(sel)].map((el) => Math.round((el.getBoundingClientRect().bottom - top0) * k));
+      const tableCuts = [...new Set(cutsOf(":scope > table"))].sort((x, y) => x - y);
+      const rowCuts = [...new Set(cutsOf("tr"))].sort((x, y) => x - y);
+      const slices = [];
+      for (let y = 0; y < cvs.height - 2;) {
+        const lim = y + sliceH;
+        if (lim >= cvs.height) { slices.push([y, cvs.height - y]); break; }
+        const pick = (arr) => arr.filter((v) => v > y + sliceH * 0.3 && v <= lim).pop();
+        const end = pick(tableCuts) || pick(rowCuts) || lim;
+        slices.push([y, end - y]); y = end;
+      }
+      for (const [srcY, h] of slices) {
+        const page = pdf.addPage([A4W, A4H]);
+        page.drawImage(hdr, { x: 0, y: A4H - hdrH, width: A4W, height: hdrH });
+        if (h <= 0) break;
+        const sc = document.createElement("canvas"); sc.width = cvs.width; sc.height = h;
+        sc.getContext("2d").drawImage(cvs, 0, srcY, cvs.width, h, 0, 0, cvs.width, h);
+        const img = await pdf.embedJpg(b64(sc.toDataURL("image/jpeg", 0.92)));
+        page.drawImage(img, { x: margin, y: A4H - hdrH - margin - h / pxPerPt, width: printW, height: h / pxPerPt });
+      }
+    }
+    return { name: `STK_통제기술서_테스트수행_${c.code}_${c.year}_${stage}.pdf`, bytes: await pdf.save() };
+  } finally { host.remove(); }
+}
+/* 제출 때 첨부 폴더(Documentation)에 PDF 로 남긴다. */
+async function icsSaveDocPdf(c, spId, doc, lang, users, departments, stage) {
+  const f = await icsBuildDocPdf(c, doc, lang, users, departments, stage);
+  await icsUploadAttachment(spId, new File([f.bytes], f.name, { type: "application/pdf" }), "Documentation");
+  return f.name;
+}
+/* 세부 내용에서 바로 내려받기. */
+async function icsDownloadDocPdf(c, doc, lang, users, departments, stage) {
+  const f = await icsBuildDocPdf(c, doc, lang, users, departments, stage);
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([f.bytes], { type: "application/pdf" }));
+  a.download = f.name; document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+}
 
 /* ICS 에서 부르는 입구. 서식 파일은 같은 사이트(templates/)에서 받는다. */
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
