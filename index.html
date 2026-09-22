@@ -32,6 +32,11 @@
   html, body { margin: 0; padding: 0; height: 100%; background: #F5F6F8;
                font-family: 'Segoe UI', sans-serif; }
   #root { height: 100%; }
+  /* 통제 코드(ITT-CA-040 등)도 GW 처럼 본문 글꼴로(09-22 요청). Tailwind 의 font-mono(고정폭)가 22곳에 쓰여
+     코드만 타자기 글꼴로 보였다. Tailwind 는 CDN 이 나중에 넣는 스타일이라 같은 우선순위면 덮이므로
+     body 를 앞에 붙여 한 단계 높인다. 숫자 폭은 고정해 코드 · 번호 세로 정렬은 그대로 둔다.
+     PDF · 보고서는 한글이 확실히 나오도록 인쇄용 글꼴(Malgun Gothic)을 그대로 쓴다. */
+  body .font-mono { font-family: 'Segoe UI', sans-serif; font-variant-numeric: tabular-nums; letter-spacing: .01em; }
   /* 사이드바 스크롤바 — 브라우저 기본(굵은 회색)이 남색 메뉴 옆에서 튀어 보였다(09-10).
      6px 얇은 막대, 반투명 흰색, 마우스를 올렸을 때만 진해진다. 트랙은 투명. Firefox 는 thin. */
   nav.ics-side-nav { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.18) transparent; }
