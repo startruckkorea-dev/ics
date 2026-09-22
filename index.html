@@ -5813,12 +5813,21 @@ function SelfAssessForm({ control, draft, setDraft, onCancel, onSubmit, onSkip }
       </div>
 
       <div className="border-t border-slate-200 mt-5 pt-4">
-      <p className="text-[13px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
-        {t("self.commentPlaceholder")}
-        <span className="ml-1.5 font-normal normal-case"
-              style={{ color: commentLen >= COMMENT_MIN ? "#94A3B8" : BRAND.accent }}>
-          ({commentLen} / {COMMENT_MIN}{t("self.charsMin")})
+      {/* 제출 조건 안내 — 상자(알약) 없이 글자로, 라벨 줄 오른쪽 끝에 작게(09-21 요청).
+            입력란 아래 붉은 상자로 두었더니 화면을 한 줄 더 차지하고 경고처럼 무거웠다. */}
+      <p className="text-[13px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5 flex items-baseline gap-3 flex-wrap">
+        <span>
+          {t("self.commentPlaceholder")}
+          <span className="ml-1.5 font-normal normal-case"
+                style={{ color: commentLen >= COMMENT_MIN ? "#94A3B8" : BRAND.accent }}>
+            ({commentLen} / {COMMENT_MIN}{t("self.charsMin")})
+          </span>
         </span>
+        {missing.length > 0 && (
+          <span data-need className="ml-auto normal-case tracking-normal font-medium text-[11px] text-right" style={{ color: "#B42318" }}>
+            {t("self.needTitle")} {missing.join(" · ")}
+          </span>
+        )}
       </p>
       <textarea
         className="w-full border border-slate-300 rounded-xl px-3.5 py-3 text-[15px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-100 focus:border-teal-400 resize-none"
@@ -5827,16 +5836,6 @@ function SelfAssessForm({ control, draft, setDraft, onCancel, onSubmit, onSkip }
         value={draft.comment}
         onChange={(e) => setDraft({ ...draft, comment: e.target.value })}
       />
-      {/* 제출 조건 안내는 입력란 바로 아래에 둔다. 서식 탭·첨부 목록 아래에 있으니
-          「선택 입력」 안내에 딸린 말처럼 읽히고, 색도 청록이라 안내문과 구별되지 않았다
-          (09-21 지적). 모자란 것이 있다는 뜻이므로 짙은 빨강으로 강조한다. */}
-      {missing.length > 0 && (
-        <p className="mt-2 flex items-start gap-1.5 text-[12px] font-semibold rounded-lg px-3 py-2 border"
-           style={{ color: "#9F1D1D", backgroundColor: "#FEF2F2", borderColor: "#FBD5D5" }}>
-          <AlertTriangle size={13} className="flex-shrink-0 mt-px" />
-          <span>{t("self.needTitle")} {missing.join(" · ")}</span>
-        </p>
-      )}
       </div>
 
       {/* 서식은 평가 근거 아래에 접어 둔다 — 평가 자체의 흐름을 가리지 않게. */}
@@ -6067,12 +6066,21 @@ function FSAForm({ draft, setDraft, onCancel, onSubmit, control }) {
       </div>
 
       <div className="border-t border-slate-200 mt-5 pt-4">
-        <p className={labelCls}>
-          {t("fsa.commentPlaceholder")}
-          <span className="ml-1.5 font-normal normal-case"
-                style={{ color: commentLen >= COMMENT_MIN ? "#94A3B8" : BRAND.accent }}>
-            ({commentLen} / {COMMENT_MIN}{t("self.charsMin")})
+        {/* 제출 조건 안내 — 상자(알약) 없이 글자로, 라벨 줄 오른쪽 끝에 작게(09-21 요청).
+            입력란 아래 붉은 상자로 두었더니 화면을 한 줄 더 차지하고 경고처럼 무거웠다. */}
+        <p className={labelCls + " flex items-baseline gap-3 flex-wrap"}>
+          <span>
+            {t("fsa.commentPlaceholder")}
+            <span className="ml-1.5 font-normal normal-case"
+                  style={{ color: commentLen >= COMMENT_MIN ? "#94A3B8" : BRAND.accent }}>
+              ({commentLen} / {COMMENT_MIN}{t("self.charsMin")})
+            </span>
           </span>
+          {missing.length > 0 && (
+            <span data-need className="ml-auto normal-case tracking-normal font-medium text-[11px] text-right" style={{ color: "#B42318" }}>
+              {t("self.needTitle")} {missing.join(" · ")}
+            </span>
+          )}
         </p>
         <textarea
           className="w-full border border-slate-300 rounded-xl px-3.5 py-3 text-[15px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-100 focus:border-teal-400 resize-none"
@@ -6081,13 +6089,6 @@ function FSAForm({ draft, setDraft, onCancel, onSubmit, control }) {
           value={draft.comment}
           onChange={(e) => setDraft({ ...draft, comment: e.target.value })}
         />
-        {missing.length > 0 && (
-          <p className="mt-2 flex items-start gap-1.5 text-[12px] font-semibold rounded-lg px-3 py-2 border"
-             style={{ color: "#9F1D1D", backgroundColor: "#FEF2F2", borderColor: "#FBD5D5" }}>
-            <AlertTriangle size={13} className="flex-shrink-0 mt-px" />
-            <span>{t("self.needTitle")} {missing.join(" · ")}</span>
-          </p>
-        )}
       </div>
 
       {/* 통제기술서 · 테스트수행 서식은 ISA 1차 자가평가에서 쓰고 제출 때 첨부 파일로 남는다.
