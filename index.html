@@ -143,6 +143,7 @@ import {
   MinusCircle,
   FileCheck2,
   FileSpreadsheet,
+  Save,
 } from "lucide-react";
 import {
   BarChart,
@@ -512,6 +513,7 @@ function isIsaSkipped(c) {
 
 const ACTION_LABELS = {
   submit_self: { ko: "1차 자가평가 제출", en: "Self-assessment submitted" },
+  save_doc: { ko: "서식 저장 (통제기술서 · 테스트 문서)", en: "Documents saved (control documentation · test document)" },
   skip_isa: { ko: "ISA 생략 (연 1회 통제 · FSA 에서 수행)", en: "ISA skipped (annual control · performed at FSA)" },
   fsa_same_as_isa: { ko: "FSA 최종 자가평가 — ISA 1차와 동일로 제출", en: "FSA submitted as same as ISA 1st" },
   unskip_isa: { ko: "ISA 생략 취소", en: "ISA skip cancelled" },
@@ -1183,7 +1185,9 @@ const STR = {
       docFilledBadge: "서식 작성됨",
       docSaveFailed: "평가는 저장되었으나 서식(통제기술서·테스트수행)은 저장하지 못했습니다. IT팀에 알려주세요.",
       docxSaveFailed: "평가는 저장되었으나 서식 Word 파일을 첨부 폴더에 올리지 못했습니다. 세부 내용에서 다시 내려받을 수 있습니다.",
-      docDone: "입력 완료", docModalHint: "입력한 내용은 평가를 제출할 때 함께 저장됩니다. 닫아도 지워지지 않습니다.",
+      docDone: "입력 완료", docModalHint: "「저장」을 누르면 지금까지 쓴 내용이 시스템에 기록되어 나중에 이어서 쓸 수 있습니다. 제출할 때도 함께 저장됩니다.",
+      docSaveBtn: "저장", docSaving: "저장 중...", docSavedAt: "{t} 저장됨", docSaveErr: "저장 실패: {e}", docDraftBadge: "서식 저장됨",
+      docSavedToast: "통제기술서 · 테스트 문서를 저장했습니다. 제출 전까지 이어서 쓸 수 있습니다.",
       docNotSet: "-",
       skipModalTitle: "ISA 생략",
       skipConfirmLead: "이 통제의 ISA 단계를 생략하고 FSA 에서 수행합니다.",
@@ -1678,7 +1682,9 @@ const STR = {
       docFilledBadge: "Documentation filled",
       docSaveFailed: "The assessment was saved, but the documentation could not be. Please notify IT.",
       docxSaveFailed: "The assessment was saved, but the Word files could not be uploaded. You can download them again from the details.",
-      docDone: "Done", docModalHint: "Saved together when you submit the assessment. Closing keeps what you entered.",
+      docDone: "Done", docModalHint: "「Save」 records what you have entered so far so you can continue later. It is also saved when you submit.",
+      docSaveBtn: "Save", docSaving: "Saving...", docSavedAt: "Saved {t}", docSaveErr: "Save failed: {e}", docDraftBadge: "Documents saved",
+      docSavedToast: "Control documentation and test document saved. You can continue until you submit.",
       docNotSet: "-",
       skipModalTitle: "Skip ISA",
       skipConfirmLead: "The ISA stage will be skipped and the assessment performed at FSA.",
@@ -4791,6 +4797,36 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
   const [savingStep, setSavingStep] = useState("");     // 제출 진행 팝업에 보여 줄 현재 단계
   const [detail, setDetail] = useState(null);           // 제출 완료 카드 상세
 
+  /* 요청 항목(ICS_Requests)이 아직 없으면 제출과 같은 모양(Status: not_started)으로 먼저 만든다.
+     이후 단계(업로드 · 저장)가 실패해도 재시도 때 중복 생성되지 않도록 ID 를 바로 반영한다. */
+  async function ensureRequestItem(c) {
+    if (c.requestSpId) return c.requestSpId;
+    const created = await icsCreateItem(ICS_LISTS.requests, {
+      Title: `ICS-${c.year}-${c.code}`,
+      ControlId: c.code,
+      Year: c.year,
+      RequesterEmail: c.accessor,
+      RequestDate: new Date().toISOString(),
+      Status: "not_started",
+    });
+    setControls((prev) => prev.map((x) => (x.id === c.id ? { ...x, requestSpId: created.id } : x)));
+    return created.id;
+  }
+
+  /* 서식 「저장」(09-28 요청) — 제출 전에도 통제기술서 · 테스트 문서를 SharePoint 에 남긴다.
+     제출 때 쓰는 그 열(ICS_Requests.IsaDocJson)에 그대로 쓰므로 새 목록 · 새 열은 없다. 다음에 「자가평가 작성」을
+     열면 startEdit 가 c.isaDoc 을 불러와 이어서 쓴다(새로고침 뒤에도 — 목록을 읽을 때 IsaDocJson 을 풀어 둔다).
+     평가 근거 · 리스크 수준 · 첨부는 지금처럼 제출할 때 저장한다. */
+  async function saveDoc(c) {
+    const docObj = normalizeIsaDoc(draft.doc);
+    if (!usingSharePointData) throw new Error(lang === "en" ? "SharePoint is not connected." : "SharePoint 에 연결되어 있지 않습니다.");
+    const spId = await ensureRequestItem(c);
+    await icsUpdateItem(ICS_LISTS.requests, spId, { IsaDocJson: isaDocSerialize(docObj) });
+    setControls((prev) => prev.map((x) => (x.id === c.id ? { ...x, requestSpId: spId, isaDoc: docObj } : x)));
+    addLog(currentUser.email, "save_doc", c.code, c.name, c.nameEn);
+    showToast(t("self.docSavedToast"));
+  }
+
   async function submit(c) {
     // 화면에서 버튼을 막아 두었지만 여기서도 서버에 다시 묻는다.
     //   · 화면을 열어 둔 사이에 다른 사람이 수정 요청을 올렸을 수 있다
@@ -4826,20 +4862,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
     setEditing(null);
     try {
       // 1) 요청 항목이 아직 없으면 먼저 만들어서 SharePoint 아이템 ID를 확보 (첨부파일 업로드 폴더명으로 사용)
-      let spId = c.requestSpId;
-      if (!spId) {
-        const created = await icsCreateItem(ICS_LISTS.requests, {
-          Title: `ICS-${c.year}-${c.code}`,
-          ControlId: c.code,
-          Year: c.year,
-          RequesterEmail: c.accessor,
-          RequestDate: new Date().toISOString(),
-          Status: "not_started",
-        });
-        spId = created.id;
-        // 이후 단계(업로드/저장)가 실패하더라도 재시도 시 항목이 중복 생성되지 않도록 즉시 반영
-        setControls((prev) => prev.map((x) => (x.id === c.id ? { ...x, requestSpId: spId } : x)));
-      }
+      const spId = await ensureRequestItem(c);
 
       // 2) 아직 업로드 안 된(webUrl 없는) 첨부만 실제 업로드, 이미 업로드된 것은 그대로 재사용
       const finalAttachments = [];
@@ -5364,6 +5387,13 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
                     ))}
                   {reasonFor === c.id && <ReturnReasonPopup control={c} phase="ISA" onClose={() => setReasonFor(null)} />}
                   {/* 반려된 건은 상태 배지 대신 한 줄 요약(누가·언제·왜) */}
+                  {/* 제출 전에 「저장」해 둔 서식이 있으면 표시 — 다시 열면 이어서 쓸 수 있다는 뜻(09-28) */}
+                  {c.status !== "submitted_self" && c.status !== "completed" && isaDocFilled(c.isaDoc) && (
+                    <span className="text-[12px] px-2 py-0.5 rounded-full font-medium whitespace-nowrap flex items-center gap-1" data-doc-draft-badge
+                          style={{ backgroundColor: "#E6F4EA", color: "#15803D" }}>
+                      <FileText size={11} /> {t("self.docDraftBadge")}
+                    </span>
+                  )}
                   {c.status === "returned"
                     ? <StageLine stage="isaReview" control={c} compact onOpen={() => setReasonFor(c.id)} />
                     : <StatusBadge status={c.status} kind="isa" />}
@@ -5408,7 +5438,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
                     <Loader2 size={14} className="animate-spin" /> {t("common.saving")}
                   </div>
                 ) : editing === c.id && !isArchived ? (
-                  <SelfAssessForm control={c} draft={draft} setDraft={setDraft} onCancel={() => setEditing(null)} onSubmit={() => submit(c)} onSkip={() => skipIsa(c)} />
+                  <SelfAssessForm control={c} draft={draft} setDraft={setDraft} onCancel={() => setEditing(null)} onSubmit={() => submit(c)} onSkip={() => skipIsa(c)} onSaveDoc={() => saveDoc(c)} />
                 ) : changeReqsLoading ? (
                   // 조회 중에는 작성 버튼을 내지 않는다. 아래 잠금 안내와 같은 자리에
                   // 옅은 안내만 두어 화면이 튀지 않게 한다.
@@ -5564,8 +5594,24 @@ function SubmitProgressModal({ step }) {
    평가 제출 조건에는 넣지 않는다 — 서식이 비어 있다고 평가를 막으면
    급한 항목까지 함께 멈춘다. 채운 내용만 평가와 함께 저장된다. */
 /* sampleCount — 평가 폼에 적은 「샘플링 건수」. 표본 행은 이 건수를 기준으로 만든다(없으면 권장 건수). */
-function IsaDocForms({ control, doc, setDoc, recommended, sampleCount, required }) {
+function IsaDocForms({ control, doc, setDoc, recommended, sampleCount, required, onSave }) {
   const { lang, t } = useLang();
+  /* 「저장」(09-28 요청) — 입력 완료를 눌러도 화면 상태에만 남고 시스템에는 제출할 때 저장됐다.
+     onSave 가 있으면 입력 완료 왼쪽에 저장 단추를 두고, 누르면 부모가 SharePoint 에 기록한다(결과는 오른쪽에 시각으로). */
+  const [docSaving, setDocSaving] = useState(false);
+  const [docSaveMsg, setDocSaveMsg] = useState(null);   // { ok, text }
+  async function handleDocSave() {
+    if (!onSave || docSaving) return;
+    setDocSaving(true); setDocSaveMsg(null);
+    try {
+      await onSave();
+      const d = new Date(Date.now() + 9 * 3600 * 1000);
+      const hhmm = String(d.getUTCHours()).padStart(2, "0") + ":" + String(d.getUTCMinutes()).padStart(2, "0");
+      setDocSaveMsg({ ok: true, text: t("self.docSavedAt").replace("{t}", hhmm) });
+    } catch (e) {
+      setDocSaveMsg({ ok: false, text: t("self.docSaveErr").replace("{e}", e.message || String(e)) });
+    } finally { setDocSaving(false); }
+  }
   const { departments, users } = useAppData();
   const cd = doc.cd, tp = doc.tp;
   const setCd = (patch) => setDoc({ ...doc, cd: { ...cd, ...patch } });
@@ -5967,9 +6013,23 @@ function IsaDocForms({ control, doc, setDoc, recommended, sampleCount, required 
 
           <div className="flex items-center justify-between gap-3 mt-6 pt-4 border-t border-slate-100">
             <span className="text-[12px] text-slate-500">{t("self.docModalHint")}</span>
-            <button type="button" onClick={() => setOpenDoc("")}
-                    className="px-5 py-2 text-sm font-semibold text-white rounded-lg flex-shrink-0"
-                    style={{ backgroundColor: BRAND.accent }}>{t("self.docDone")}</button>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {docSaveMsg && (
+                <span className="text-[12px] font-medium whitespace-nowrap" data-doc-save-msg
+                      style={{ color: docSaveMsg.ok ? "#15803D" : "#B42318" }}>{docSaveMsg.text}</span>
+              )}
+              {onSave && (
+                <button type="button" onClick={handleDocSave} disabled={docSaving} data-doc-save
+                        className="px-4 py-2 text-sm font-semibold rounded-lg border bg-white flex items-center gap-1.5 disabled:opacity-60"
+                        style={{ borderColor: BRAND.accent, color: BRAND.accent }}>
+                  {docSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                  {docSaving ? t("self.docSaving") : t("self.docSaveBtn")}
+                </button>
+              )}
+              <button type="button" onClick={() => setOpenDoc("")}
+                      className="px-5 py-2 text-sm font-semibold text-white rounded-lg flex-shrink-0"
+                      style={{ backgroundColor: BRAND.accent }}>{t("self.docDone")}</button>
+            </div>
           </div>
         </Modal>
       )}
@@ -5977,7 +6037,7 @@ function IsaDocForms({ control, doc, setDoc, recommended, sampleCount, required 
   );
 }
 
-function SelfAssessForm({ control, draft, setDraft, onCancel, onSubmit, onSkip }) {
+function SelfAssessForm({ control, draft, setDraft, onCancel, onSubmit, onSkip, onSaveDoc }) {
   const { lang, t } = useLang();
   const fileInputRef = useRef(null);
   /* ISA Skip 은 조건에 맞을 때만 버튼을 내보냈더니, 왜 안 보이는지 알 수 없었다.
@@ -6158,6 +6218,7 @@ function SelfAssessForm({ control, draft, setDraft, onCancel, onSubmit, onSkip }
         recommended={recommended}
         sampleCount={draft.sampleSize}
         required
+        onSave={onSaveDoc}
       />
 
       {(draft.attachments || []).length > 0 && (
@@ -6254,7 +6315,7 @@ function SelfAssessForm({ control, draft, setDraft, onCancel, onSubmit, onSkip }
 /* FSA 최종 자가평가 (ISA 1차·2차가 모두 끝난 뒤 진행하는 마지막 확인 단계)         */
 /* ------------------------------------------------------------------ */
 
-function FSAForm({ draft, setDraft, onCancel, onSubmit, control }) {
+function FSAForm({ draft, setDraft, onCancel, onSubmit, control, onSaveDoc }) {
   const { lang, t } = useLang();
   const fileInputRef = useRef(null);
   /* 점검 빈도 · 중요도 · 샘플링 건수 — ISA 에서 쓴 값을 그대로 불러오되 FSA 에서 바꿀 수 있다(09-22 요청).
@@ -6411,6 +6472,7 @@ function FSAForm({ draft, setDraft, onCancel, onSubmit, control }) {
           setDoc={(d) => setDraft({ ...draft, doc: d })}
           recommended={recommended}
           sampleCount={draft.sampleSize}
+          onSave={onSaveDoc}
         />
       )}
 
@@ -6484,6 +6546,16 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
       doc,
     });
   }
+  /* 서식 「저장」(09-28) — ISA 를 생략한 항목이 FSA 에서 서식을 쓸 때도 제출 전에 저장할 수 있게. ISA 와 같은 열(IsaDocJson). */
+  async function saveDoc(c) {
+    const docObj = normalizeIsaDoc(draft.doc);
+    if (!c.requestSpId) throw new Error(lang === "en" ? "Request item not found." : "요청 항목을 찾지 못했습니다.");
+    await icsUpdateItem(ICS_LISTS.requests, c.requestSpId, { IsaDocJson: isaDocSerialize(docObj) });
+    setControls((prev) => prev.map((x) => (x.id === c.id ? { ...x, isaDoc: docObj } : x)));
+    addLog(currentUser.email, "save_doc", c.code, c.name, c.nameEn);
+    showToast(t("self.docSavedToast"));
+  }
+
   async function submit(c) {
     // 리스크 수준은 선택 사항이다. 비워두면 대시보드에 「미평가」로 집계된다.
     const today = new Date().toISOString();  // SharePoint 저장값과 동일한 ISO — 표시 시점에 formatDateTime 이 KST 로 변환
@@ -6645,7 +6717,7 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
                 {/* 반려 내용은 오른쪽 위 한 줄 요약으로 옮겼다(09-21). */}
 
                 {editing === c.id && !isArchived ? (
-                  <FSAForm draft={draft} setDraft={setDraft} onCancel={() => setEditing(null)} onSubmit={() => submit(c)} control={c} />
+                  <FSAForm draft={draft} setDraft={setDraft} onCancel={() => setEditing(null)} onSubmit={() => submit(c)} control={c} onSaveDoc={() => saveDoc(c)} />
                 ) : null}
               </div>
             ))}
