@@ -514,6 +514,7 @@ function isIsaSkipped(c) {
 const ACTION_LABELS = {
   submit_self: { ko: "1차 자가평가 제출", en: "Self-assessment submitted" },
   save_doc: { ko: "서식 저장 (통제기술서 · 테스트 문서)", en: "Documents saved (control documentation · test document)" },
+  save_draft: { ko: "임시 저장 (평가 입력 · 첨부 · 서식)", en: "Draft saved (assessment inputs · attachments · documents)" },
   skip_isa: { ko: "ISA 생략 (연 1회 통제 · FSA 에서 수행)", en: "ISA skipped (annual control · performed at FSA)" },
   fsa_same_as_isa: { ko: "FSA 최종 자가평가 — ISA 1차와 동일로 제출", en: "FSA submitted as same as ISA 1st" },
   unskip_isa: { ko: "ISA 생략 취소", en: "ISA skip cancelled" },
@@ -940,6 +941,7 @@ function buildArchiveYearControls(sourceControls, sourceYear, newYear) {
       fsaReviewCommentEn: "",
       fsaReviewDate: null,
       pendingEdit: null,
+      draft: null,
     }));
 }
 
@@ -1185,9 +1187,12 @@ const STR = {
       docFilledBadge: "서식 작성됨",
       docSaveFailed: "평가는 저장되었으나 서식(통제기술서·테스트수행)은 저장하지 못했습니다. IT팀에 알려주세요.",
       docxSaveFailed: "평가는 저장되었으나 서식 Word 파일을 첨부 폴더에 올리지 못했습니다. 세부 내용에서 다시 내려받을 수 있습니다.",
-      docDone: "입력 완료", docModalHint: "「저장」을 누르면 지금까지 쓴 내용이 시스템에 기록되어 나중에 이어서 쓸 수 있습니다. 제출할 때도 함께 저장됩니다.",
+      docDone: "입력 완료", docModalHint: "「저장」을 누르면 이 서식과 평가 화면의 입력 내용(리스크 · 근거 · 첨부)이 함께 임시 저장됩니다. 제출할 때도 함께 저장됩니다.",
       docSaveBtn: "저장", docSaving: "저장 중...", docSavedAt: "{t} 저장됨", docSaveErr: "저장 실패: {e}", docDraftBadge: "서식 저장됨",
-      docSavedToast: "통제기술서 · 테스트 문서를 저장했습니다. 제출 전까지 이어서 쓸 수 있습니다.",
+      draftSaveBtn: "임시 저장", draftSaving: "임시 저장 중...", draftSavedAt: "{t} 임시 저장됨", draftBadge: "임시 저장 · {t}",
+      draftSavedToast: "임시 저장했습니다. 제출 전까지 언제든 이어서 쓸 수 있습니다.",
+      draftSaveFailed: "임시 저장에 실패했습니다: ",
+      draftColMissing: "ICS_Requests 목록에 DraftJson 열이 없어 평가 입력값을 저장하지 못했습니다. IT 에 열 추가를 요청해 주세요.",
       docNotSet: "-",
       skipModalTitle: "ISA 생략",
       skipConfirmLead: "이 통제의 ISA 단계를 생략하고 FSA 에서 수행합니다.",
@@ -1682,9 +1687,12 @@ const STR = {
       docFilledBadge: "Documentation filled",
       docSaveFailed: "The assessment was saved, but the documentation could not be. Please notify IT.",
       docxSaveFailed: "The assessment was saved, but the Word files could not be uploaded. You can download them again from the details.",
-      docDone: "Done", docModalHint: "「Save」 records what you have entered so far so you can continue later. It is also saved when you submit.",
+      docDone: "Done", docModalHint: "「Save」 stores this document together with the assessment inputs (risk, rationale, attachments) as a draft. Also saved when you submit.",
       docSaveBtn: "Save", docSaving: "Saving...", docSavedAt: "Saved {t}", docSaveErr: "Save failed: {e}", docDraftBadge: "Documents saved",
-      docSavedToast: "Control documentation and test document saved. You can continue until you submit.",
+      draftSaveBtn: "Save draft", draftSaving: "Saving draft...", draftSavedAt: "Draft saved {t}", draftBadge: "Draft · {t}",
+      draftSavedToast: "Draft saved. You can continue any time before submitting.",
+      draftSaveFailed: "Draft save failed: ",
+      draftColMissing: "The DraftJson column is missing in ICS_Requests, so the assessment inputs could not be saved. Please ask IT to add it.",
       docNotSet: "-",
       skipModalTitle: "Skip ISA",
       skipConfirmLead: "The ISA stage will be skipped and the assessment performed at FSA.",
@@ -4790,7 +4798,17 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
     // 서식은 저장된 것이 있으면 그대로, 없으면 통제 항목의 점검 빈도를 수행 주기 기본값으로 둔다.
     const doc = normalizeIsaDoc(c.isaDoc);
     if (!c.isaDoc && !doc.cd.cycle) doc.cd.cycle = FREQ_TO_CYCLE[c.frequency] || "";
-    setDraft({ risk: c.selfRisk, comment: c.selfComment || "", frequency: c.frequency, importance: c.importance, sampleSize: c.actualSample ?? recommendedSample(c.importance, c.frequency), attachments: c.attachments || [], doc });
+    // 임시 저장본(DraftJson · stage isa)이 있으면 그 값으로 연다 — 없으면 예전처럼 제출 · 반려된 값에서.
+    const d = c.draft && c.draft.stage === "isa" ? c.draft : null;
+    setDraft({
+      risk: d ? (d.risk || null) : c.selfRisk,
+      comment: d ? (d.comment || "") : (c.selfComment || ""),
+      frequency: (d && d.frequency) || c.frequency,
+      importance: (d && d.importance) || c.importance,
+      sampleSize: d && d.sampleSize != null && d.sampleSize !== "" ? Number(d.sampleSize) : (c.actualSample ?? recommendedSample(c.importance, c.frequency)),
+      attachments: d ? (d.attachments || []).map((a) => ({ name: a.name, webUrl: a.webUrl, size: a.size })) : (c.attachments || []),
+      doc,
+    });
   }
 
   const [saving, setSaving] = useState(null);
@@ -4813,18 +4831,50 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
     return created.id;
   }
 
-  /* 서식 「저장」(09-28 요청) — 제출 전에도 통제기술서 · 테스트 문서를 SharePoint 에 남긴다.
-     제출 때 쓰는 그 열(ICS_Requests.IsaDocJson)에 그대로 쓰므로 새 목록 · 새 열은 없다. 다음에 「자가평가 작성」을
-     열면 startEdit 가 c.isaDoc 을 불러와 이어서 쓴다(새로고침 뒤에도 — 목록을 읽을 때 IsaDocJson 을 풀어 둔다).
-     평가 근거 · 리스크 수준 · 첨부는 지금처럼 제출할 때 저장한다. */
-  async function saveDoc(c) {
-    const docObj = normalizeIsaDoc(draft.doc);
+  /* 임시 저장(09-28 요청) — 서식(IsaDocJson) + 평가 입력값 · 첨부(DraftJson)를 제출 전에 SharePoint 에 남긴다.
+     서식 팝업의 「저장」 과 폼 아래 「임시 저장」 이 같은 함수를 부른다. 요청 항목이 없으면 제출과 같은 모양으로 먼저 만든다.
+     첨부는 제출 때와 같은 폴더에 올려 두고(이름 · URL 만 기록) 제출할 때는 다시 올리지 않는다. 실패는 호출한 쪽이 알린다. */
+  const [draftSaving, setDraftSaving] = useState(null);      // { busy, step }
+  async function saveDraft(c) {
+    if (draftSaving && draftSaving.busy) return;
     if (!usingSharePointData) throw new Error(lang === "en" ? "SharePoint is not connected." : "SharePoint 에 연결되어 있지 않습니다.");
-    const spId = await ensureRequestItem(c);
-    await icsUpdateItem(ICS_LISTS.requests, spId, { IsaDocJson: isaDocSerialize(docObj) });
-    setControls((prev) => prev.map((x) => (x.id === c.id ? { ...x, requestSpId: spId, isaDoc: docObj } : x)));
-    addLog(currentUser.email, "save_doc", c.code, c.name, c.nameEn);
-    showToast(t("self.docSavedToast"));
+    setDraftSaving({ busy: true, step: t("self.stepPrepare") });
+    try {
+      const spId = await ensureRequestItem(c);
+      // 아직 안 올린 첨부만 올린다(이미 올린 것은 그대로).
+      const finalAttachments = [];
+      const toUpload = (draft.attachments || []).filter((a) => !a.webUrl && a.file).length;
+      let uploaded = 0;
+      for (const att of draft.attachments || []) {
+        if (att.webUrl) finalAttachments.push({ name: att.name, webUrl: att.webUrl, size: att.size });
+        else if (att.file) {
+          uploaded += 1;
+          setDraftSaving({ busy: true, step: `${t("self.stepUpload")} (${uploaded} / ${toUpload}) · ${att.file.name}` });
+          const up = await icsUploadAttachment(spId, att.file);
+          finalAttachments.push({ name: att.file.name, webUrl: up.webUrl, size: att.size });
+        }
+      }
+      setDraftSaving({ busy: true, step: t("self.stepSave") });
+      const docObj = normalizeIsaDoc(draft.doc);
+      await icsUpdateItem(ICS_LISTS.requests, spId, { IsaDocJson: isaDocSerialize(docObj) });
+      const draftObj = {
+        ver: 1, stage: "isa", risk: draft.risk || null, comment: draft.comment || "",
+        frequency: draft.frequency ?? c.frequency, importance: draft.importance ?? c.importance,
+        sampleSize: Number(draft.sampleSize) || 0,
+        attachments: finalAttachments.map((a) => ({ name: a.name, webUrl: a.webUrl, size: a.size || "" })),
+        savedAt: new Date().toISOString(), savedBy: currentUser.email,
+      };
+      try { await icsUpdateItem(ICS_LISTS.requests, spId, { [DRAFT_FIELD]: draftSerialize(draftObj) }); }
+      catch (e) { throw draftColumnError(e, t); }
+      // 올린 첨부는 폼에서도 「올린 것」 으로 바꿔 둔다(다시 누르거나 제출해도 두 번 올리지 않게). 입력 중인 글은 그대로.
+      setDraft((prev) => ({ ...prev, attachments: finalAttachments }));
+      setControls((prev) => prev.map((x) => (x.id === c.id ? { ...x, requestSpId: spId, isaDoc: docObj, draft: draftObj } : x)));
+      addLog(currentUser.email, "save_draft", c.code, c.name, c.nameEn);
+      showToast(t("self.draftSavedToast"));
+    } finally { setDraftSaving(null); }
+  }
+  async function saveDraftWithAlert(c) {
+    try { await saveDraft(c); } catch (e) { alert(t("self.draftSaveFailed") + e.message); }
   }
 
   async function submit(c) {
@@ -4923,10 +4973,12 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
         }
       }
 
+      // 임시 저장본은 제출로 역할이 끝났다 — 지운다(DraftJson 열이 없는 환경이면 임시 저장본도 없다).
+      if (c.draft) { try { await icsUpdateItem(ICS_LISTS.requests, spId, { [DRAFT_FIELD]: "" }); } catch (e) { console.warn("[ICS] 임시 저장본 정리 실패:", e.message); } }
       setControls((prev) =>
         prev.map((x) =>
           x.id === c.id
-            ? { ...x, requestSpId: spId, frequency: newFreq, importance: newImp, status: "submitted_self", selfRisk: draft.risk, selfComment: draft.comment, selfCommentEn: draft.comment, selfDate: today, actualSample: draft.sampleSize, attachments: finalAttachments, isaDoc: docSaved ? docObj : x.isaDoc }
+            ? { ...x, requestSpId: spId, frequency: newFreq, importance: newImp, status: "submitted_self", selfRisk: draft.risk, selfComment: draft.comment, selfCommentEn: draft.comment, selfDate: today, actualSample: draft.sampleSize, attachments: finalAttachments, isaDoc: docSaved ? docObj : x.isaDoc, draft: null }
             : x
         )
       );
@@ -4955,19 +5007,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
     setSavingStep(t("self.stepSave"));
     setEditing(null);
     try {
-      let spId = c.requestSpId;
-      if (!spId) {
-        const created = await icsCreateItem(ICS_LISTS.requests, {
-          Title: `ICS-${c.year}-${c.code}`,
-          ControlId: c.code,
-          Year: c.year,
-          RequesterEmail: c.accessor,
-          RequestDate: new Date().toISOString(),
-          Status: "not_started",
-        });
-        spId = created.id;
-        setControls((prev) => prev.map((x) => (x.id === c.id ? { ...x, requestSpId: spId } : x)));
-      }
+      const spId = await ensureRequestItem(c);
 
       const newImp = draft.importance ?? c.importance;
       if (c.spId && (freq !== c.frequency || newImp !== c.importance)) {
@@ -4987,12 +5027,13 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
         SampleCount: 0,
         AttachedFiles: "",
       });
+      if (c.draft) { try { await icsUpdateItem(ICS_LISTS.requests, spId, { [DRAFT_FIELD]: "" }); } catch (e) { console.warn("[ICS] 임시 저장본 정리 실패:", e.message); } }
       setControls((prev) =>
         prev.map((x) =>
           x.id === c.id
             ? { ...x, requestSpId: spId, frequency: freq, importance: newImp, status: "completed",
                 selfRisk: "", selfComment: noteKo, selfCommentEn: noteEn, selfDate: now,
-                actualSample: 0, attachments: [] }
+                actualSample: 0, attachments: [], draft: null }
             : x
         )
       );
@@ -5387,12 +5428,15 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
                     ))}
                   {reasonFor === c.id && <ReturnReasonPopup control={c} phase="ISA" onClose={() => setReasonFor(null)} />}
                   {/* 반려된 건은 상태 배지 대신 한 줄 요약(누가·언제·왜) */}
-                  {/* 제출 전에 「저장」해 둔 서식이 있으면 표시 — 다시 열면 이어서 쓸 수 있다는 뜻(09-28) */}
-                  {c.status !== "submitted_self" && c.status !== "completed" && isaDocFilled(c.isaDoc) && (
-                    <span className="text-[12px] px-2 py-0.5 rounded-full font-medium whitespace-nowrap flex items-center gap-1" data-doc-draft-badge
-                          style={{ backgroundColor: "#E6F4EA", color: "#15803D" }}>
-                      <FileText size={11} /> {t("self.docDraftBadge")}
-                    </span>
+                  {/* 제출 전 임시 저장본이 있으면 시각과 함께, 서식만 저장돼 있으면 「서식 저장됨」 — 다시 열면 이어서 쓸 수 있다는 뜻(09-28) */}
+                  {c.status !== "submitted_self" && c.status !== "completed" && (
+                    c.draft && c.draft.stage === "isa" ? <DraftBadge savedAt={c.draft.savedAt} t={t} />
+                    : isaDocFilled(c.isaDoc) ? (
+                      <span className="text-[12px] px-2 py-0.5 rounded-full font-medium whitespace-nowrap flex items-center gap-1" data-doc-draft-badge
+                            style={{ backgroundColor: "#E6F4EA", color: "#15803D" }}>
+                        <FileText size={11} /> {t("self.docDraftBadge")}
+                      </span>
+                    ) : null
                   )}
                   {c.status === "returned"
                     ? <StageLine stage="isaReview" control={c} compact onOpen={() => setReasonFor(c.id)} />
@@ -5438,7 +5482,8 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
                     <Loader2 size={14} className="animate-spin" /> {t("common.saving")}
                   </div>
                 ) : editing === c.id && !isArchived ? (
-                  <SelfAssessForm control={c} draft={draft} setDraft={setDraft} onCancel={() => setEditing(null)} onSubmit={() => submit(c)} onSkip={() => skipIsa(c)} onSaveDoc={() => saveDoc(c)} />
+                  <SelfAssessForm control={c} draft={draft} setDraft={setDraft} onCancel={() => setEditing(null)} onSubmit={() => submit(c)} onSkip={() => skipIsa(c)}
+                                  onSaveDoc={() => saveDraft(c)} onSaveDraft={() => saveDraftWithAlert(c)} draftSaving={draftSaving} />
                 ) : changeReqsLoading ? (
                   // 조회 중에는 작성 버튼을 내지 않는다. 아래 잠금 안내와 같은 자리에
                   // 옅은 안내만 두어 화면이 튀지 않게 한다.
@@ -5594,6 +5639,60 @@ function SubmitProgressModal({ step }) {
    평가 제출 조건에는 넣지 않는다 — 서식이 비어 있다고 평가를 막으면
    급한 항목까지 함께 멈춘다. 채운 내용만 평가와 함께 저장된다. */
 /* sampleCount — 평가 폼에 적은 「샘플링 건수」. 표본 행은 이 건수를 기준으로 만든다(없으면 권장 건수). */
+/* ── 임시 저장(09-28 요청) ──────────────────────────────────────────────────────
+   평가 화면의 입력값(리스크 수준 · 평가 근거 · 점검 빈도 · 중요도 · 샘플링 건수 · 첨부)과 서식을 제출 전에도 남긴다.
+   저장처: ICS_Requests 의 새 열 DraftJson(여러 줄 텍스트, JSON 한 덩어리) + 서식은 IsaDocJson.
+   실제 평가 열(SelfRisk · SelfCommentKo …)에는 쓰지 않는다 — 평가 이력 표 · 세부 내용이 그 열을 상태와 무관하게 보여 주므로,
+   임시 값이 「1차 결과」 처럼 읽힐 수 있다. 첨부 파일은 제출 때와 같은 폴더에 미리 올리고 이름 · URL 만 적어 두어,
+   제출할 때 다시 올리지 않는다. stage(isa · fsa)로 어느 화면의 임시 저장인지 구분하고, 제출하면 지운다. */
+const DRAFT_FIELD = "DraftJson";
+function draftSerialize(d) { return isaDocSerialize(d); }          // <>& 를 \u 표기로 — IsaDocJson 과 같은 이유
+function fmtDraftTime(iso) {
+  if (!iso) return "";
+  const d = new Date(new Date(iso).getTime() + 9 * 3600 * 1000);
+  if (isNaN(d)) return "";
+  const p = (n) => String(n).padStart(2, "0");
+  return `${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
+}
+/* DraftJson 열이 아직 없는 환경 — Graph 가 400 에 「Field 'DraftJson' is not recognized」 로 답한다. 담당자에게는 열 이름으로 알린다. */
+function draftColumnError(e, t) {
+  const m = String(e && e.message || "");
+  return /DraftJson/i.test(m) && /(not recognized|does not exist|invalid|unknown)/i.test(m) ? new Error(t("self.draftColMissing")) : e;
+}
+/* 폼 아래줄의 상태 글 + 「임시 저장」 단추 — ISA 1차 · FSA 두 폼이 같이 쓴다. */
+function DraftSaveControls({ saving, savedAt, onSave, t }) {
+  const busy = !!(saving && saving.busy);
+  return (
+    <>
+      {busy ? (
+        <span className="text-[12px] text-slate-500 flex items-center gap-1.5 whitespace-nowrap" data-draft-status>
+          <Loader2 size={13} className="animate-spin" /> {saving.step || t("self.draftSaving")}
+        </span>
+      ) : savedAt ? (
+        <span className="text-[12px] font-medium flex items-center gap-1 whitespace-nowrap" style={{ color: "#15803D" }} data-draft-status>
+          <CheckCircle2 size={13} /> {t("self.draftSavedAt").replace("{t}", fmtDraftTime(savedAt))}
+        </span>
+      ) : null}
+      <button type="button" onClick={onSave} disabled={busy} data-draft-save
+              className="px-4 py-2 text-sm font-semibold rounded-lg border bg-white flex items-center gap-1.5 disabled:opacity-60 transition-colors"
+              style={{ borderColor: BRAND.accent, color: BRAND.accent }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#EEF6F5"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "#fff"; }}>
+        <Save size={14} /> {t("self.draftSaveBtn")}
+      </button>
+    </>
+  );
+}
+/* 목록 카드의 「임시 저장 · MM-DD HH:MM」 알약 */
+function DraftBadge({ savedAt, t }) {
+  return (
+    <span className="text-[12px] px-2 py-0.5 rounded-full font-medium whitespace-nowrap flex items-center gap-1" data-draft-badge
+          style={{ backgroundColor: "#E6F4EA", color: "#15803D" }}>
+      <Save size={11} /> {t("self.draftBadge").replace("{t}", fmtDraftTime(savedAt))}
+    </span>
+  );
+}
+
 function IsaDocForms({ control, doc, setDoc, recommended, sampleCount, required, onSave }) {
   const { lang, t } = useLang();
   /* 「저장」(09-28 요청) — 입력 완료를 눌러도 화면 상태에만 남고 시스템에는 제출할 때 저장됐다.
@@ -6037,7 +6136,7 @@ function IsaDocForms({ control, doc, setDoc, recommended, sampleCount, required,
   );
 }
 
-function SelfAssessForm({ control, draft, setDraft, onCancel, onSubmit, onSkip, onSaveDoc }) {
+function SelfAssessForm({ control, draft, setDraft, onCancel, onSubmit, onSkip, onSaveDoc, onSaveDraft, draftSaving }) {
   const { lang, t } = useLang();
   const fileInputRef = useRef(null);
   /* ISA Skip 은 조건에 맞을 때만 버튼을 내보냈더니, 왜 안 보이는지 알 수 없었다.
@@ -6257,8 +6356,10 @@ function SelfAssessForm({ control, draft, setDraft, onCancel, onSubmit, onSkip, 
           )}
         </div>
         <div className="flex items-center gap-2">
+        {/* 임시 저장(09-28) — 제출 조건과 무관하게 언제든 누를 수 있다. 상태 글(저장 중 · 마지막 저장 시각)은 단추 왼쪽. */}
+        {onSaveDraft && <DraftSaveControls saving={draftSaving} savedAt={control.draft && control.draft.stage === "isa" ? control.draft.savedAt : ""} onSave={onSaveDraft} t={t} />}
         <button onClick={onCancel} className="px-4 py-2 text-sm text-slate-500 rounded-lg hover:bg-slate-50">{t("common.cancel")}</button>
-        <button onClick={onSubmit} disabled={missing.length > 0}
+        <button onClick={onSubmit} disabled={missing.length > 0 || !!(draftSaving && draftSaving.busy)}
                 title={missing.length ? `${t("self.needTitle")}\n${missing.map((m) => "· " + m).join("\n")}` : ""}
                 className="px-5 py-2 text-sm font-semibold text-white rounded-lg transition-opacity disabled:opacity-40 disabled:cursor-not-allowed" style={{ backgroundColor: BRAND.accent }}>
           {t("self.submitBtn")}
@@ -6315,7 +6416,7 @@ function SelfAssessForm({ control, draft, setDraft, onCancel, onSubmit, onSkip, 
 /* FSA 최종 자가평가 (ISA 1차·2차가 모두 끝난 뒤 진행하는 마지막 확인 단계)         */
 /* ------------------------------------------------------------------ */
 
-function FSAForm({ draft, setDraft, onCancel, onSubmit, control, onSaveDoc }) {
+function FSAForm({ draft, setDraft, onCancel, onSubmit, control, onSaveDoc, onSaveDraft, draftSaving }) {
   const { lang, t } = useLang();
   const fileInputRef = useRef(null);
   /* 점검 빈도 · 중요도 · 샘플링 건수 — ISA 에서 쓴 값을 그대로 불러오되 FSA 에서 바꿀 수 있다(09-22 요청).
@@ -6495,8 +6596,9 @@ function FSAForm({ draft, setDraft, onCancel, onSubmit, control, onSaveDoc }) {
       <XlsLayoutNote files={draft.attachments} />
 
       <div className="flex justify-end items-center gap-2 mt-4 pt-4 border-t border-slate-200">
+        {onSaveDraft && control && <DraftSaveControls saving={draftSaving} savedAt={control.draft && control.draft.stage === "fsa" ? control.draft.savedAt : ""} onSave={onSaveDraft} t={t} />}
         <button onClick={onCancel} className="px-4 py-2 text-sm text-slate-500 rounded-lg hover:bg-slate-50">{t("common.cancel")}</button>
-        <button onClick={onSubmit} disabled={missing.length > 0}
+        <button onClick={onSubmit} disabled={missing.length > 0 || !!(draftSaving && draftSaving.busy)}
                 title={missing.length ? `${t("self.needTitle")}\n${missing.map((m) => "· " + m).join("\n")}` : ""}
                 className="px-5 py-2 text-sm font-semibold text-white rounded-lg disabled:opacity-40 disabled:cursor-not-allowed"
                 style={{ backgroundColor: BRAND.accent }}>
@@ -6535,25 +6637,60 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
     // 서식은 ISA 와 같은 저장본을 이어서 쓴다. 없으면 점검 빈도로 수행 주기 기본값을 둔다.
     const doc = normalizeIsaDoc(c.isaDoc);
     if (!c.isaDoc && !doc.cd.cycle) doc.cd.cycle = FREQ_TO_CYCLE[c.frequency] || "";
+    // 임시 저장본(DraftJson · stage fsa)이 있으면 그 값으로 연다.
+    const d = c.draft && c.draft.stage === "fsa" ? c.draft : null;
     setDraft({
-      risk: c.fsaRisk,
-      comment: c.fsaComment || "",
-      attachments: c.fsaAttachments || [],
+      risk: d ? (d.risk || null) : c.fsaRisk,
+      comment: d ? (d.comment || "") : (c.fsaComment || ""),
+      attachments: d ? (d.attachments || []).map((a) => ({ name: a.name, webUrl: a.webUrl, size: a.size })) : (c.fsaAttachments || []),
       // FSA 기준은 따로 둔다. 처음이면 ISA 값(점검 빈도 · 중요도 · 실제 샘플링 건수)을 그대로 불러온다.
-      frequency: c.fsaFrequency || c.frequency,
-      importance: c.fsaImportance || c.importance,
-      sampleSize: c.fsaActualSample ?? c.actualSample ?? recommendedSample(c.importance, c.frequency),
+      frequency: (d && d.frequency) || c.fsaFrequency || c.frequency,
+      importance: (d && d.importance) || c.fsaImportance || c.importance,
+      sampleSize: d && d.sampleSize != null && d.sampleSize !== "" ? Number(d.sampleSize) : (c.fsaActualSample ?? c.actualSample ?? recommendedSample(c.importance, c.frequency)),
       doc,
     });
   }
-  /* 서식 「저장」(09-28) — ISA 를 생략한 항목이 FSA 에서 서식을 쓸 때도 제출 전에 저장할 수 있게. ISA 와 같은 열(IsaDocJson). */
-  async function saveDoc(c) {
-    const docObj = normalizeIsaDoc(draft.doc);
+  /* 임시 저장(09-28) — ISA 1차와 같은 방식(DraftJson · stage fsa). 첨부는 제출 때와 같은 FSA 하위 폴더에 올려 둔다.
+     서식은 ISA 를 생략한 항목만 FSA 에서 쓰므로 그때만 IsaDocJson 에 쓴다. */
+  const [draftSaving, setDraftSaving] = useState(null);
+  async function saveDraft(c) {
+    if (draftSaving && draftSaving.busy) return;
     if (!c.requestSpId) throw new Error(lang === "en" ? "Request item not found." : "요청 항목을 찾지 못했습니다.");
-    await icsUpdateItem(ICS_LISTS.requests, c.requestSpId, { IsaDocJson: isaDocSerialize(docObj) });
-    setControls((prev) => prev.map((x) => (x.id === c.id ? { ...x, isaDoc: docObj } : x)));
-    addLog(currentUser.email, "save_doc", c.code, c.name, c.nameEn);
-    showToast(t("self.docSavedToast"));
+    setDraftSaving({ busy: true, step: t("self.stepPrepare") });
+    try {
+      const finalAttachments = [];
+      const toUpload = (draft.attachments || []).filter((a) => !a.webUrl && a.file).length;
+      let uploaded = 0;
+      for (const att of draft.attachments || []) {
+        if (att.webUrl) finalAttachments.push({ name: att.name, webUrl: att.webUrl, size: att.size });
+        else if (att.file) {
+          uploaded += 1;
+          setDraftSaving({ busy: true, step: `${t("self.stepUpload")} (${uploaded} / ${toUpload}) · ${att.file.name}` });
+          const up = await icsUploadAttachment(c.requestSpId, att.file, "FSA");
+          finalAttachments.push({ name: att.file.name, webUrl: up.webUrl, size: att.size });
+        }
+      }
+      setDraftSaving({ busy: true, step: t("self.stepSave") });
+      const docObj = normalizeIsaDoc(draft.doc);
+      const docWrite = isIsaSkipped(c);
+      if (docWrite) await icsUpdateItem(ICS_LISTS.requests, c.requestSpId, { IsaDocJson: isaDocSerialize(docObj) });
+      const draftObj = {
+        ver: 1, stage: "fsa", risk: draft.risk || null, comment: draft.comment || "",
+        frequency: draft.frequency || c.fsaFrequency || c.frequency, importance: draft.importance || c.fsaImportance || c.importance,
+        sampleSize: Number(draft.sampleSize) || 0,
+        attachments: finalAttachments.map((a) => ({ name: a.name, webUrl: a.webUrl, size: a.size || "" })),
+        savedAt: new Date().toISOString(), savedBy: currentUser.email,
+      };
+      try { await icsUpdateItem(ICS_LISTS.requests, c.requestSpId, { [DRAFT_FIELD]: draftSerialize(draftObj) }); }
+      catch (e) { throw draftColumnError(e, t); }
+      setDraft((prev) => ({ ...prev, attachments: finalAttachments }));
+      setControls((prev) => prev.map((x) => (x.id === c.id ? { ...x, isaDoc: docWrite ? docObj : x.isaDoc, draft: draftObj } : x)));
+      addLog(currentUser.email, "save_draft", c.code, c.name, c.nameEn);
+      showToast(t("self.draftSavedToast"));
+    } finally { setDraftSaving(null); }
+  }
+  async function saveDraftWithAlert(c) {
+    try { await saveDraft(c); } catch (e) { alert(t("self.draftSaveFailed") + e.message); }
   }
 
   async function submit(c) {
@@ -6625,10 +6762,11 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
         }
       }
 
+      if (c.draft) { try { await icsUpdateItem(ICS_LISTS.requests, c.requestSpId, { [DRAFT_FIELD]: "" }); } catch (e) { console.warn("[ICS] 임시 저장본 정리 실패:", e.message); } }
       setControls((prev) =>
         prev.map((x) =>
           x.id === c.id
-            ? { ...x, fsaStatus: "submitted_self", fsaRisk: draft.risk, fsaComment: draft.comment, fsaCommentEn: draft.comment, fsaDate: today, fsaAttachments: finalAttachments, fsaActualSample: fsaCountSaved ? Number(draft.sampleSize) || 0 : x.fsaActualSample, fsaFrequency: fsaFreqSaved ? fsaFreq : x.fsaFrequency, fsaImportance: fsaImpSaved ? fsaImp : x.fsaImportance, isaDoc: docSaved ? docObj : x.isaDoc }
+            ? { ...x, fsaStatus: "submitted_self", fsaRisk: draft.risk, fsaComment: draft.comment, fsaCommentEn: draft.comment, fsaDate: today, fsaAttachments: finalAttachments, fsaActualSample: fsaCountSaved ? Number(draft.sampleSize) || 0 : x.fsaActualSample, fsaFrequency: fsaFreqSaved ? fsaFreq : x.fsaFrequency, fsaImportance: fsaImpSaved ? fsaImp : x.fsaImportance, isaDoc: docSaved ? docObj : x.isaDoc, draft: null }
             : x
         )
       );
@@ -6697,6 +6835,7 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
                       FSA 판정처럼 읽혔고, FSA 는 아직 판정 전이라 보여 줄 값도 없다(09-21 지적).
                       반려 상태 표시만 남긴다. */}
                   <div className="flex items-center gap-2 min-w-0">
+                    {c.draft && c.draft.stage === "fsa" && <DraftBadge savedAt={c.draft.savedAt} t={t} />}
                     {c.fsaStatus === "returned" && <StageLine stage="fsaReview" control={c} compact onOpen={() => setReasonFor(c.id)} />}
                     {reasonFor === c.id && <ReturnReasonPopup control={c} phase="FSA" onClose={() => setReasonFor(null)} />}
                   </div>
@@ -6717,7 +6856,8 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
                 {/* 반려 내용은 오른쪽 위 한 줄 요약으로 옮겼다(09-21). */}
 
                 {editing === c.id && !isArchived ? (
-                  <FSAForm draft={draft} setDraft={setDraft} onCancel={() => setEditing(null)} onSubmit={() => submit(c)} control={c} onSaveDoc={() => saveDoc(c)} />
+                  <FSAForm draft={draft} setDraft={setDraft} onCancel={() => setEditing(null)} onSubmit={() => submit(c)} control={c}
+                           onSaveDoc={() => saveDraft(c)} onSaveDraft={() => saveDraftWithAlert(c)} draftSaving={draftSaving} />
                 ) : null}
               </div>
             ))}
@@ -12342,7 +12482,7 @@ async function loadIcsControls() {
       actualSample: null, attachments: [], fsaAttachments: [], history: [],
       fsaStatus: "not_started", fsaRisk: null, fsaComment: "", fsaCommentEn: "", fsaDate: null,
       fsaReviewRisk: null, fsaReviewComment: "", fsaReviewCommentEn: "", fsaReviewDate: null,
-      pendingEdit: null,
+      pendingEdit: null, draft: null,
     };
   });
   controls.forEach((c) => { c.sampleSize = recommendedSample(c.importance, c.frequency); });
@@ -12368,6 +12508,12 @@ async function loadIcsControls() {
     if (f.IsaDocJson) {
       try { match.isaDoc = normalizeIsaDoc(JSON.parse(stripSpRichText(f.IsaDocJson))); }
       catch (e) { console.warn("[ICS] 서식 JSON 해석 실패:", match.code, e.message); }
+    }
+    // 임시 저장본(09-28) — 열이 없거나 값이 깨졌으면 없는 것으로. stage(isa · fsa)가 있어야 유효하다.
+    match.draft = null;
+    if (f[DRAFT_FIELD]) {
+      try { const d = JSON.parse(stripSpRichText(f[DRAFT_FIELD])); if (d && typeof d === "object" && d.stage) match.draft = d; }
+      catch (e) { console.warn("[ICS] 임시 저장 JSON 해석 실패:", match.code, e.message); }
     }
     match.reviewRisk = f.ReviewRisk || null;
     match.reviewComment = stripSpRichText(f.ReviewCommentKo) || "";
