@@ -1282,6 +1282,7 @@ const STR = {
       titleAll: "전사 평가 이력 · 리포트",
       subtitleAll: "관리자 전용 — 모든 부서의 평가 활동 로그와 종합 현황입니다. 담당 배정과 무관하게 전사 통제 항목이 모두 표시됩니다.",
       allDepts: "전체 부서",
+      logAll: "전체 활동", logAssessment: "평가 활동만", logEmpty: "표시할 활동 로그가 없습니다.",
     },
     assess: {
       searchPlaceholder: "통제명 · 코드 · 담당자 검색",
@@ -1786,6 +1787,7 @@ const STR = {
       titleAll: "All-Dept History & Reports",
       subtitleAll: "Admin only — assessment activity log and summary for every department, regardless of assignment.",
       allDepts: "All departments",
+      logAll: "All activity", logAssessment: "Assessment only", logEmpty: "No activity to show.",
     },
     assess: {
       searchPlaceholder: "Search by control name, code, or accessor",
@@ -9751,6 +9753,7 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
   // scope="all"(관리자 전용 · 전사 평가 이력 · 리포트, 10-08): 배정 필터 없이 전 부서를 본다. 들어오는 길목(라우팅)에서 adminOnly 를 검사한다.
   const all = scope === "all";
   const [deptFilter, setDeptFilter] = useState("");
+  const [logKind, setLogKind] = useState("all");   // 전사 화면의 활동 로그 범위: all(전 활동) · assessment(평가 흐름만)
   const { lang, t } = useLang();
   const { departments, users } = useAppData();
   const [detail, setDetail] = useState(null);
@@ -9777,7 +9780,8 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
   // 활동 로그는 ISA/FSA 평가 흐름(자가평가·검토·FSA)에서 발생한 기록만 보여준다 - 권한 변경, 부서 초기화 등 시스템/관리 로그는 제외.
   const ASSESSMENT_ACTIONS = new Set(["submit_self", "review_complete", "review_reject", "fsa_submit", "fsa_review_complete", "fsa_review_reject", "withdraw_self", "withdraw_fsa"]);
   const log = allLog
-    .filter((l) => ASSESSMENT_ACTIONS.has(l.actionKey))
+    // 전사 화면은 전 활동(임시 저장 · 서식 저장 · 통제 항목 변경 · 권한 변경 …)을 보여 준다 — 제출이 아직 없어도 누가 무엇을 했는지 보인다.
+    .filter((l) => all ? (logKind === "assessment" ? ASSESSMENT_ACTIONS.has(l.actionKey) : true) : ASSESSMENT_ACTIONS.has(l.actionKey))
     .filter((l) => all ? (!deptFilter || myCodes.has(l.code)) : ((l.actor || "").toLowerCase() === myEmail || myCodes.has(l.code)));
   const pieData = ["green", "orange", "red", "none"].map((r) => ({
     name: RISK_META[r][lang], value: controls.filter((c) => stageRisk(c, stage) === r).length, color: RISK_META[r].color,
@@ -9831,7 +9835,15 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
         </div>
 
         <div className="lg:col-span-3 bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-          <h3 className="text-sm font-semibold text-slate-700 mb-4 flex items-center gap-2"><FileText size={15} /> {t("history.logTitle")}</h3>
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2"><FileText size={15} /> {t("history.logTitle")}<span className="text-xs font-normal text-slate-400">{log.length}{t("common.items")}</span></h3>
+            {all && (
+              <select value={logKind} onChange={(e) => setLogKind(e.target.value)} className={`${inputCls} w-auto flex-shrink-0 text-xs py-1`}>
+                <option value="all">{t("history.logAll")}</option>
+                <option value="assessment">{t("history.logAssessment")}</option>
+              </select>
+            )}
+          </div>
           <div className="divide-y divide-slate-100 max-h-56 overflow-y-auto pr-2">
             {log.map((l) => {
               const ctrl = controls.find((c) => c.code === l.code);
@@ -9840,14 +9852,15 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
                 <div key={l.id} className="py-2.5 flex items-center justify-between text-sm gap-3">
                   <div className="min-w-0">
                     <p className="text-slate-700 truncate">
-                      <span className="font-medium">{personByEmail(l.actor, lang, users)}</span> · {ACTION_LABELS[l.actionKey][lang]}
+                      <span className="font-medium">{personByEmail(l.actor, lang, users)}</span> · {(ACTION_LABELS[l.actionKey] || {})[lang] || l.actionKey}
                     </p>
-                    <p className="text-xs text-slate-400 truncate">{l.code} · {label}</p>
+                    <p className="text-xs text-slate-400 truncate">{all && ctrl ? `${deptName(ctrl.dept, lang, departments)} · ` : ""}{l.code} · {label}</p>
                   </div>
                   <span className="text-xs text-slate-400 flex-shrink-0 whitespace-nowrap pr-1">{formatDateTime(l.dateTime, lang)}</span>
                 </div>
               );
             })}
+            {log.length === 0 && <p className="text-xs text-slate-400 text-center py-8">{t("history.logEmpty")}</p>}
           </div>
         </div>
       </div>
