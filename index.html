@@ -974,6 +974,7 @@ const STR = {
       approval: "통제 항목 변경 결재", todoTip: "내가 처리할 건", noAccess: "접근 권한 없음",
       settings: "부서 및 ISA · FSA사용자 권한",
       categoryAccess: "카테고리 접근 권한",
+      historyAll: "전사 평가 이력 · 리포트",
       permissions: "권한 관리",
       myApprovals: "내가 처리한 변경 결재",
       approvalHistory: "변경 결재 전체 이력",
@@ -1278,6 +1279,9 @@ const STR = {
       pdfPkgBtn: "PDF 저장", pickAll: "전체 선택",
       colSample: "샘플링",
       allAccessors: "전체 담당자",
+      titleAll: "전사 평가 이력 · 리포트",
+      subtitleAll: "관리자 전용 — 모든 부서의 평가 활동 로그와 종합 현황입니다. 담당 배정과 무관하게 전사 통제 항목이 모두 표시됩니다.",
+      allDepts: "전체 부서",
     },
     assess: {
       searchPlaceholder: "통제명 · 코드 · 담당자 검색",
@@ -1474,6 +1478,7 @@ const STR = {
       approval: "Control Change Approvals", todoTip: "Items waiting for you", noAccess: "No access",
       settings: "Dept. & ISA/FSA User Access",
       categoryAccess: "Category Access",
+      historyAll: "All-Dept History & Reports",
       permissions: "Access Control",
       myApprovals: "Changes I decided",
       approvalHistory: "All change approvals",
@@ -1778,6 +1783,9 @@ const STR = {
       pdfPkgBtn: "Save PDF", pickAll: "Select all",
       colSample: "Sample",
       allAccessors: "All accessors",
+      titleAll: "All-Dept History & Reports",
+      subtitleAll: "Admin only — assessment activity log and summary for every department, regardless of assignment.",
+      allDepts: "All departments",
     },
     assess: {
       searchPlaceholder: "Search by control name, code, or accessor",
@@ -2154,6 +2162,9 @@ const MENU_GROUPS = [
     { key: "manage", icon: ClipboardEdit, categoryKey: "adminOnly" },
     { key: "permissions", icon: KeyRound },
     { key: "categoryAccess", icon: KeyRound },
+    // 전사 평가 이력 · 리포트(10-08). 평가 그룹의 「평가 이력 · 리포트」 는 Admin 이라도 본인 배정분만 보여 주므로,
+    // 관리자가 모든 부서의 평가 활동을 한 화면에서 보는 자리를 관리자 전용에 둔다. 같은 HistoryPage 를 scope="all" 로 연다.
+    { key: "historyAll", icon: History, categoryKey: "adminOnly" },
     // 통제 항목 변경 이력. 결재가 끝난 수정·삭제 요청의 기록이라
     // 담당자 개인 화면이 아니라 관리자 메뉴에 둔다.
     // categoryKey 를 executive 로 두어 Admin 외에 CFO·RD 도 볼 수 있게 한다.
@@ -9736,7 +9747,10 @@ function ChangeHistoryPage({ controls, currentUser }) {
   );
 }
 
-function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedDepts }) {
+function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedDepts, scope = "mine" }) {
+  // scope="all"(관리자 전용 · 전사 평가 이력 · 리포트, 10-08): 배정 필터 없이 전 부서를 본다. 들어오는 길목(라우팅)에서 adminOnly 를 검사한다.
+  const all = scope === "all";
+  const [deptFilter, setDeptFilter] = useState("");
   const { lang, t } = useLang();
   const { departments, users } = useAppData();
   const [detail, setDetail] = useState(null);
@@ -9752,15 +9766,19 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
   // 역할과 무관하게 본인이 Accessor 또는 Reviewer 로 배정된 항목만 조회한다 (Admin 포함).
   // 전사 현황은 부서별 통제 현황·통제 항목 관리·대시보드에서 확인한다.
   // 본인이 Accessor 또는 Reviewer 로 배정된 항목만 조회한다 (Admin 포함).
-  const controls = allControls.filter(
+  const baseControls = all ? allControls : allControls.filter(
     (c) => (c.accessor || "").toLowerCase() === myEmail || (c.reviewer || "").toLowerCase() === myEmail
   );
+  // 전사 화면에서 부서를 고르면 표 · 신호등 분포 · 활동 로그가 함께 그 부서로 좁혀진다.
+  const controls = all && deptFilter ? baseControls.filter((c) => c.dept === deptFilter) : baseControls;
   const myCodes = new Set(controls.map((c) => c.code));
+  // 전사 화면의 부서 선택 목록 — 통제 항목이 실제로 있는 부서만
+  const deptOptions = all ? departments.filter((d) => baseControls.some((c) => c.dept === d.id)) : [];
   // 활동 로그는 ISA/FSA 평가 흐름(자가평가·검토·FSA)에서 발생한 기록만 보여준다 - 권한 변경, 부서 초기화 등 시스템/관리 로그는 제외.
   const ASSESSMENT_ACTIONS = new Set(["submit_self", "review_complete", "review_reject", "fsa_submit", "fsa_review_complete", "fsa_review_reject", "withdraw_self", "withdraw_fsa"]);
   const log = allLog
     .filter((l) => ASSESSMENT_ACTIONS.has(l.actionKey))
-    .filter((l) => (l.actor || "").toLowerCase() === myEmail || myCodes.has(l.code));
+    .filter((l) => all ? (!deptFilter || myCodes.has(l.code)) : ((l.actor || "").toLowerCase() === myEmail || myCodes.has(l.code)));
   const pieData = ["green", "orange", "red", "none"].map((r) => ({
     name: RISK_META[r][lang], value: controls.filter((c) => stageRisk(c, stage) === r).length, color: RISK_META[r].color,
   })).filter((d) => d.value > 0);
@@ -9779,7 +9797,7 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
       || personByEmail(c.accessor, lang, users).toLowerCase().includes(qTable);
   });
   // 검색어·담당자 필터가 바뀌면 첫 페이지로 되돌린다 (빈 화면 방지)
-  useEffect(() => { setTablePage(0); }, [tableSearch, accessorFilter]);
+  useEffect(() => { setTablePage(0); }, [tableSearch, accessorFilter, deptFilter]);
   const tableTotalPages = Math.max(1, Math.ceil(filteredTableControls.length / TABLE_PAGE_SIZE));
   const clampedTablePage = Math.min(tablePage, tableTotalPages - 1);
   const pagedTableControls = filteredTableControls.slice(clampedTablePage * TABLE_PAGE_SIZE, (clampedTablePage + 1) * TABLE_PAGE_SIZE);
@@ -9788,10 +9806,10 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
     <div>
       <SectionHeader
         icon={History}
-        title={t("history.title")}
+        title={t(all ? "history.titleAll" : "history.title")}
         inline={<StageTabs stage={stage} setStage={setStage} />}
         subtitle={<>
-          {t("history.subtitle")}
+          {t(all ? "history.subtitleAll" : "history.subtitle")}
           <span className="block text-[12px] mt-0.5" style={{ color: BRAND.accent }}>
             {t(stage === "fsa" ? "dashboard.stageFsaHint" : "dashboard.stageIsaHint")}
           </span>
@@ -9845,6 +9863,16 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
               placeholder={t("common.search")}
               className={`${inputCls} w-52`}
             />
+            {all && (
+              <select
+                value={deptFilter}
+                onChange={(e) => { setDeptFilter(e.target.value); setAccessorFilter(""); setPicked(new Set()); }}
+                className={`${inputCls} w-auto flex-shrink-0`}
+              >
+                <option value="">{t("history.allDepts")}</option>
+                {deptOptions.map((d) => <option key={d.id} value={d.id}>{deptName(d.id, lang, departments)}</option>)}
+              </select>
+            )}
             <select
               value={accessorFilter}
               onChange={(e) => setAccessorFilter(e.target.value)}
@@ -11523,7 +11551,7 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
   // "평가 이력 · 리포트" 화면에 처음 들어갈 때(또는 조회 연도를 바꿀 때)만 그 연도의 활동 로그를 지연 로드한다
   // (연도별로 서버에서 걸러서 받아오므로, 로그가 여러 해에 걸쳐 누적돼도 조회 속도가 계속 느려지지 않는다).
   useEffect(() => {
-    if (page !== "history" || !usingSharePointData) return;
+    if ((page !== "history" && page !== "historyAll") || !usingSharePointData) return;   // 전사 평가 이력 · 리포트도 같은 로그를 쓴다(10-08)
     setFullLogLoaded(false);
     loadIcsLog(selectedYear)
       .then((full) => { setLog(full); setFullLogLoaded(true); })
@@ -12023,6 +12051,12 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
               )
             )}
             {page === "categoryAccess" && (hasCategoryAccess(currentUser, "adminOnly") ? <CategoryAccessPage currentUser={currentUser} addLog={addLog} showToast={showToast} /> : <EmptyState text="Access denied" />)}
+            {/* 전사 평가 이력 · 리포트(10-08) — 관리자 전용. 같은 HistoryPage 를 scope="all" 로 열어 전 부서 통제 항목 · 활동 로그를 본다. */}
+            {page === "historyAll" && (
+              hasCategoryAccess(currentUser, "adminOnly")
+                ? <HistoryPage controls={controlsForYear} log={logForYear} currentUser={currentUser} allowedDepts={allowedDepts} scope="all" />
+                : <EmptyState text="Access denied" />
+            )}
             {page === "permissions" && (hasCategoryAccess(currentUser, "adminOnly") ? <PermissionsPage permissions={permissions} setPermissions={setPermissions} currentUser={currentUser} addLog={addLog} showToast={showToast} /> : <EmptyState text="Access denied" />)}
             {/* 나의 결재 이력은 본인 처리분만 보여 주므로 별도 권한이 필요 없다.
                 결재 승인과 같이 전 직원이 들어올 수 있다. */}
