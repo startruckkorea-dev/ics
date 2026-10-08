@@ -10546,6 +10546,12 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
   // 직원 명부(employee_search.xlsx) 대조(10-09 · ics-dircheck, MKQR 과 같은 방식) — 명부에 없는 계정은 「명부 없음」(퇴사 · 이동 · 외부 계정),
   // 메일 표기만 다른 경우(bum-joo.lee ↔ bumjoo.lee 등)는 「메일 다름」. 명부를 못 읽었으면 표시하지 않는다.
   const [onlyMissing, setOnlyMissing] = useState(false);
+  // 계정 선택 · 일괄 처리 · 보기(10-09 · ics-bulk) — 선택은 검색을 바꿔도 유지
+  const [selected, setSelected] = useState(() => new Set());
+  const [bulkCats, setBulkCats] = useState(() => new Set());
+  const [accessView, setAccessView] = useState("all");   // all | granted | dirOnly(명부에 있으나 권한 없음)
+  const [confirmBulk, setConfirmBulk] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
   const dirOk = ICS_EMPLOYEE_DIR.length > 0;
   const dirSet = new Set(ICS_EMPLOYEE_DIR.map((d) => d.email));
   const mailKey = (e) => { const [id, dom] = String(e).toLowerCase().split("@"); return `${(id || "").replace(/[.\-_]/g, "")}@${dom || ""}`; };
@@ -10558,11 +10564,16 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
     return alt ? { alt } : { missing: true };
   };
   const missingCount = users.filter((u) => (dirStatus(u.email) || {}).missing).length;
+  // 저장된 권한(카테고리 하나라도) — 보기 필터와 「명부에만 있음」 계산용. saved 는 아래에서 선언되므로 함수로 늦게 읽는다
+  const hasSavedAccess = (email) => { const e = String(email || "").toLowerCase(); return categoryKeys.some((k) => saved[e]?.[k]); };
+  const grantedCount = users.filter((u) => hasSavedAccess(u.email)).length;
+  const dirOnlyCount = dirOk ? users.filter((u) => dirSet.has(String(u.email).toLowerCase()) && !hasSavedAccess(u.email)).length : 0;
   const altCount = users.filter((u) => (dirStatus(u.email) || {}).alt).length;
 
   const q = search.trim().toLowerCase();
   const rows = users
     .filter((u) => !onlyMissing || dirStatus(u.email))
+    .filter((u) => accessView === "all" || (accessView === "granted" ? hasSavedAccess(u.email) : (dirOk && dirSet.has(String(u.email).toLowerCase()) && !hasSavedAccess(u.email))))
     .filter((u) => !q || u.email.toLowerCase().includes(q) || (u.name || "").toLowerCase().includes(q) || (u.nameEn || "").toLowerCase().includes(q) || (u.deptLabel || "").toLowerCase().includes(q))
     .slice()
     .sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email));
@@ -10661,7 +10672,7 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
 
   // 사용자를 목록에서 제거한다. ICS_CategoryAccess 행을 삭제하므로 모든 카테고리 권한이 함께 회수된다.
   // Users 시트(마스터)에 등록된 계정은 권한만 초기화되고 목록에는 남는다.
-  async function removeUser(u) {
+  async function removeUser(u, opts = {}) {
     const email = (u.email || "").toLowerCase();
     if (!isAdmin || !email) return;
     setRemoving(email);
@@ -10677,15 +10688,55 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
       const dirKo = !dirOk ? "" : ds && ds.missing ? " · 직원 명부 없음(퇴사 · 이동 의심)" : ds && ds.alt ? ` · 메일 다름(명부: ${ds.alt.email})` : " · 직원 명부 있음";
       const dirEn = !dirOk ? "" : ds && ds.missing ? " · not in employee directory" : ds && ds.alt ? ` · email differs (directory: ${ds.alt.email})` : " · in employee directory";
       addLog(currentUser.email, "edit_category_access", "-",
-        `권한 회수: ${email} (삭제 전 권한: ${hadKo.length ? hadKo.join(", ") : "없음"}${dirKo})`,
-        `Access revoked: ${email} (had: ${hadKo.length ? hadKo.join(", ") : "none"}${dirEn})`);
-      showToast(lang === "en" ? "Access revoked." : "접근 권한이 회수되었습니다.");
+        `권한 회수: ${email} (삭제 전 권한: ${hadKo.length ? hadKo.join(", ") : "없음"}${dirKo})${opts.bulk ? ` · 일괄 ${opts.bulk}` : ""}`,
+        `Access revoked: ${email} (had: ${hadKo.length ? hadKo.join(", ") : "none"}${dirEn})${opts.bulk ? ` · bulk ${opts.bulk}` : ""}`);
+      setSelected((prev) => { const n = new Set(prev); n.delete(email); return n; });
+      if (!opts.bulk) showToast(lang === "en" ? "Access revoked." : "접근 권한이 회수되었습니다.");
     } catch (e) {
       alert((lang === "en" ? "Failed to remove: " : "삭제에 실패했습니다: ") + e.message);
     } finally {
       setRemoving(null);
       setConfirmRemove(null);
     }
+  }
+
+  // ---- 계정 선택 · 일괄 처리(10-09 · ics-bulk) ----
+  const selectedUsers = users.filter((u) => selected.has(String(u.email).toLowerCase()));
+  const allVisibleSelected = rows.length > 0 && rows.every((u) => selected.has(u.email.toLowerCase()));
+  function toggleSel(email) { setSelected((prev) => { const n = new Set(prev); n.has(email) ? n.delete(email) : n.add(email); return n; }); }
+  function toggleSelVisible() {
+    setSelected((prev) => { const n = new Set(prev); rows.forEach((u) => { const e = u.email.toLowerCase(); allVisibleSelected ? n.delete(e) : n.add(e); }); return n; });
+  }
+  // 고른 카테고리를 선택한 사람들에게 부여/해제 — 표(초안)에만 반영, 저장은 「반영」. 짝 카테고리(ISA↔FSA)도 함께, 본인 관리자 전용 해제는 막는다
+  function bulkSet(val) {
+    if (!isAdmin || !bulkCats.size || !selectedUsers.length) return;
+    const me = (currentUser.email || "").toLowerCase();
+    let skippedSelf = false;
+    setDraft((prev) => {
+      const next = { ...prev };
+      selectedUsers.forEach((u) => {
+        const e = u.email.toLowerCase();
+        const cur = { ...(next[e] || {}) };
+        bulkCats.forEach((k) => {
+          if (!val && k === "adminOnly" && e === me && currentUser.role !== "admin" && cur.adminOnly) { skippedSelf = true; return; }
+          cur[k] = val;
+          const pk = CATEGORY_PAIRS[k]; if (pk) cur[pk] = val;
+        });
+        next[e] = cur;
+      });
+      return next;
+    });
+    if (skippedSelf) alert(lang === "en" ? "Your own Admin-only access was kept." : "본인 계정의 「관리자 전용」 권한은 해제하지 않고 남겼습니다.");
+  }
+  async function bulkRemove() {
+    const me = (currentUser.email || "").toLowerCase();
+    const list = selectedUsers.filter((u) => !(u.email.toLowerCase() === me && currentUser.role !== "admin"));
+    setBulkBusy(true);
+    let n = 0;
+    for (const u of list) { n++; await removeUser(u, { bulk: `${n}/${list.length}` }); }
+    setBulkBusy(false); setConfirmBulk(false);
+    showToast(lang === "en" ? `Access revoked for ${list.length} user(s).` : `${list.length}명의 접근 권한을 회수했습니다.`);
+    if (list.length < selectedUsers.length) alert(lang === "en" ? "Your own account was skipped." : "본인 계정은 삭제하지 않고 남겼습니다.");
   }
 
   async function applyChanges() {
@@ -10773,6 +10824,16 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
             {applying ? t("categoryAccess.applying") : t("categoryAccess.apply")}
           </button>
         )}
+        <div className="flex items-center rounded-lg border border-slate-200 overflow-hidden flex-shrink-0 bg-white">
+          {[["all", lang === "en" ? `All ${users.length}` : `전체 ${users.length}`],
+            ["granted", lang === "en" ? `With access ${grantedCount}` : `권한 있음 ${grantedCount}`],
+            ...(dirOk ? [["dirOnly", lang === "en" ? `Directory only ${dirOnlyCount}` : `명부에만 있음 ${dirOnlyCount}`]] : [])].map(([k, label], i) => (
+            <button key={k} onClick={() => setAccessView(k)}
+              title={k === "dirOnly" ? (lang === "en" ? "In the employee directory but no ICS access yet — tick and grant to add" : "직원 명부에는 있지만 아직 ICS 권한이 없는 사람 — 체크해서 권한을 주면 바로 추가됩니다") : undefined}
+              className={`text-xs px-3 py-2 ${i ? "border-l border-slate-200" : ""} ${accessView === k ? "text-white font-medium" : "text-slate-600 hover:bg-slate-50"}`}
+              style={accessView === k ? { backgroundColor: BRAND.accent } : undefined}>{label}</button>
+          ))}
+        </div>
         {(missingCount > 0 || altCount > 0) && (
           <button onClick={() => setOnlyMissing((v) => !v)}
             title={lang === "en" ? "Accounts not found in the employee directory (employee_search.xlsx) — check for leavers or transfers" : "직원 명부(employee_search.xlsx)에 없는 계정 — 퇴사 · 이동 여부를 확인하세요(외부 감사인 등 의도한 계정 제외)"}
@@ -10813,11 +10874,48 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
         </div>
       )}
 
+      {isAdmin && selectedUsers.length > 0 && (
+        <div className="mb-3 rounded-xl border px-4 py-2.5 shadow-sm" style={{ borderColor: "rgba(47,123,122,.35)", background: "#F2F8F8" }}>
+          <div className="flex items-center gap-x-3 gap-y-2 flex-wrap">
+            <span className="text-sm font-semibold" style={{ color: BRAND.accent }}>{lang === "en" ? `${selectedUsers.length} selected` : `${selectedUsers.length}명 선택`}</span>
+            <button onClick={() => setSelected(new Set())} className="text-xs text-slate-500 hover:text-slate-700 underline underline-offset-2">{lang === "en" ? "Clear" : "선택 해제"}</button>
+            <span className="w-px h-5 bg-slate-300" />
+            <span className="text-xs text-slate-500">{lang === "en" ? "Access" : "권한"}</span>
+            <div className="flex items-center gap-1 flex-wrap">
+              {categoryKeys.map((k) => {
+                const on = bulkCats.has(k);
+                return (
+                  <button key={k} onClick={() => setBulkCats((prev) => { const n = new Set(prev); n.has(k) ? n.delete(k) : n.add(k); return n; })}
+                    className={`text-[11.5px] h-7 px-2.5 rounded-full border transition-colors ${on ? "text-white border-transparent" : "bg-white border-slate-300 text-slate-600 hover:border-slate-400"}`}
+                    style={on ? { backgroundColor: BRAND.accent } : undefined}>{t(categoryLabelPath[k])}</button>
+                );
+              })}
+            </div>
+            <button onClick={() => bulkSet(true)} disabled={!bulkCats.size} className="h-7 px-3 rounded-lg text-xs font-medium text-white disabled:opacity-40" style={{ backgroundColor: BRAND.accent }}>{lang === "en" ? "Grant" : "부여"}</button>
+            <button onClick={() => bulkSet(false)} disabled={!bulkCats.size} className="h-7 px-3 rounded-lg text-xs font-medium border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-40">{lang === "en" ? "Revoke" : "해제"}</button>
+            <button onClick={() => setConfirmBulk(true)} className="ml-auto h-7 px-3 rounded-lg text-xs font-medium border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 flex items-center gap-1">
+              <Trash2 size={12} /> {lang === "en" ? `Delete ${selectedUsers.length}` : `선택 ${selectedUsers.length}명 삭제`}
+            </button>
+          </div>
+          <p className="text-[11px] text-slate-500 mt-1.5">{lang === "en"
+            ? "Pick categories and press Grant / Revoke — the table changes for the selected users and is saved when you press Apply. ISA and FSA categories move in pairs. Selection is kept while you search."
+            : "카테고리를 고르고 「부여」 · 「해제」를 누르면 선택한 사람들의 표가 바뀌고, 「반영」을 눌러야 저장됩니다(ISA · FSA 짝 카테고리는 함께). 검색어를 바꿔 가며 한 명씩 체크해도 선택은 유지됩니다."}</p>
+        </div>
+      )}
+
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-auto" style={{ maxHeight: 520 }}>
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-slate-500 text-xs">
             <tr>
-              <th className="text-left font-medium px-4 py-2.5 sticky top-0 left-0 z-30 bg-slate-50">{t("categoryAccess.colUser")}</th>
+              <th className="text-left font-medium px-4 py-2.5 sticky top-0 left-0 z-30 bg-slate-50">
+                {isAdmin ? (
+                  <label className="inline-flex items-center gap-2.5 cursor-pointer select-none">
+                    <input type="checkbox" checked={allVisibleSelected} onChange={toggleSelVisible} className="w-4 h-4 cursor-pointer" style={{ accentColor: BRAND.accent }}
+                      title={lang === "en" ? "Select / clear all visible users" : "보이는 사용자 전체 선택 / 해제"} />
+                    {t("categoryAccess.colUser")}
+                  </label>
+                ) : t("categoryAccess.colUser")}
+              </th>
               {categoryKeys.map((k) => {
                 const visibleEmails = rows.map((u) => u.email.toLowerCase());
                 const allChecked = visibleEmails.length > 0 && visibleEmails.every((email) => draft[email]?.[k]);
@@ -10846,13 +10944,15 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
               const email = u.email.toLowerCase();
               const grant = draft[email] || {};
               return (
-                <tr key={u.id}>
-                  <td className="px-4 py-1.5 sticky left-0 z-10 bg-white">
+                <tr key={u.id} className={selected.has(email) ? "bg-[#F2F8F8]" : ""}>
+                  <td className={`px-4 py-1.5 sticky left-0 z-10 ${selected.has(email) ? "bg-[#F2F8F8]" : "bg-white"}`}>
                     {(() => {
                       const ds = dirStatus(u.email);
                       const nm = lang === "en" ? (u.nameEn || u.name) : (u.name || u.nameEn);
                       return (
                         <div className="flex items-center gap-2 whitespace-nowrap">
+                          {isAdmin && <input type="checkbox" checked={selected.has(email)} onChange={() => toggleSel(email)} className="w-4 h-4 cursor-pointer shrink-0 mr-0.5" style={{ accentColor: BRAND.accent }}
+                            title={lang === "en" ? "Select (bulk access / delete)" : "선택(일괄 권한 · 일괄 삭제)"} />}
                           {nm && nm.toLowerCase() !== email && <span className="font-medium text-slate-800 text-[13px]">{nm}</span>}
                           <span className="text-slate-500 text-xs">{u.email}{u.deptLabel ? ` · ${u.deptLabel}` : ""}</span>
                           {ds && ds.missing && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-50 text-red-600 leading-none font-medium"
@@ -10900,6 +11000,32 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
           </tbody>
         </table>
       </div>
+
+      {confirmBulk && (
+        <Modal title={lang === "en" ? "Delete selected users" : "선택한 사용자 삭제"} onClose={() => !bulkBusy && setConfirmBulk(false)}>
+          <p className="text-sm text-slate-600 mb-3">{lang === "en"
+            ? `Revoke all category access for ${selectedUsers.length} user(s)? Each removal is written to the activity log.`
+            : `선택한 ${selectedUsers.length}명의 카테고리 접근 권한을 모두 회수(삭제)할까요? 한 명씩 활동 로그에 남습니다.`}</p>
+          <div className="max-h-48 overflow-y-auto border border-slate-200 rounded-lg mb-4 text-xs">
+            {selectedUsers.map((u) => {
+              const ds = dirStatus(u.email);
+              return (
+                <div key={u.id} className="px-3 py-1.5 border-b border-slate-100 last:border-0 flex items-center gap-2">
+                  <span className="text-slate-700">{u.email}</span>
+                  {ds && ds.missing && <span className="text-[10px] px-1.5 rounded-full bg-red-50 text-red-600">{lang === "en" ? "Not in directory" : "명부 없음"}</span>}
+                  {!u.fromAccessList && <span className="ml-auto text-[10px] text-slate-400">{lang === "en" ? "access reset only" : "권한만 초기화"}</span>}
+                </div>
+              );
+            })}
+          </div>
+          <div className="flex justify-end gap-2">
+            <button onClick={() => setConfirmBulk(false)} disabled={bulkBusy} className="px-4 py-2 text-sm text-slate-500 rounded-lg hover:bg-slate-50">{t("common.cancel")}</button>
+            <button onClick={bulkRemove} disabled={bulkBusy} className="px-4 py-2 text-sm text-white rounded-lg bg-red-500 hover:bg-red-600 disabled:opacity-50 flex items-center gap-1.5">
+              {bulkBusy && <Loader2 size={14} className="animate-spin" />}{lang === "en" ? `Delete ${selectedUsers.length}` : `${selectedUsers.length}명 삭제`}
+            </button>
+          </div>
+        </Modal>
+      )}
 
       {confirmRemove && (
         <Modal title={t("categoryAccess.removeUserTitle")} onClose={() => setConfirmRemove(null)}>
