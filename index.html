@@ -10543,9 +10543,27 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
     executive: "navGroup.executive",
   };
 
+  // 직원 명부(employee_search.xlsx) 대조(10-09 · ics-dircheck, MKQR 과 같은 방식) — 명부에 없는 계정은 「명부 없음」(퇴사 · 이동 · 외부 계정),
+  // 메일 표기만 다른 경우(bum-joo.lee ↔ bumjoo.lee 등)는 「메일 다름」. 명부를 못 읽었으면 표시하지 않는다.
+  const [onlyMissing, setOnlyMissing] = useState(false);
+  const dirOk = ICS_EMPLOYEE_DIR.length > 0;
+  const dirSet = new Set(ICS_EMPLOYEE_DIR.map((d) => d.email));
+  const mailKey = (e) => { const [id, dom] = String(e).toLowerCase().split("@"); return `${(id || "").replace(/[.\-_]/g, "")}@${dom || ""}`; };
+  const dirNorm = new Map();
+  ICS_EMPLOYEE_DIR.forEach((d) => { const k = mailKey(d.email); dirNorm.set(k, dirNorm.has(k) ? null : d); });
+  const dirStatus = (email) => {
+    const e = String(email || "").toLowerCase();
+    if (!dirOk || dirSet.has(e)) return null;
+    const alt = dirNorm.get(mailKey(e));
+    return alt ? { alt } : { missing: true };
+  };
+  const missingCount = users.filter((u) => (dirStatus(u.email) || {}).missing).length;
+  const altCount = users.filter((u) => (dirStatus(u.email) || {}).alt).length;
+
   const q = search.trim().toLowerCase();
   const rows = users
-    .filter((u) => !q || u.email.toLowerCase().includes(q) || (u.name || "").toLowerCase().includes(q) || (u.nameEn || "").toLowerCase().includes(q))
+    .filter((u) => !onlyMissing || dirStatus(u.email))
+    .filter((u) => !q || u.email.toLowerCase().includes(q) || (u.name || "").toLowerCase().includes(q) || (u.nameEn || "").toLowerCase().includes(q) || (u.deptLabel || "").toLowerCase().includes(q))
     .slice()
     .sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email));
 
@@ -10654,7 +10672,13 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
       setSaved((prev) => { const n = { ...prev }; delete n[email]; return n; });
       setDraft((prev) => { const n = { ...prev }; delete n[email]; return n; });
       if (u.fromAccessList) setUsers((prev) => prev.filter((x) => (x.email || "").toLowerCase() !== email));
-      addLog(currentUser.email, "edit_category_access", "-", `권한 회수: ${email}`, `Access revoked: ${email}`);
+      const hadKo = categoryKeys.filter((k) => saved[email]?.[k]).map((k) => t(categoryLabelPath[k]));
+      const ds = dirStatus(email);
+      const dirKo = !dirOk ? "" : ds && ds.missing ? " · 직원 명부 없음(퇴사 · 이동 의심)" : ds && ds.alt ? ` · 메일 다름(명부: ${ds.alt.email})` : " · 직원 명부 있음";
+      const dirEn = !dirOk ? "" : ds && ds.missing ? " · not in employee directory" : ds && ds.alt ? ` · email differs (directory: ${ds.alt.email})` : " · in employee directory";
+      addLog(currentUser.email, "edit_category_access", "-",
+        `권한 회수: ${email} (삭제 전 권한: ${hadKo.length ? hadKo.join(", ") : "없음"}${dirKo})`,
+        `Access revoked: ${email} (had: ${hadKo.length ? hadKo.join(", ") : "none"}${dirEn})`);
       showToast(lang === "en" ? "Access revoked." : "접근 권한이 회수되었습니다.");
     } catch (e) {
       alert((lang === "en" ? "Failed to remove: " : "삭제에 실패했습니다: ") + e.message);
@@ -10749,6 +10773,15 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
             {applying ? t("categoryAccess.applying") : t("categoryAccess.apply")}
           </button>
         )}
+        {(missingCount > 0 || altCount > 0) && (
+          <button onClick={() => setOnlyMissing((v) => !v)}
+            title={lang === "en" ? "Accounts not found in the employee directory (employee_search.xlsx) — check for leavers or transfers" : "직원 명부(employee_search.xlsx)에 없는 계정 — 퇴사 · 이동 여부를 확인하세요(외부 감사인 등 의도한 계정 제외)"}
+            className={`text-xs font-medium px-3 py-2 rounded-lg border flex-shrink-0 ${onlyMissing ? "bg-red-600 border-red-600 text-white" : "bg-red-50 border-red-200 text-red-700 hover:bg-red-100"}`}>
+            {lang === "en"
+              ? `Not in directory ${missingCount}${altCount ? ` · email differs ${altCount}` : ""}${onlyMissing ? " · show all" : ""}`
+              : `명부 없음 ${missingCount}명${altCount ? ` · 메일 다름 ${altCount}명` : ""}${onlyMissing ? " · 전체 보기" : ""}`}
+          </button>
+        )}
       </div>
 
       {isAdmin && (
@@ -10815,7 +10848,20 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
               return (
                 <tr key={u.id}>
                   <td className="px-4 py-1.5 sticky left-0 z-10 bg-white">
-                    <p className="text-slate-600 whitespace-nowrap">{u.email}</p>
+                    {(() => {
+                      const ds = dirStatus(u.email);
+                      const nm = lang === "en" ? (u.nameEn || u.name) : (u.name || u.nameEn);
+                      return (
+                        <div className="flex items-center gap-2 whitespace-nowrap">
+                          {nm && nm.toLowerCase() !== email && <span className="font-medium text-slate-800 text-[13px]">{nm}</span>}
+                          <span className="text-slate-500 text-xs">{u.email}{u.deptLabel ? ` · ${u.deptLabel}` : ""}</span>
+                          {ds && ds.missing && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-50 text-red-600 leading-none font-medium"
+                            title={lang === "en" ? "Not in the employee directory — check for leaver / transfer, then delete" : "직원 명부(employee_search.xlsx)에 없는 계정 — 퇴사 · 이동 여부 확인 후 삭제"}>{lang === "en" ? "Not in directory" : "명부 없음"}</span>}
+                          {ds && ds.alt && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 leading-none font-medium"
+                            title={lang === "en" ? `Directory has ${ds.alt.email}` : `직원 명부에는 ${ds.alt.email} 로 있음 — 같은 사람이면 그 메일로 다시 추가하고 지금 행은 삭제`}>{lang === "en" ? "Email differs" : "메일 다름"} · {ds.alt.email}</span>}
+                        </div>
+                      );
+                    })()}
                   </td>
                   {categoryKeys.map((k) => (
                     <td key={k} className="text-center px-3 py-1.5">
