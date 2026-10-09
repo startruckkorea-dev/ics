@@ -45,6 +45,8 @@
   nav.ics-side-nav::-webkit-scrollbar-thumb { background: rgba(255,255,255,.18); border-radius: 6px; }
   nav.ics-side-nav:hover::-webkit-scrollbar-thumb { background: rgba(255,255,255,.34); }
   nav.ics-side-nav::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.5); }
+  /* 사이드바 접기(10-09 · ics-side) — 폭이 부드럽게 줄고 늘어난다. 아이콘 자리는 그대로라 움직이지 않는다 */
+  .ics-side { transition: width .28s cubic-bezier(.4,0,.2,1); }
   /* 본문·모달 스크롤도 같은 톤(밝은 배경용) */
   .ics-main-scroll { scrollbar-width: thin; scrollbar-color: #CBD5E1 transparent; }
   .ics-main-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
@@ -144,6 +146,8 @@ import {
   FileCheck2,
   FileSpreadsheet,
   Save,
+  ArrowLeftToLine,
+  ArrowRightFromLine,
 } from "lucide-react";
 import {
   BarChart,
@@ -2200,20 +2204,31 @@ function countMyTodos(controls, currentUser, isMyReview) {
   };
 }
 
-function Sidebar({ page, setPage, currentUser, approvalCount = 0, todoCounts = {} }) {
+function Sidebar({ page, setPage, currentUser, approvalCount = 0, todoCounts = {}, collapsed = false }) {
   const { lang, t } = useLang();
   const { users, departments } = useAppData();
+  // 접힌 상태(아이콘만 남은 72px 막대)에서 아이콘에 마우스를 올리면 오른쪽에 메뉴 이름 말풍선.
+  // 메뉴 영역은 스크롤 상자라 안에 두면 잘리므로 화면 고정 위치로 띄운다.
+  const [tip, setTip] = useState(null);
+  const showTip = (e, label) => { if (!collapsed) return; const r = e.currentTarget.getBoundingClientRect(); setTip({ label, y: r.top + r.height / 2 }); };
+  useEffect(() => { setTip(null); }, [collapsed]);
   return (
-    <div className="w-64 flex-shrink-0 flex flex-col h-full" style={{ backgroundColor: BRAND.navy }}>
+    <div className="ics-side flex-shrink-0 flex flex-col h-full overflow-hidden" style={{ backgroundColor: BRAND.navy, width: collapsed ? 72 : 256 }}>
       {/* 헤더는 로고와 시스템명까지만. 문의처는 메뉴 아래로 내려 정보 위계를 나눈다. */}
-      <div className="px-4 pt-5 pb-4">
-        <div className="bg-white rounded-lg px-3 py-2 flex items-center justify-center">
-          <img src={LOGO_SRC} alt="Star Truck Korea" style={{ width: "100%", height: "auto", display: "block" }} />
+      {collapsed ? (
+        <div className="pt-5 pb-4 flex justify-center">
+          <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center text-[11px] font-extrabold tracking-tight select-none" style={{ color: BRAND.navy }} title="Star Truck Korea · ICS">STK</div>
         </div>
-        <p className="text-[13px] font-medium text-slate-300 tracking-tight mt-3 text-center">{t("tagline")}</p>
-      </div>
+      ) : (
+        <div className="px-4 pt-5 pb-4" style={{ width: 256 }}>
+          <div className="bg-white rounded-lg px-3 py-2 flex items-center justify-center">
+            <img src={LOGO_SRC} alt="Star Truck Korea" style={{ width: "100%", height: "auto", display: "block" }} />
+          </div>
+          <p className="text-[13px] font-medium text-slate-300 tracking-tight mt-3 text-center whitespace-nowrap">{t("tagline")}</p>
+        </div>
+      )}
 
-      <nav className="ics-side-nav flex-1 px-3 py-4 overflow-y-auto">
+      <nav className="ics-side-nav flex-1 px-3 py-4 overflow-y-auto overflow-x-hidden" onScroll={() => setTip(null)}>
         {MENU_GROUPS.map((group, gi) => {
           const items = group.items.filter((item) => {
             if (item.hiddenFor && item.hiddenFor.includes(currentUser.role)) return false;
@@ -2222,8 +2237,10 @@ function Sidebar({ page, setPage, currentUser, approvalCount = 0, todoCounts = {
           if (items.length === 0) return null;
           return (
             <div key={gi} className="mb-4">
-              {group.label && (
-                <p className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold px-3 mb-1.5">
+              {collapsed
+                ? (gi > 0 && <div className="mx-2 mb-3 border-t border-white/10" />)
+                : group.label && (
+                <p className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold px-3 mb-1.5 whitespace-nowrap">
                   {t(`navGroup.${group.label}`)}
                 </p>
               )}
@@ -2234,7 +2251,9 @@ function Sidebar({ page, setPage, currentUser, approvalCount = 0, todoCounts = {
                 return (
                   <button
                     key={item.key}
+                    aria-label={t(`nav.${item.key}`)}
                     onClick={() => {
+                      setTip(null);
                       if (!allowed) {
                         alert(
                           lang === "en"
@@ -2245,17 +2264,17 @@ function Sidebar({ page, setPage, currentUser, approvalCount = 0, todoCounts = {
                       }
                       setPage(item.key);
                     }}
-                    className="w-full flex items-start text-left gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 transition-colors"
+                    className="relative w-full flex items-start text-left gap-2.5 px-3 py-2.5 rounded-lg text-sm mb-0.5 transition-colors whitespace-nowrap min-h-[40px]"
                     style={{
                       backgroundColor: active ? BRAND.navySoft : "transparent",
                       color: active ? "#fff" : allowed ? "#B7C0D1" : "#5B6472",
                       borderLeft: active ? `3px solid ${BRAND.accent}` : "3px solid transparent",
                     }}
-                    onMouseEnter={(e) => { if (!active) e.currentTarget.style.backgroundColor = BRAND.navyHover; }}
-                    onMouseLeave={(e) => { if (!active) e.currentTarget.style.backgroundColor = "transparent"; }}
+                    onMouseEnter={(e) => { if (!active) e.currentTarget.style.backgroundColor = BRAND.navyHover; showTip(e, t(`nav.${item.key}`)); }}
+                    onMouseLeave={(e) => { if (!active) e.currentTarget.style.backgroundColor = "transparent"; setTip(null); }}
                   >
                     <Icon size={17} className="flex-shrink-0 mt-0.5" />
-                    <span className="leading-snug flex-1">{t(`nav.${item.key}`)}</span>
+                    {!collapsed && <span className="leading-snug flex-1">{t(`nav.${item.key}`)}</span>}
                     {/* 결재 승인과 평가 4단계에 「내가 처리할 건수」 를 붙인다.
                         0 이어도 보여 준다 — 배지가 사라지면 「없는 것」인지
                         「아직 안 읽어온 것」인지 구분되지 않는다.
@@ -2266,6 +2285,13 @@ function Sidebar({ page, setPage, currentUser, approvalCount = 0, todoCounts = {
                                   review: todoCounts.review, fsa: todoCounts.fsa,
                                   fsaReview: todoCounts.fsaReview }[item.key];
                       if (n === undefined || !allowed) return null;
+                      // 접힌 막대에서는 처리할 건이 있을 때만 아이콘 오른쪽 위에 빨간 숫자(0 까지 띄우면 아이콘마다 점이 붙어 어수선하다)
+                      if (collapsed) return n > 0 ? (
+                        <span className="absolute top-1 left-[26px] text-[9px] leading-none font-bold rounded-full px-1 min-w-[16px] h-[16px] flex items-center justify-center"
+                          style={{ backgroundColor: "#DC2626", color: "#fff", boxShadow: `0 0 0 2px ${BRAND.navy}` }} title={t("nav.todoTip")}>
+                          {n > 99 ? "99+" : n}
+                        </span>
+                      ) : null;
                       return (
                         <span
                           className="flex-shrink-0 text-[11px] font-semibold rounded-full px-1.5 min-w-[18px] text-center"
@@ -2287,8 +2313,16 @@ function Sidebar({ page, setPage, currentUser, approvalCount = 0, todoCounts = {
       </nav>
 
       {/* 문의처는 항상 보이도록 하단에 고정한다. 헤더에 두면 로고·시스템명과 섞여 산만하다. */}
-      {ICS_CONTACT_EMAIL && (
-        <div className="px-4 py-3 border-t border-white/10">
+      {ICS_CONTACT_EMAIL && collapsed && (
+        <div className="py-3 border-t border-white/10 flex justify-center">
+          <a href={`mailto:${ICS_CONTACT_EMAIL}`} title={(lang === "en" ? "Support · " : "문의 · ") + ICS_CONTACT_EMAIL} aria-label={ICS_CONTACT_EMAIL}
+             className="w-9 h-9 rounded-lg flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition-colors">
+            <Mail size={15} />
+          </a>
+        </div>
+      )}
+      {ICS_CONTACT_EMAIL && !collapsed && (
+        <div className="px-4 py-3 border-t border-white/10 whitespace-nowrap" style={{ width: 256 }}>
           <p className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1">
             {lang === "en" ? "Support" : "문의"}
           </p>
@@ -2297,6 +2331,13 @@ function Sidebar({ page, setPage, currentUser, approvalCount = 0, todoCounts = {
             <Mail size={12} className="flex-shrink-0" />
             <span className="truncate">{ICS_CONTACT_EMAIL}</span>
           </a>
+        </div>
+      )}
+      {collapsed && tip && (
+        <div className="fixed z-[70] pointer-events-none px-2.5 py-1.5 rounded-md text-xs font-medium text-white shadow-lg whitespace-nowrap"
+          style={{ left: 80, top: tip.y, transform: "translateY(-50%)", background: "#1E293B" }}>
+          <span className="absolute w-2 h-2 rotate-45" style={{ left: -4, top: "calc(50% - 4px)", background: "#1E293B" }} />
+          <span className="relative">{tip.label}</span>
         </div>
       )}
     </div>
@@ -11702,6 +11743,13 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
   // 로드에 실패했을 때만(네트워크 오류 등) 코드 내 목업 데이터로 안전하게 대체한다.
   const usingSharePointData = !!(initialControls && initialControls.length);
   const [page, setPage] = useState("dashboard");
+  // 사이드바 접기(10-09 · ics-side) — 상단 ←| 단추로 아이콘만 남은 좁은 막대로 접고 |→ 로 다시 편다.
+  // 선택은 이 브라우저에 기억한다. 기억된 값이 없으면 좁은 창(1100px 미만)에서만 접힌 채로 시작.
+  const [sideCollapsed, setSideCollapsed] = useState(() => {
+    try { const v = localStorage.getItem("ics.sideCollapsed"); if (v === "1" || v === "0") return v === "1"; } catch (e) {}
+    return typeof window !== "undefined" && window.innerWidth < 1100;
+  });
+  const toggleSide = () => setSideCollapsed((v) => { const nv = !v; try { localStorage.setItem("ics.sideCollapsed", nv ? "1" : "0"); } catch (e) {} return nv; });
   const [controls, setControls] = useState(usingSharePointData ? initialControls : INITIAL_CONTROLS);
   const [log, setLog] = useState(initialLog && initialLog.length ? initialLog : INITIAL_LOG);
   const [fullLogLoaded, setFullLogLoaded] = useState(false);
@@ -11990,11 +12038,18 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
           </div>
         )}
         <Sidebar page={page} setPage={setPage} currentUser={currentUser}
-                 approvalCount={approvalCount} todoCounts={todoCounts} />
+                 approvalCount={approvalCount} todoCounts={todoCounts} collapsed={sideCollapsed} />
 
         <div className="flex-1 flex flex-col min-w-0">
           <div className="h-14 flex-shrink-0 bg-white border-b border-slate-100 flex items-center justify-between px-6">
             <div className="flex items-center gap-2 text-sm text-slate-400">
+              <button onClick={toggleSide}
+                title={sideCollapsed ? (lang === "en" ? "Expand menu" : "메뉴 펼치기") : (lang === "en" ? "Collapse menu" : "메뉴 접기")}
+                aria-label={sideCollapsed ? (lang === "en" ? "Expand menu" : "메뉴 펼치기") : (lang === "en" ? "Collapse menu" : "메뉴 접기")} aria-expanded={!sideCollapsed}
+                className="flex-shrink-0 -ml-2 w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors">
+                {sideCollapsed ? <ArrowRightFromLine size={17} /> : <ArrowLeftToLine size={17} />}
+              </button>
+              <span className="flex-shrink-0 w-px h-4 bg-slate-200 mr-1" />
               <span>Star Truck Korea</span>
               <span>/</span>
               <span className="text-slate-700 font-medium">{t(`nav.${page}`)}</span>
