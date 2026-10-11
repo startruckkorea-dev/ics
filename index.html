@@ -159,6 +159,7 @@ import {
   ArrowRightFromLine,
   Menu,
   LogOut,
+  Eye,
 } from "lucide-react";
 import {
   BarChart,
@@ -218,6 +219,29 @@ let ICS_NAME_TO_EMAIL = {};
 // 구조: { "이메일(소문자)": { icsOverview: bool, controlMgmt: bool, assessment: bool, adminOnly: bool, executive: bool } }
 let ICS_CATEGORY_ACCESS = {};
 
+// ---- 보기 · 편집 두 단계(10-11 · ics-viewedit) ----------------------------------------------------------
+// 카테고리마다 0 없음 · 1 보기(메뉴가 보이고 조회만 — 제출 · 저장 · 승인 · 업로드 · 권한 변경 단추 없음) · 2 편집(전부).
+// 편집은 보기를 포함한다. 저장은 열을 카테고리마다 늘리지 않고:
+//   · 보기 여부 = 기존 Self · Review · FSA · FSAReview · AdminOnly · Executive 열 그대로
+//   · 「보기만」인 키 = ViewOnly 열(한 줄 텍스트) 하나에 JSON 배열 — 예: ["review","fsaReview"]
+// ViewOnly 가 비어 있으면 지금처럼 보기 + 편집이라, 기존 사용자 권한은 관리자가 바꾸기 전까지 그대로다.
+// 역할(Admin · CFO · RD)로 들어오는 기본 권한도 ViewOnly 에 키가 없으면 편집이다. 알아볼 수 없는 값이면 전부 보기만(fail-closed).
+let ICS_ACCESS_LOADED = false;          // ICS_CategoryAccess 를 제대로 읽었는지 — 못 읽었으면 권한이 필요한 화면은 편집 잠금(fail-closed)
+const ICS_VIEWONLY_FIELD = "ViewOnly";
+const ICS_VIEW_NATURE = new Set(["history"]);   // 조회만 하는 화면(평가 이력 · 리포트)
+function icsParseViewOnly(raw) {
+  const s = raw == null ? "" : String(raw).trim();
+  if (!s) return [];
+  try { const a = JSON.parse(s); if (Array.isArray(a) && a.every((x) => typeof x === "string")) return a; } catch (e) {}
+  if (/^[A-Za-z]+(\s*,\s*[A-Za-z]+)*$/.test(s)) return s.split(",").map((x) => x.trim());   // 쉼표 목록(SharePoint 에서 직접 고친 값)
+  return ["*"];
+}
+function icsViewOnlyOf(user) {
+  const g = ICS_CATEGORY_ACCESS[((user && user.email) || "").toLowerCase()];
+  return (g && g.vo) || [];
+}
+function icsIsViewOnly(user, key) { const vo = icsViewOnlyOf(user); return vo.includes("*") || vo.includes(key); }
+
 // 사용자가 특정 카테고리에 접근 가능한지 판단.
 // 1) ics_category_access.xlsx에 명시적으로 Y로 등록되어 있으면 항상 허용(역할과 무관하게 추가 부여).
 // 2) 등록이 없으면 역할 기반 기본값을 따른다 (ICS Overview/통제 관리/평가는 전체 공개, 관리자 전용은 Admin, 경영진 전용은 Admin/CFO/RD).
@@ -255,6 +279,26 @@ function hasCategoryAccess(user, categoryKey) {
   if (categoryKey === "executive") return user.role === "admin" || user.role === "cfo" || user.role === "rd";
   return true; // icsOverview — 대시보드·학습은 전 직원 공개
 }
+
+// 편집 권한(10-11 · ics-viewedit) — 보기가 있고 ViewOnly 에 그 키가 없을 때.
+// 전 직원 공개 화면(대시보드 · 결재 승인 등)은 지금 그대로. 권한 목록을 못 읽었으면 권한이 필요한 화면은 편집 잠금.
+function icsCanEdit(user, key) {
+  if (!user) return false;
+  if (!key || key === "icsOverview") return true;
+  if (ICS_VIEW_NATURE.has(key)) return false;
+  if (!ICS_ACCESS_LOADED) return false;
+  if (!hasCategoryAccess(user, key)) return false;
+  return !icsIsViewOnly(user, key);
+}
+// 관리자 메뉴를 고칠 수 있는 사람 — Admin 역할 또는 「관리자 전용」 이면서 그 편집 권한이 있는 사람.
+// isIcsAdmin(볼 수 있는 범위 · 전 부서 조회)은 그대로 두고, 바꾸는 동작만 이걸로 가린다.
+function isIcsAdminEditor(user) { return isIcsAdmin(user) && icsCanEdit(user, "adminOnly"); }
+// 화면 → 편집 판정 키(쓰기 잠금 · 보기 전용 띠). 없는 화면(대시보드 · 결재 승인 · 나의 결재 이력)은 지금 그대로.
+const ICS_PAGE_EDIT_KEY = { self: "self", review: "review", fsa: "fsa", fsaReview: "fsaReview", history: "history",
+  settings: "adminOnly", manage: "adminOnly", permissions: "adminOnly", categoryAccess: "adminOnly", historyAll: "adminOnly",
+  approvalHistory: "executive", changeHistory: "executive", finalReport: "executive", list: "controlMgmt", learn: "learn" };
+// 쓰기 잠금 — 버튼을 숨기는 것과 별개로 마지막 안전장치. App 이 그릴 때마다 지금 화면 기준으로 바꾼다(활동 로그 기록은 예외).
+let _icsWriteBlock = false;
 
 // ics_category_access.xlsx의 Departments 시트가 로드되면 부팅 시 아래 배열은 통째로 덮어써진다(옛 6개 부서 체계는 실제로 안 쓰임).
 // 혹시 그 시트가 없거나 로드에 실패했을 때만 쓰이는 최소한의 대체값이라, 실제 25개 팀 체계와 맞춰 둔다.
@@ -2256,6 +2300,8 @@ function Sidebar({ page, setPage, currentUser, approvalCount = 0, todoCounts = {
         {MENU_GROUPS.map((group, gi) => {
           const items = group.items.filter((item) => {
             if (item.hiddenFor && item.hiddenFor.includes(currentUser.role)) return false;
+            // 「보기」 권한이 없는 메뉴는 숨긴다(10-11 · ics-viewedit — 예전엔 흐릿하게 보였다). 빈 묶음은 이름째 숨김.
+            if (!hasCategoryAccess(currentUser, item.categoryKey || group.key)) return false;
             return true;
           });
           if (items.length === 0) return null;
@@ -2578,7 +2624,7 @@ function formatMB(bytes) {
 
 function LearnPage({ currentUser, learnContent, setLearnContent, learnVideos, setLearnVideos, learnImages, setLearnImages, addLog, showToast }) {
   const { lang, t } = useLang();
-  const isAdmin = isIcsAdmin(currentUser);   // 학습 자료 편집도 관리자 전용 권한자에게 허용
+  const isAdmin = isIcsAdminEditor(currentUser);   // 학습 자료 편집도 관리자 전용 권한자에게 허용(보기만이면 조회만 · 10-11)
   const videoInputRef = useRef(null);
   const imageInputRef = useRef(null);
 
@@ -4351,7 +4397,7 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
             >
               <FileSpreadsheet size={14} /> {t("manage.exportBtn")}
             </button>
-            {isAdmin && (
+            {isAdmin && canEdit && (
               <>
                 <button onClick={downloadTemplate} className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg border border-slate-200 text-slate-600 hover:border-teal-400 hover:text-teal-600">
                   <Download size={14} /> {t("manage.uploadTemplateBtn")}
@@ -4378,13 +4424,13 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
         }
       />
 
-      {!canEdit && (
+      {!canEdit && !(isAdmin && !isArchived) && (
         <div className="bg-amber-50 text-amber-700 text-sm px-4 py-3 rounded-lg mb-4 flex items-center gap-2">
           <AlertTriangle size={16} /> {t("manage.readonlyNotice")}
         </div>
       )}
 
-      {isAdmin && (
+      {isAdmin && canEdit && (
         <div className="bg-slate-50 text-slate-500 text-xs px-4 py-3 rounded-lg mb-4 flex items-center gap-2">
           <UploadCloud size={14} className="flex-shrink-0" /> {t("manage.uploadNameHint")}
         </div>
@@ -10071,7 +10117,7 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
 /* 최종 결과 보고 (CFO/RD 컨펌)                                          */
 /* ------------------------------------------------------------------ */
 
-function FinalReportPage({ controls, currentUser, activeYear, yearConfirmation, confirmYear, cancelYearConfirm, showToast }) {
+function FinalReportPage({ controls, currentUser, activeYear, yearConfirmation, confirmYear, cancelYearConfirm, showToast, readOnly }) {
   const { lang, t } = useLang();
   const { departments, users } = useAppData();
   const [confirmingRole, setConfirmingRole] = useState(null);
@@ -10298,7 +10344,7 @@ function FinalReportPage({ controls, currentUser, activeYear, yearConfirmation, 
               <div>
                 <p className="text-sm text-slate-500 mb-0.5">{lang === "en" ? "Approver: " : "결재자: "}{personByEmail(info.by, lang, users)}</p>
                 <p className="text-sm text-slate-500 mb-2">{lang === "en" ? "Approved at: " : "결재 시간: "}{formatDateTime(info.at, lang)}</p>
-                <button
+                {!readOnly && <button
                   onClick={() => {
                     if (!allowed) {
                       alert(lang === "en" ? "You must be signed in with the CFO/RD account for this role to cancel." : "이 역할(CFO/RD)의 계정으로 로그인해야 취소할 수 있습니다.");
@@ -10313,7 +10359,7 @@ function FinalReportPage({ controls, currentUser, activeYear, yearConfirmation, 
                   style={{ borderColor: "#F0B8B4", color: "#C1352E" }}
                 >
                   {lang === "en" ? "Cancel confirmation" : "컨펌 취소"}
-                </button>
+                </button>}
                 {allowed && cancelBlocked && (
                   <p className="text-[11px] text-slate-400 mt-1.5">
                     {lang === "en" ? "RD must cancel first before CFO can cancel." : "RD가 먼저 취소해야 CFO도 취소할 수 있습니다."}
@@ -10322,7 +10368,7 @@ function FinalReportPage({ controls, currentUser, activeYear, yearConfirmation, 
               </div>
             ) : (
               <div>
-                <button
+                {!readOnly && <button
                   onClick={() => {
                     if (!allowed) {
                       alert(lang === "en" ? "You must be signed in with the CFO/RD account for this role to confirm." : "이 역할(CFO/RD)의 계정으로 로그인해야 컨펌할 수 있습니다.");
@@ -10339,7 +10385,7 @@ function FinalReportPage({ controls, currentUser, activeYear, yearConfirmation, 
                   style={{ backgroundColor: allowed && !confirmBlocked ? BRAND.accent : "#B9C2CE" }}
                 >
                   <Check size={15} /> {t("finalReport.confirmBtn")}
-                </button>
+                </button>}
                 {allowed && confirmBlocked && (
                   <p className="text-[11px] text-slate-400 mt-1.5">
                     {lang === "en" ? "CFO must confirm first before RD can confirm." : "CFO가 먼저 컨펌해야 RD도 컨펌할 수 있습니다."}
@@ -10477,6 +10523,7 @@ function SettingsPage({ currentUser, years, selectedYear, activeYear, startNewYe
   const { lang, t } = useLang();
   const { departments, setDepartments, users, setUsers } = useAppData();
   const isAdmin = isIcsAdmin(currentUser);   // Admin 역할 또는 「관리자 전용」 권한
+  const readOnly = !isIcsAdminEditor(currentUser);   // 「관리자 전용」 보기만 — 새 회계연도 시작 단추 없음(10-11)
   const [confirming, setConfirming] = useState(false);
   const nextYear = String(Number(activeYear) + 1);
 
@@ -10531,7 +10578,7 @@ function SettingsPage({ currentUser, years, selectedYear, activeYear, startNewYe
           })}
         </div>
 
-        {bothConfirmed ? (
+        {bothConfirmed && readOnly ? null : bothConfirmed ? (
           <button
             onClick={() => {
               if (!isAdmin) {
@@ -10585,7 +10632,7 @@ function SettingsPage({ currentUser, years, selectedYear, activeYear, startNewYe
 function CategoryAccessPage({ currentUser, addLog, showToast }) {
   const { lang, t } = useLang();
   const { users } = useAppData();
-  const isAdmin = isIcsAdmin(currentUser);   // Admin 역할 또는 「관리자 전용」 권한
+  const isAdmin = isIcsAdminEditor(currentUser);   // 바꿀 수 있는 사람 — Admin 역할 또는 「관리자 전용」 편집(보기만이면 조회만 · 10-11) 권한
   const [saved, setSaved] = useState(() => ({ ...ICS_CATEGORY_ACCESS }));
   const [draft, setDraft] = useState(() => ({ ...ICS_CATEGORY_ACCESS }));
   const [search, setSearch] = useState("");
@@ -10648,62 +10695,86 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
     .sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email));
 
   // ISA 1차 자가평가(Self)와 FSA 최종 자가평가(FSA)는 같은 담당자가 이어서 하는 흐름이라 항상 짝으로 부여/해제된다.
-  // ISA 2차 검토(Review)와 FSA 2차검토(FSAReview)도 마찬가지.
+  // ISA 2차 검토(Review)와 FSA 2차검토(FSAReview)도 마찬가지. (보기 · 편집 수준도 짝으로 같이 움직인다)
   const CATEGORY_PAIRS = { self: "fsa", fsa: "self", review: "fsaReview", fsaReview: "review" };
 
-  function toggleCell(email, categoryKey) {
+  // ---- 보기 · 편집 두 단계(10-11 · ics-viewedit) ----
+  // 표의 한 사람 값: { self: bool, …, vo: [보기만인 키] } — 수준 0 없음 · 1 보기 · 2 편집. 편집은 보기를 포함한다.
+  const [voCols, setVoCols] = useState(null);   // ICS_CategoryAccess 열 이름(Set) · 확인 전/실패 null
+  useEffect(() => { icsListColumnNames(ICS_LISTS.categoryAccess).then(setVoCols).catch(() => setVoCols(null)); }, []);
+  // ViewOnly 열 — 없으면(아직 안 만듦 · 확인 못 함) 「편집」 칸은 「보기」 와 함께 움직이고(=지금처럼 전부 편집) 그 열에는 쓰지 않는다
+  const viewOnlyReady = voCols ? voCols.has(ICS_VIEWONLY_FIELD) : Object.values(ICS_CATEGORY_ACCESS).some((g) => g && g.voRaw);
+  const voList = (g) => { const vo = (g && g.vo) || []; return vo.includes("*") ? categoryKeys.filter((k) => g[k]) : vo; };   // 「*」(알아볼 수 없는 값) → 켜진 칸 모두 보기만
+  const lvOf = (g, k) => (!g || !g[k] ? 0 : voList(g).includes(k) ? 1 : 2);
+  const fixLevel = (lv) => (lv <= 0 ? 0 : !viewOnlyReady ? 2 : lv >= 2 ? 2 : 1);
+  // 한 사람 값에 수준을 넣는다(짝 카테고리도 함께)
+  function withLevel(g, k, lv) {
+    const next = { ...(g || {}) };
+    let vo = voList(g).filter((x) => x !== "*");
+    [k, CATEGORY_PAIRS[k]].filter(Boolean).forEach((key) => {
+      next[key] = lv > 0;
+      vo = vo.filter((x) => x !== key);
+      if (lv === 1) vo.push(key);
+    });
+    next.vo = vo;
+    return next;
+  }
+  // 권한(카테고리 · 역할)을 고칠 수 있는 사람 — Admin 역할 또는 「관리자 전용」 이고, 관리자 전용이 보기만이 아닌 사람
+  const editorOf = (u, g) => (u.role === "admin" || !!(g && g.adminOnly)) && !voList(g).includes("adminOnly");
+  const selfMail = (currentUser.email || "").toLowerCase();
+  const meUser = users.find((u) => (u.email || "").toLowerCase() === selfMail) || currentUser;
+  const editorCount = (map) => users.filter((u) => editorOf(u, map[(u.email || "").toLowerCase()])).length;
+  const SELF_LOCK = lang === "en"
+    ? "You cannot remove your own Admin-only edit access — you would lose the way back."
+    : "본인 계정의 「관리자 전용」 편집 권한은 스스로 해제할 수 없습니다.\n\n해제하면 이 화면에서 권한을 다시 고칠 수 없어, 다른 Admin 계정이나 SharePoint 목록에서만 되돌릴 수 있습니다.";
+  const LAST_EDITOR = lang === "en"
+    ? "No one would be left who can change permissions (Admin role or Admin-only edit). Keep at least one."
+    : "권한을 고칠 수 있는 사람(Admin 역할 또는 「관리자 전용」 편집)이 한 명도 남지 않게 됩니다 — 최소 한 명은 남겨 주세요.";
+  const selfLocked = (email, g) => email === selfMail && editorOf(meUser, draft[email]) && !editorOf(meUser, g);
+
+  // 보기 칸 — 켜면 보기(ViewOnly 열이 없으면 편집까지), 끄면 편집도 함께 없어진다
+  function toggleCell(email, categoryKey, mode = "view") {
     if (!isAdmin) {
       alert(lang === "en" ? "Only admins can change this." : "관리자만 변경할 수 있습니다.");
       return;
     }
-    /* 「관리자 전용」 권한만으로 이 화면에 들어온 사람이 자기 체크를 지우면 되돌릴 화면을 잃는다
-       (Admin 역할 계정이 없으면 SharePoint 목록을 직접 고쳐야 한다). Admin 역할이 아닌 본인 계정의
-       관리자 전용 체크 해제는 막는다 — 권한 관리의 「본인 Admin 역할 잠금」 과 같은 취지. */
-    if (categoryKey === "adminOnly"
-        && email.toLowerCase() === (currentUser.email || "").toLowerCase()
-        && currentUser.role !== "admin"
-        && draft[email.toLowerCase()]?.adminOnly) {
-      alert(lang === "en"
-        ? "You cannot remove your own Admin-only access — you would lose the way back."
-        : "본인 계정의 「관리자 전용」 권한은 스스로 해제할 수 없습니다.\n\n해제하면 이 화면에 다시 들어올 수 없어, 다른 Admin 계정이나 SharePoint 목록에서만 되돌릴 수 있습니다.");
-      return;
-    }
-    setDraft((prev) => {
-      const current = prev[email] || {};
-      const newValue = !current[categoryKey];
-      const next = { ...current, [categoryKey]: newValue };
-      const pairKey = CATEGORY_PAIRS[categoryKey];
-      if (pairKey) next[pairKey] = newValue;
-      return { ...prev, [email]: next };
-    });
+    if (mode === "edit" && !viewOnlyReady) return;
+    const cur = lvOf(draft[email], categoryKey);
+    const lv = fixLevel(mode === "edit" ? (cur === 2 ? 1 : 2) : (cur > 0 ? 0 : 1));
+    const g = withLevel(draft[email], categoryKey, lv);
+    /* 「관리자 전용」 권한만으로 이 화면에 들어온 사람이 자기 권한을 지우거나 보기만으로 내리면 되돌릴 화면을 잃는다
+       (Admin 역할 계정이 없으면 SharePoint 목록을 직접 고쳐야 한다). 본인 편집 권한이 없어지는 변경은 막는다. */
+    if (selfLocked(email, g)) { alert(SELF_LOCK); return; }
+    setDraft((prev) => ({ ...prev, [email]: g }));
   }
 
-  function toggleColumn(categoryKey) {
+  // 열 머리 전체 선택 — mode "view" | "edit"
+  const allOnFor = (k, mode) => rows.length > 0 && rows.every((u) => { const lv = lvOf(draft[u.email.toLowerCase()], k); return mode === "edit" ? lv === 2 : lv > 0; });
+  function toggleColumn(categoryKey, mode = "view") {
     if (!isAdmin) {
       alert(lang === "en" ? "Only admins can change this." : "관리자만 변경할 수 있습니다.");
       return;
     }
-    // 열 전체 해제로도 자기 「관리자 전용」 권한이 풀리지 않게 한다(위 toggleCell 과 같은 이유).
-    const selfEmail = (currentUser.email || "").toLowerCase();
-    const keepSelfAdmin = categoryKey === "adminOnly" && currentUser.role !== "admin";
-    const visibleEmails = rows.map((u) => u.email.toLowerCase());
-    const allChecked = visibleEmails.length > 0 && visibleEmails.every((email) => draft[email]?.[categoryKey]);
-    const pairKey = CATEGORY_PAIRS[categoryKey];
-    setDraft((prev) => {
-      const next = { ...prev };
-      visibleEmails.forEach((email) => {
-        if (keepSelfAdmin && email === selfEmail && allChecked) return;   // 본인 관리자 전용 체크는 남긴다
-        next[email] = { ...(next[email] || {}), [categoryKey]: !allChecked };
-        if (pairKey) next[email][pairKey] = !allChecked;
-      });
-      return next;
+    if (mode === "edit" && !viewOnlyReady) return;
+    const on = !allOnFor(categoryKey, mode);
+    let skippedSelf = false;
+    const next = { ...draft };
+    rows.forEach((u) => {
+      const email = u.email.toLowerCase();
+      const cur = lvOf(next[email], categoryKey);
+      const lv = fixLevel(mode === "edit" ? (on ? 2 : Math.min(cur, 1)) : (on ? Math.max(cur, 1) : 0));
+      const g = withLevel(next[email], categoryKey, lv);
+      if (selfLocked(email, g)) { skippedSelf = true; return; }   // 열 전체 해제로도 본인 편집 권한은 풀리지 않게
+      next[email] = g;
     });
+    setDraft(next);
+    if (skippedSelf) alert(lang === "en" ? "Your own Admin-only edit access was kept." : "본인 계정의 「관리자 전용」 편집 권한은 그대로 두었습니다.");
   }
 
   const isDirty = categoryKeys.some((k) =>
     users.some((u) => {
       const email = u.email.toLowerCase();
-      return !!draft[email]?.[k] !== !!saved[email]?.[k];
+      return lvOf(draft[email], k) !== lvOf(saved[email], k);
     })
   );
 
@@ -10724,7 +10795,7 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
     setAdding(true);
     try {
       const created = await icsCreateItem(ICS_LISTS.categoryAccess, { Title: email });
-      const entry = { spId: created.id };
+      const entry = { spId: created.id, vo: [], voRaw: "" };
       ICS_CATEGORY_ACCESS[email] = entry;
       setSaved((prev) => ({ ...prev, [email]: { ...entry } }));
       setDraft((prev) => ({ ...prev, [email]: { ...entry } }));
@@ -10757,6 +10828,8 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
     const departed = u.fromAccessList || (dirOk && (dirStatus(e) || {}).missing);
     if (hasRoleDept && !departed) return "reset";
     if (row.roleOverride === "admin" && !users.some((x) => (x.email || "").toLowerCase() !== e && x.role === "admin")) return "lastAdmin";
+    // 권한을 고칠 수 있는 마지막 사람(Admin 역할 · 관리자 전용 편집)의 행은 지우지 않는다(10-11)
+    if (editorOf(u, saved[e]) && editorCount({ ...saved, [e]: {} }) === 0) return "lastAdmin";
     return "delete";
   }
   function roleDeptText(e, en) {
@@ -10787,8 +10860,9 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
       const row = ICS_CATEGORY_ACCESS[email];
       if (plan === "reset") {
         const fields = {}; categoryKeys.forEach((k) => { fields[CAT_FIELD[k]] = ""; });
+        if (viewOnlyReady) fields[ICS_VIEWONLY_FIELD] = "";
         await icsUpdateItem(ICS_LISTS.categoryAccess, row.spId, fields);
-        const cleared = {}; categoryKeys.forEach((k) => { cleared[k] = false; });
+        const cleared = { vo: [], voRaw: "" }; categoryKeys.forEach((k) => { cleared[k] = false; });
         ICS_CATEGORY_ACCESS[email] = { ...row, ...cleared };
         setSaved((prev) => ({ ...prev, [email]: { ...(prev[email] || {}), ...cleared } }));
         setDraft((prev) => ({ ...prev, [email]: { ...(prev[email] || {}), ...cleared } }));
@@ -10802,7 +10876,7 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
       const ds = dirStatus(email);
       const dirKo = !dirOk ? "" : ds && ds.missing ? " · 직원 명부 없음(퇴사 · 이동 의심)" : ds && ds.alt ? ` · 메일 다름(명부: ${ds.alt.email})` : " · 직원 명부 있음";
       const dirEn = !dirOk ? "" : ds && ds.missing ? " · not in employee directory" : ds && ds.alt ? ` · email differs (directory: ${ds.alt.email})` : " · in employee directory";
-      const hadKo = hadCats.map((k) => tKo(categoryLabelPath[k])), hadEn = hadCats.map((k) => tEn(categoryLabelPath[k]));
+      const hadKo = hadCats.map((k) => `${tKo(categoryLabelPath[k])}(${lvOf(saved[email], k) === 2 ? "편집" : "보기"})`), hadEn = hadCats.map((k) => `${tEn(categoryLabelPath[k])}(${lvOf(saved[email], k) === 2 ? "edit" : "view"})`);
       addLog(currentUser.email, "edit_category_access", "-",
         `${plan === "reset" ? "권한 초기화(역할 · 부서 배정 유지)" : "권한 회수(행 삭제)"}: ${email} (삭제 전 권한: ${hadKo.length ? hadKo.join(", ") : "없음"}${plan === "delete" && rdKo ? ` · 함께 삭제: ${rdKo}` : ""}${dirKo})${opts.bulk ? ` · 일괄 ${opts.bulk}` : ""}`,
         `${plan === "reset" ? "Access reset (role · dept scope kept)" : "Access revoked (row deleted)"}: ${email} (had: ${hadEn.length ? hadEn.join(", ") : "none"}${plan === "delete" && rdEn ? ` · also removed: ${rdEn}` : ""}${dirEn})${opts.bulk ? ` · bulk ${opts.bulk}` : ""}`);
@@ -10827,27 +10901,27 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
     setSelected((prev) => { const n = new Set(prev); rows.forEach((u) => { const e = u.email.toLowerCase(); allVisibleSelected ? n.delete(e) : n.add(e); }); return n; });
   }
   // 고른 카테고리를 선택한 사람들에게 부여/해제 — 표(초안)에만 반영, 저장은 「반영」. 짝 카테고리(ISA↔FSA)도 함께, 본인 관리자 전용 해제는 막는다
+  // 수준(보기 · 편집): 부여는 그 수준까지 올리고(이미 더 높으면 그대로), 해제는 「편집」 이면 보기로 · 「보기」 면 없음으로
+  const [bulkLevel, setBulkLevel] = useState("edit");
+  const bulkMode = viewOnlyReady ? bulkLevel : "view";
   function bulkSet(val) {
     if (!isAdmin || !bulkCats.size || !selectedUsers.length) return;
-    const me = (currentUser.email || "").toLowerCase();
-    // 본인 「관리자 전용」 해제 막기 — 판정은 갱신 함수 밖에서 먼저(안에서 바꾼 값은 아래 안내에 쓰이지 못했다)
-    const skippedSelf = !val && bulkCats.has("adminOnly") && currentUser.role !== "admin"
-      && selectedUsers.some((u) => u.email.toLowerCase() === me) && !!(draft[me] || {}).adminOnly;
-    setDraft((prev) => {
-      const next = { ...prev };
-      selectedUsers.forEach((u) => {
-        const e = u.email.toLowerCase();
-        const cur = { ...(next[e] || {}) };
-        bulkCats.forEach((k) => {
-          if (skippedSelf && k === "adminOnly" && e === me) return;
-          cur[k] = val;
-          const pk = CATEGORY_PAIRS[k]; if (pk) cur[pk] = val;
-        });
-        next[e] = cur;
+    let skippedSelf = false;
+    const next = { ...draft };
+    selectedUsers.forEach((u) => {
+      const e = u.email.toLowerCase();
+      let g = next[e] || {};
+      bulkCats.forEach((k) => {
+        const cur = lvOf(g, k);
+        const lv = fixLevel(val ? Math.max(cur, bulkMode === "edit" ? 2 : 1) : bulkMode === "edit" ? Math.min(cur, 1) : 0);
+        const g2 = withLevel(g, k, lv);
+        if (selfLocked(e, g2)) { skippedSelf = true; return; }   // 본인 「관리자 전용」 편집은 내리지 않는다
+        g = g2;
       });
-      return next;
+      next[e] = g;
     });
-    if (skippedSelf) alert(lang === "en" ? "Your own Admin-only access was kept." : "본인 계정의 「관리자 전용」 권한은 해제하지 않고 남겼습니다.");
+    setDraft(next);
+    if (skippedSelf) alert(lang === "en" ? "Your own Admin-only edit access was kept." : "본인 계정의 「관리자 전용」 편집 권한은 해제하지 않고 남겼습니다.");
   }
   async function bulkRemove() {
     // 할 일이 있는 사람만(본인 · 마지막 Admin · 저장된 행 없음은 건너뜀) — 결과는 성공 수와 실패 명단을 따로 알린다
@@ -10866,10 +10940,15 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
 
   async function applyChanges() {
     if (!isAdmin || !isDirty) return;
+    // 반영 뒤에도 권한을 고칠 수 있는 사람이 한 명은 남아야 하고, 본인 편집 권한은 스스로 내려놓을 수 없다(10-11)
+    if (editorCount(saved) > 0 && editorCount(draft) === 0) { alert(LAST_EDITOR); return; }
+    if (editorOf(meUser, saved[selfMail]) && !editorOf(meUser, draft[selfMail])) { alert(SELF_LOCK); return; }
     setApplying(true);
     const changedEmails = users
       .map((u) => u.email.toLowerCase())
-      .filter((email) => categoryKeys.some((k) => !!draft[email]?.[k] !== !!saved[email]?.[k]));
+      .filter((email) => categoryKeys.some((k) => lvOf(draft[email], k) !== lvOf(saved[email], k)));
+    const LVK = ["없음", "보기", "편집"], LVE = ["none", "view", "edit"];
+    const tKo2 = makeT("ko"), tEn2 = makeT("en");
 
     let successCount = 0;
     for (const email of changedEmails) {
@@ -10885,6 +10964,10 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
         AdminOnly: yn(entry.adminOnly),
         Executive: yn(entry.executive),
       };
+      // 「보기만」인 키 — ViewOnly 열(JSON 배열). 켜진 칸만 남기고, 이 화면이 모르는 키는 그대로 둔다. 열이 없으면 쓰지 않는다.
+      const voKeep = ((saved[email] && saved[email].vo) || []).filter((k) => k !== "*" && !categoryKeys.includes(k));
+      const voNew = viewOnlyReady ? [...new Set([...voKeep, ...voList(entry).filter((k) => categoryKeys.includes(k) && entry[k])])].sort() : voList(saved[email]);
+      if (viewOnlyReady) fields[ICS_VIEWONLY_FIELD] = voNew.length ? JSON.stringify(voNew) : "";
       try {
         const existing = ICS_CATEGORY_ACCESS[email];
         if (existing?.spId) {
@@ -10893,13 +10976,23 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
           const created = await icsCreateItem(ICS_LISTS.categoryAccess, { Title: email, ...fields });
           entry.spId = created.id;
         }
-        ICS_CATEGORY_ACCESS[email] = { ...(ICS_CATEGORY_ACCESS[email] || {}), ...entry };
+        const stored = { ...entry, vo: voNew, voRaw: viewOnlyReady ? (fields[ICS_VIEWONLY_FIELD] || "") : ((saved[email] && saved[email].voRaw) || "") };
+        ICS_CATEGORY_ACCESS[email] = { ...(ICS_CATEGORY_ACCESS[email] || {}), ...stored };
+        draft[email] = { ...entry, vo: voNew };
+        // 사람별 이력 — 카테고리마다 「없음 · 보기 · 편집」 이전 → 이후
+        const diffs = categoryKeys.filter((k) => lvOf(saved[email], k) !== lvOf(stored, k));
+        if (diffs.length) {
+          const ko = diffs.map((k) => `${tKo2(categoryLabelPath[k])} ${LVK[lvOf(saved[email], k)]}→${LVK[lvOf(stored, k)]}`).join(", ");
+          const en = diffs.map((k) => `${tEn2(categoryLabelPath[k])} ${LVE[lvOf(saved[email], k)]}→${LVE[lvOf(stored, k)]}`).join(", ");
+          addLog(currentUser.email, "edit_category_access", "-", `권한 변경: ${email} — ${ko}${viewOnlyReady ? "" : " (ViewOnly 열 없음 — 보기 = 편집)"}`, `Access changed: ${email} — ${en}${viewOnlyReady ? "" : " (no ViewOnly column — view = edit)"}`);
+        }
         successCount++;
       } catch (e) {
         console.warn(`[ICS] ${email} 카테고리 접근 권한 저장 실패:`, e.message);
       }
     }
     setSaved({ ...draft });
+    setDraft({ ...draft });
     setApplying(false);
     if (successCount > 0) {
       addLog(
@@ -10921,13 +11014,20 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
 
       <div className="bg-slate-50 text-slate-500 text-xs px-4 py-3 rounded-lg mb-4 flex items-start gap-2">
         <ClipboardList size={14} className="flex-shrink-0 mt-0.5" />
-        {t("categoryAccess.defaultNote")}
+        <div>
+          {t("categoryAccess.defaultNote")}
+          {" "}{lang === "en"
+            ? <>Each category has <b className="text-slate-600">View</b> (the menu is shown, read-only) and <b className="text-slate-600">Edit</b> (submit, save, approve, change). Ticking Edit also ticks View; clearing View clears Edit. Menus without View are hidden.</>
+            : <>카테고리마다 <b className="text-slate-600">보기</b>(메뉴가 보이고 조회만)와 <b className="text-slate-600">편집</b>(제출 · 저장 · 승인 · 변경까지)을 따로 줍니다 — 편집을 켜면 보기도 켜지고, 보기를 끄면 편집도 꺼집니다. 보기가 없는 메뉴는 나타나지 않습니다.</>}
+        </div>
       </div>
 
       {!isAdmin && (
-        <div className="rounded-xl border p-4 mb-4 flex items-start gap-2" style={{ backgroundColor: BRAND.accentSoft, borderColor: BRAND.accent + "40" }}>
-          <KeyRound size={16} style={{ color: BRAND.navy }} className="flex-shrink-0 mt-0.5" />
-          <p className="text-sm" style={{ color: BRAND.navy }}>{t("categoryAccess.viewOnlyNotice")}</p>
+        <div className="rounded-xl border px-4 py-3 mb-4 flex items-start gap-2.5 text-xs leading-relaxed" style={{ borderColor: "#DCD3F1", background: "#F7F5FC", color: "#4A3C78" }}>
+          <Eye size={15} className="flex-shrink-0 mt-0.5" />
+          <div>{lang === "en"
+            ? <><b>View only</b> — you can see access but not change it. Changing access needs Admin-only <b>Edit</b> (or the Admin role).</>
+            : <><b>보기 전용</b> — 권한 현황을 볼 수만 있습니다. 권한을 바꾸려면 「관리자 전용」 <b>편집</b> 권한(또는 Admin 역할)이 필요합니다.</>}</div>
         </div>
       )}
 
@@ -11016,6 +11116,15 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
                 );
               })}
             </div>
+            {viewOnlyReady && (
+              <div className="inline-flex rounded-lg border border-slate-300 overflow-hidden bg-white" role="group" aria-label={lang === "en" ? "Level" : "수준"}>
+                {[["view", lang === "en" ? "View" : "보기"], ["edit", lang === "en" ? "Edit" : "편집"]].map(([k, l]) => (
+                  <button key={k} onClick={() => setBulkLevel(k)} aria-pressed={bulkLevel === k}
+                    className={`h-7 px-2.5 text-[11.5px] ${k === "edit" ? "border-l border-slate-300" : ""} ${bulkLevel === k ? "text-white font-medium" : "text-slate-600 hover:bg-slate-50"}`}
+                    style={bulkLevel === k ? { backgroundColor: BRAND.accent } : undefined}>{l}</button>
+                ))}
+              </div>
+            )}
             <button onClick={() => bulkSet(true)} disabled={!bulkCats.size} className="h-7 px-3 rounded-lg text-xs font-medium text-white disabled:opacity-40" style={{ backgroundColor: BRAND.accent }}>{lang === "en" ? "Grant" : "부여"}</button>
             <button onClick={() => bulkSet(false)} disabled={!bulkCats.size} className="h-7 px-3 rounded-lg text-xs font-medium border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-40">{lang === "en" ? "Revoke" : "해제"}</button>
             <button onClick={() => setConfirmBulk(true)} className="ml-auto h-7 px-3 rounded-lg text-xs font-medium border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 flex items-center gap-1">
@@ -11023,89 +11132,176 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
             </button>
           </div>
           <p className="text-[11px] text-slate-500 mt-1.5">{lang === "en"
-            ? "Pick categories and press Grant / Revoke — the table changes for the selected users and is saved when you press Apply. ISA and FSA categories move in pairs. Selection is kept while you search."
-            : "카테고리를 고르고 「부여」 · 「해제」를 누르면 선택한 사람들의 표가 바뀌고, 「반영」을 눌러야 저장됩니다(ISA · FSA 짝 카테고리는 함께). 검색어를 바꿔 가며 한 명씩 체크해도 선택은 유지됩니다."}</p>
+            ? "Pick categories and a level (View · Edit), then Grant / Revoke — the table changes for the selected users and is saved when you press Apply. Revoking Edit keeps View; revoking View removes the category. ISA and FSA categories move in pairs. Selection is kept while you search."
+            : "카테고리와 수준(보기 · 편집)을 고르고 「부여」 · 「해제」를 누르면 선택한 사람들의 표가 바뀌고, 「반영」을 눌러야 저장됩니다 — 「편집」 해제는 보기를 남기고, 「보기」 해제는 그 카테고리를 닫습니다(ISA · FSA 짝 카테고리는 함께). 검색어를 바꿔 가며 한 명씩 체크해도 선택은 유지됩니다."}</p>
         </div>
       )}
 
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-auto" style={{ maxHeight: 520 }}>
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-slate-500 text-xs">
+      {!viewOnlyReady && (
+        <div className="mb-3 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 leading-relaxed flex items-start gap-2">
+          <AlertTriangle size={14} className="flex-shrink-0 mt-0.5 text-amber-500" />
+          <div>{lang === "en"
+            ? <>{voCols ? <>The SharePoint list ICS_CategoryAccess has no <b>ViewOnly</b> column (single line of text) yet.</> : <>Could not check the list columns, so view-only settings are not saved.</>} Until then Edit moves together with View (= view + edit, as today). Once IT adds the column you can split them.</>
+            : <>{voCols ? <>SharePoint 목록 ICS_CategoryAccess 에 <b>ViewOnly</b> 열(한 줄 텍스트)이 아직 없습니다.</> : <>목록 열을 확인하지 못해 「보기만」 설정을 저장하지 않습니다.</>} 그동안 「편집」 칸은 「보기」 와 함께 움직이고(= 지금처럼 보기 + 편집) 보기만 주는 설정은 저장되지 않습니다. 관리자(IT)가 열을 만들면 바로 나눠 줄 수 있습니다.</>}</div>
+        </div>
+      )}
+
+      {(() => {
+        // 권한 표(10-11 · ics-viewedit) — 머리 3단: 묶음 띠 · 화면 이름 · 보기 / 편집(열 전체 선택). 사용자 칸 · 머리는 스크롤해도 고정
+        const GROUPS = [
+          { key: "assessment", keys: ["self", "review", "fsa", "fsaReview"], tone: { main: "#2F7B7A", band: "#E1EFEE", soft: "#F2F8F8", line: "#9DCBC9", tint: "#F8FBFB" } },
+          { key: "adminOnly", keys: ["adminOnly"], tone: { main: "#6A4BA6", band: "#ECE7F6", soft: "#F7F5FC", line: "#C2B3E0", tint: "#FBFAFD" },
+            sub: lang === "en" ? "Settings · Controls · Access · History" : "설정 · 통제 항목 · 권한 · 이력" },
+          { key: "executive", keys: ["executive"], tone: { main: "#3B5B8C", band: "#E5EBF5", soft: "#F3F6FB", line: "#A7B9D7", tint: "#F9FAFD" },
+            sub: lang === "en" ? "Final report · Approval · Change history" : "최종 리포트 · 결재 · 변경 이력" },
+        ];
+        const gOf = (k) => GROUPS.find((g) => g.keys.includes(k));
+        const first = (k) => gOf(k).keys[0] === k;
+        const divider = (k, body) => (first(k) ? `2px solid ${gOf(k).tone.line}` : `1px solid ${body ? "#EEF1F4" : "#E2E8F0"}`);
+        const narrow = typeof window !== "undefined" && window.innerWidth < 768;
+        const UW = narrow ? 150 : 260, SUB = narrow ? 46 : 52, DW = isAdmin ? 56 : 0;
+        const R1 = 30, R2 = 40;
+        const keys = GROUPS.flatMap((g) => g.keys);
+        const Mark = ({ on, color }) => on
+          ? <span className="inline-flex w-4 h-4 rounded items-center justify-center align-middle" style={{ background: color }} aria-label={lang === "en" ? "yes" : "있음"}><Check size={11} strokeWidth={3} color="#fff" /></span>
+          : <span className="inline-block w-4 h-4 rounded border border-slate-200 bg-white align-middle" aria-label={lang === "en" ? "no" : "없음"} />;
+        const VIEW = lang === "en" ? "View" : "보기", EDIT = lang === "en" ? "Edit" : "편집";
+        return (
+      <div className="ics-perm bg-white rounded-xl border border-slate-200 shadow-sm overflow-auto" style={{ maxHeight: 560 }}>
+        <table className="text-sm table-fixed border-separate" style={{ borderSpacing: 0, width: "100%", minWidth: UW + keys.length * 2 * SUB + DW }}>
+          <colgroup>
+            <col style={{ width: UW }} />
+            {keys.map((k) => <React.Fragment key={k}><col /><col /></React.Fragment>)}
+            {isAdmin && <col style={{ width: DW }} />}
+          </colgroup>
+          <thead>
             <tr>
-              <th className="text-left font-medium px-4 py-2.5 sticky top-0 left-0 z-30 bg-slate-50">
-                {isAdmin ? (
-                  <label className="inline-flex items-center gap-2.5 cursor-pointer select-none">
-                    <input type="checkbox" checked={allVisibleSelected} onChange={toggleSelVisible} className="w-4 h-4 cursor-pointer" style={{ accentColor: BRAND.accent }}
-                      title={lang === "en" ? "Select / clear all visible users" : "보이는 사용자 전체 선택 / 해제"} />
-                    {t("categoryAccess.colUser")}
-                  </label>
-                ) : t("categoryAccess.colUser")}
+              <th rowSpan={3} className="sticky left-0 top-0 z-40 bg-white text-left align-bottom px-3 md:px-4 pb-2.5 border-b border-slate-200 font-normal" style={{ boxShadow: "inset -1px 0 0 #E2E8F0" }}>
+                <div className="text-[10.5px] text-slate-400 leading-snug mb-2 hidden md:block">
+                  {lang === "en"
+                    ? <><b className="font-semibold text-slate-500">View</b> menu shown, read-only<br /><b className="font-semibold text-slate-500">Edit</b> submit · save · approve · change</>
+                    : <><b className="font-semibold text-slate-500">보기</b> 메뉴가 보이고 조회만<br /><b className="font-semibold text-slate-500">편집</b> 제출 · 저장 · 승인 · 변경까지</>}
+                </div>
+                <label className="inline-flex items-center gap-2.5 cursor-pointer select-none text-xs font-medium text-slate-600">
+                  {isAdmin && <input type="checkbox" checked={allVisibleSelected} onChange={toggleSelVisible} className="w-4 h-4 cursor-pointer" style={{ accentColor: BRAND.accent }}
+                    title={lang === "en" ? "Select / clear all visible users" : "보이는 사용자 전체 선택 / 해제"} />}
+                  {t("categoryAccess.colUser")} <span className="text-slate-400 font-normal tabular-nums">{rows.length}</span>
+                </label>
               </th>
-              {categoryKeys.map((k) => {
-                const visibleEmails = rows.map((u) => u.email.toLowerCase());
-                const allChecked = visibleEmails.length > 0 && visibleEmails.every((email) => draft[email]?.[k]);
+              {GROUPS.map((g) => {
+                const single = g.keys.length === 1;
                 return (
-                  <th key={k} className="text-center font-medium px-3 py-2.5 whitespace-nowrap sticky top-0 z-20 bg-slate-50">
-                    <div className="flex flex-col items-center gap-1">
-                      <input
-                        type="checkbox"
-                        checked={allChecked}
-                        disabled={!isAdmin}
-                        onChange={() => toggleColumn(k)}
-                        className="w-4 h-4 cursor-pointer disabled:cursor-not-allowed"
-                        style={{ accentColor: BRAND.accent }}
-                        title={t("permissions.selectAll")}
-                      />
-                      <span>{t(categoryLabelPath[k])}</span>
+                  <th key={g.key} colSpan={g.keys.length * 2} rowSpan={single ? 2 : 1}
+                    className={`sticky top-0 z-20 px-2 text-[11px] font-semibold tracking-wide whitespace-nowrap ${narrow ? "text-left" : "text-center"}`}
+                    style={{ height: single ? R1 + R2 : R1, background: single ? g.tone.soft : g.tone.band, color: g.tone.main, boxShadow: `inset 0 3px 0 ${g.tone.main}${single ? `, inset 0 ${R1}px 0 ${g.tone.band}` : ""}`, borderLeft: `2px solid ${g.tone.line}` }}
+                    title={g.sub}>
+                    <div className={`flex flex-col ${narrow ? "items-start" : "items-center"}`} style={narrow ? { position: "sticky", left: UW + 8 } : undefined}>
+                      <span className="inline-flex items-center gap-1.5 leading-[24px]"><span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: g.tone.main }} />{t(`navGroup.${g.key}`)}</span>
+                      {single && !narrow && <span className="text-[10.5px] font-normal tracking-normal text-slate-500 mt-[7px] whitespace-normal leading-tight" style={{ wordBreak: "keep-all" }}>{g.sub}</span>}
                     </div>
                   </th>
                 );
               })}
-              {isAdmin && <th className="text-center font-medium px-3 py-2.5 whitespace-nowrap sticky top-0 z-20 bg-slate-50">{t("common.delete")}</th>}
+              {isAdmin && <th rowSpan={3} className="sticky top-0 z-20 bg-white align-bottom pb-3 text-[11px] font-medium text-slate-500 border-b border-slate-200 whitespace-nowrap" style={{ borderLeft: "1px solid #E2E8F0" }}>{t("common.delete")}</th>}
+            </tr>
+            <tr>
+              {GROUPS.filter((g) => g.keys.length > 1).flatMap((g) => g.keys).map((k) => (
+                <th key={k} colSpan={2} className="sticky z-20 px-1.5 text-center text-[11.5px] font-medium text-slate-700 leading-[1.25]"
+                  style={{ top: R1, height: R2, background: gOf(k).tone.soft, borderLeft: divider(k) }}>
+                  <span style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", wordBreak: "keep-all" }}>{t(categoryLabelPath[k])}</span>
+                </th>
+              ))}
+            </tr>
+            <tr>
+              {keys.map((k) => {
+                const tone = gOf(k).tone;
+                const head = (mode) => {
+                  const isEdit = mode === "edit";
+                  const lab = <span className="text-[10px] font-semibold tracking-wide leading-none" style={{ color: isEdit ? tone.main : "#64748B" }}>{isEdit ? EDIT : VIEW}</span>;
+                  if (!isAdmin) return <div className="flex flex-col items-center gap-1.5">{lab}<span className="h-3.5" /></div>;
+                  const dis = isEdit && !viewOnlyReady;
+                  return (
+                    <label className={`flex flex-col items-center gap-1.5 ${dis ? "" : "cursor-pointer"}`}>
+                      {lab}
+                      <input type="checkbox" checked={allOnFor(k, mode)} disabled={dis} onChange={() => toggleColumn(k, mode)}
+                        className="w-3.5 h-3.5 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40" style={{ accentColor: tone.main }}
+                        title={dis ? (lang === "en" ? "No ViewOnly column — Edit follows View" : "ViewOnly 열이 없어 편집은 보기와 함께 움직입니다") : `${t(categoryLabelPath[k])} ${isEdit ? EDIT : VIEW} — ${t("permissions.selectAll")}`} />
+                    </label>
+                  );
+                };
+                return (
+                  <React.Fragment key={k}>
+                    <th className="sticky z-20 px-0 pt-2 pb-2 border-b border-slate-200 font-normal" style={{ top: R1 + R2, background: tone.soft, borderLeft: divider(k) }}>{head("view")}</th>
+                    <th className="sticky z-20 px-0 pt-2 pb-2 border-b border-slate-200 font-normal" style={{ top: R1 + R2, background: tone.soft }}>{head("edit")}</th>
+                  </React.Fragment>
+                );
+              })}
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody>
             {rows.map((u) => {
               const email = u.email.toLowerCase();
               const grant = draft[email] || {};
+              const isSel = isAdmin && selected.has(email);
+              const rowDirty = keys.some((k) => lvOf(grant, k) !== lvOf(saved[email], k));
+              const rowBg = rowDirty ? "#FFFBEB" : isSel ? "#F2F8F8" : "#FFFFFF";
+              const ds = dirStatus(u.email);
+              const nm = lang === "en" ? (u.nameEn || u.name) : (u.name || u.nameEn);
+              const showName = nm && nm.toLowerCase() !== email;
               return (
-                <tr key={u.id} className={selected.has(email) ? "bg-[#F2F8F8]" : ""}>
-                  <td className={`px-4 py-1.5 sticky left-0 z-10 ${selected.has(email) ? "bg-[#F2F8F8]" : "bg-white"}`}>
-                    {(() => {
-                      const ds = dirStatus(u.email);
-                      const nm = lang === "en" ? (u.nameEn || u.name) : (u.name || u.nameEn);
-                      return (
-                        <div className="flex items-center gap-2 whitespace-nowrap">
-                          {isAdmin && <input type="checkbox" checked={selected.has(email)} onChange={() => toggleSel(email)} className="w-4 h-4 cursor-pointer shrink-0 mr-0.5" style={{ accentColor: BRAND.accent }}
-                            title={lang === "en" ? "Select (bulk access / delete)" : "선택(일괄 권한 · 일괄 삭제)"} />}
-                          {nm && nm.toLowerCase() !== email && <span className="font-medium text-slate-800 text-[13px]">{nm}</span>}
-                          <span className="text-slate-500 text-xs">{u.email}{u.deptLabel ? ` · ${u.deptLabel}` : ""}</span>
-                          {ds && ds.missing && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-50 text-red-600 leading-none font-medium"
+                <tr key={u.id} style={{ background: rowBg }}>
+                  <td className="px-3 md:px-4 py-1.5 sticky left-0 z-10 border-t border-slate-100" style={{ background: rowBg, boxShadow: "inset -1px 0 0 #E2E8F0" }}>
+                    <div className="flex items-center gap-2 min-w-0">
+                      {isAdmin && <input type="checkbox" checked={selected.has(email)} onChange={() => toggleSel(email)} className="w-4 h-4 cursor-pointer shrink-0" style={{ accentColor: BRAND.accent }}
+                        title={lang === "en" ? "Select (bulk access / delete)" : "선택(일괄 권한 · 일괄 삭제)"} />}
+                      <div className="min-w-0 flex-1" title={`${showName ? nm + " · " : ""}${u.email}${u.deptLabel ? ` · ${u.deptLabel}` : ""}`}>
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="truncate text-[13px] font-medium leading-5 text-slate-800" style={{ minWidth: "3.5em" }}>{showName ? nm : u.email}</span>
+                          {u.role === "admin" && !narrow && <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full leading-none font-medium" style={{ background: "#ECE7F6", color: "#6A4BA6" }}>Admin</span>}
+                          {rowDirty && (narrow
+                            ? <span className="shrink-0 w-2 h-2 rounded-full bg-amber-400" aria-label={lang === "en" ? "changed" : "변경"} />
+                            : <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 leading-none">{lang === "en" ? "Changed" : "변경"}</span>)}
+                        </div>
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          {showName && <span className="truncate text-[11.5px] text-slate-400 leading-4">{u.email}{u.deptLabel ? ` · ${u.deptLabel}` : ""}</span>}
+                          {!showName && u.deptLabel && <span className="truncate text-[11.5px] text-slate-400 leading-4">{u.deptLabel}</span>}
+                          {ds && ds.missing && <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-red-50 text-red-600 leading-none font-medium"
                             title={lang === "en" ? "Not in the employee directory — check for leaver / transfer, then delete" : "직원 명부(employee_search.xlsx)에 없는 계정 — 퇴사 · 이동 여부 확인 후 삭제"}>{lang === "en" ? "Not in directory" : "명부 없음"}</span>}
-                          {ds && ds.alt && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 leading-none font-medium"
+                          {ds && ds.alt && <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 leading-none font-medium"
                             title={lang === "en" ? `Directory has ${ds.alt.email}` : `직원 명부에는 ${ds.alt.email} 로 있음 — 같은 사람이면 그 메일로 다시 추가하고 지금 행은 삭제`}>{lang === "en" ? "Email differs" : "메일 다름"} · {ds.alt.email}</span>}
                         </div>
-                      );
-                    })()}
+                      </div>
+                    </div>
                   </td>
-                  {categoryKeys.map((k) => (
-                    <td key={k} className="text-center px-3 py-1.5">
-                      <input
-                        type="checkbox"
-                        checked={!!grant[k]}
-                        disabled={!isAdmin}
-                        onChange={() => toggleCell(email, k)}
-                        className="w-4 h-4 cursor-pointer disabled:cursor-not-allowed"
-                        style={{ accentColor: BRAND.accent }}
-                      />
-                    </td>
-                  ))}
+                  {keys.map((k) => {
+                    const tone = gOf(k).tone; const lv = lvOf(grant, k);
+                    const changed = lv !== lvOf(saved[email], k);
+                    const bg = changed ? "#FEF3C7" : rowDirty || isSel ? undefined : tone.tint;
+                    const label = t(categoryLabelPath[k]);
+                    return (
+                      <React.Fragment key={k}>
+                        <td className="text-center py-1.5 border-t border-slate-100" style={{ borderLeft: divider(k, true), background: bg }}>
+                          {isAdmin
+                            ? <input type="checkbox" checked={lv > 0} onChange={() => toggleCell(email, k, "view")} aria-label={`${u.email} ${label} ${VIEW}`}
+                                className="w-4 h-4 align-middle cursor-pointer" style={{ accentColor: tone.main }} />
+                            : <Mark on={lv > 0} color={tone.main} />}
+                        </td>
+                        <td className="text-center py-1.5 border-t border-slate-100" style={{ background: bg }}>
+                          {isAdmin
+                            ? <input type="checkbox" checked={lv === 2} disabled={!viewOnlyReady} onChange={() => toggleCell(email, k, "edit")} aria-label={`${u.email} ${label} ${EDIT}`}
+                                className="w-4 h-4 align-middle cursor-pointer disabled:cursor-not-allowed disabled:opacity-40" style={{ accentColor: tone.main }}
+                                title={!viewOnlyReady ? (lang === "en" ? "No ViewOnly column — Edit follows View" : "ViewOnly 열이 없어 편집은 보기와 함께 움직입니다") : undefined} />
+                            : <Mark on={lv === 2} color={tone.main} />}
+                        </td>
+                      </React.Fragment>
+                    );
+                  })}
                   {isAdmin && (
-                    <td className="text-center px-3 py-1.5">
+                    <td className="text-center px-2 py-1.5 border-t border-slate-100" style={{ borderLeft: "1px solid #EEF1F4" }}>
                       <button
                         onClick={() => setConfirmRemove(u)}
                         disabled={removing === email}
-                        className="text-slate-400 hover:text-red-500 disabled:opacity-40"
+                        className="w-7 h-7 inline-flex items-center justify-center rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 disabled:opacity-40"
                         title={t("categoryAccess.removeUserTitle")}
                       >
                         {removing === email ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
@@ -11117,7 +11313,7 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
             })}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={categoryKeys.length + (isAdmin ? 2 : 1)}>
+                <td colSpan={keys.length * 2 + (isAdmin ? 2 : 1)} className="border-t border-slate-100">
                   <EmptyState text={t("categoryAccess.emptyText")} />
                 </td>
               </tr>
@@ -11125,6 +11321,8 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
           </tbody>
         </table>
       </div>
+        );
+      })()}
 
       {confirmBulk && (
         <Modal title={lang === "en" ? "Delete selected users" : "선택한 사용자 삭제"} onClose={() => !bulkBusy && setConfirmBulk(false)}>
@@ -11180,7 +11378,7 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
 function PermissionsPage({ permissions, setPermissions, currentUser, addLog, showToast }) {
   const { lang, t } = useLang();
   const { departments, setDepartments, users, setUsers } = useAppData();
-  const isAdmin = isIcsAdmin(currentUser);   // Admin 역할 또는 「관리자 전용」 권한
+  const isAdmin = isIcsAdminEditor(currentUser);   // Admin 역할 또는 「관리자 전용」 편집 권한(보기만이면 조회만 · 10-11)
 
   // ── 부서 추가·수정·삭제 ──
   const [deptForm, setDeptForm] = useState(null);      // { id, ko, en, spId } · id는 신규일 때만 입력 가능
@@ -12096,7 +12294,14 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
   const currentYearConfirmation = yearConfirmations[activeYear] || { cfo: null, rd: null };
   const bothConfirmed = !!(currentYearConfirmation.cfo && currentYearConfirmation.rd);
 
-  const canEditControls = isIcsAdmin(currentUser);
+  const canEditControls = isIcsAdminEditor(currentUser);   // 「관리자 전용」 보기만이면 통제 항목은 조회만(10-11)
+  // 지금 화면의 편집 여부(10-11 · ics-viewedit) — 쓰기 잠금 · 보기 전용 띠 · 평가 화면 잠금에 쓴다
+  const pageKey = ICS_PAGE_EDIT_KEY[page];
+  const pageEditable = !pageKey ? true : pageKey === "learn" ? isIcsAdminEditor(currentUser) || !isIcsAdmin(currentUser) : icsCanEdit(currentUser, pageKey);
+  _icsWriteBlock = !pageEditable;
+  // 카테고리 접근 권한 화면은 자체 「보기 전용」 안내가 있어 띠를 두 번 띄우지 않는다
+  const pageViewOnly = !!pageKey && pageKey !== "learn" && page !== "categoryAccess" && !ICS_VIEW_NATURE.has(pageKey) && hasCategoryAccess(currentUser, pageKey) && !pageEditable;
+  const ro = (k) => !icsCanEdit(currentUser, k);   // 평가 화면 — 보기만이면 지난 연도(보관)와 같은 조회 화면
 
   return (
     <LangContext.Provider value={{ lang, t, setLang }}>
@@ -12326,6 +12531,14 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
 
           <div className="ics-main-scroll flex-1 overflow-y-auto p-4 md:p-6">
             <div className="max-w-[1600px] mx-auto">
+            {pageViewOnly && (
+              <div className="mb-4 rounded-xl border px-4 py-2.5 flex items-center gap-2.5 text-xs" style={{ borderColor: "#DCD3F1", background: "#F7F5FC", color: "#4A3C78" }}>
+                <Eye size={15} className="flex-shrink-0" />
+                <span><b>{lang === "en" ? "View only" : "보기 전용"}</b> — {!ICS_ACCESS_LOADED
+                  ? (lang === "en" ? "the access list could not be loaded, so nothing can be changed for now. Please reload later." : "권한 목록을 불러오지 못해 지금은 조회만 할 수 있습니다. 잠시 후 새로고침해 주세요.")
+                  : (lang === "en" ? "you can see this screen but not change it. Ask an admin for Edit access if needed." : "이 화면은 볼 수만 있습니다. 제출 · 저장 · 승인이 필요하면 관리자에게 「편집」 권한을 요청해 주세요.")}</span>
+              </div>
+            )}
             {page === "dashboard" && <Dashboard controls={controlsForYear} goTo={goTo} isAdmin={isAdmin} allowedDepts={allowedDepts} />}
             {page === "learn" && (
               <LearnPage
@@ -12368,22 +12581,22 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
             )}
             {page === "self" && (
               hasCategoryAccess(currentUser, "self")
-                ? <SelfAssessment controls={controlsForYear} setControls={setControls} currentUser={currentUser} addLog={addLog} isArchived={isArchived} showToast={showToast} allowedDepts={accessorDepts} usingSharePointData={usingSharePointData} />
+                ? <SelfAssessment controls={controlsForYear} setControls={setControls} currentUser={currentUser} addLog={addLog} isArchived={isArchived || ro("self")} showToast={showToast} allowedDepts={accessorDepts} usingSharePointData={usingSharePointData} />
                 : <EmptyState text="Access denied" />
             )}
             {page === "review" && (
               hasCategoryAccess(currentUser, "review")
-                ? <ReviewPage controls={controlsForYear} setControls={setControls} currentUser={currentUser} addLog={addLog} isArchived={isArchived} isAdmin={isAdmin} showToast={showToast} allowedDepts={reviewerDepts} reviewerDepts={reviewerDepts} />
+                ? <ReviewPage controls={controlsForYear} setControls={setControls} currentUser={currentUser} addLog={addLog} isArchived={isArchived || ro("review")} isAdmin={isAdmin} showToast={showToast} allowedDepts={reviewerDepts} reviewerDepts={reviewerDepts} />
                 : <EmptyState text="Access denied" />
             )}
             {page === "fsa" && (
               hasCategoryAccess(currentUser, "fsa")
-                ? <FSAPage controls={controlsForYear} setControls={setControls} currentUser={currentUser} addLog={addLog} isArchived={isArchived} showToast={showToast} allowedDepts={accessorDepts} />
+                ? <FSAPage controls={controlsForYear} setControls={setControls} currentUser={currentUser} addLog={addLog} isArchived={isArchived || ro("fsa")} showToast={showToast} allowedDepts={accessorDepts} />
                 : <EmptyState text="Access denied" />
             )}
             {page === "fsaReview" && (
               hasCategoryAccess(currentUser, "fsaReview")
-                ? <FSAReviewPage controls={controlsForYear} setControls={setControls} currentUser={currentUser} addLog={addLog} isArchived={isArchived} showToast={showToast} allowedDepts={reviewerDepts} reviewerDepts={reviewerDepts} />
+                ? <FSAReviewPage controls={controlsForYear} setControls={setControls} currentUser={currentUser} addLog={addLog} isArchived={isArchived || ro("fsaReview")} showToast={showToast} allowedDepts={reviewerDepts} reviewerDepts={reviewerDepts} />
                 : <EmptyState text="Access denied" />
             )}
             {page === "approval" && (
@@ -12446,6 +12659,7 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
                 다른 16개 화면과 같은 형태로 막는다. */}
             {page === "finalReport" && (hasCategoryAccess(currentUser, "executive")
               ? <FinalReportPage
+                  readOnly={ro("executive")}
                   controls={controlsForActiveYear}
                   currentUser={currentUser}
                   activeYear={activeYear}
@@ -12534,6 +12748,9 @@ const ICS_RETRY_BUDGET = 8000; // 한 호출이 재시도로 쓸 수 있는 총 
 
 async function icsFetch(url, options = {}) {
   const method = String(options.method || "GET").toUpperCase();
+  if (method !== "GET" && _icsWriteBlock && !options.__icsLog) {
+    throw new Error("보기 권한만 있는 화면이라 저장할 수 없습니다 — 편집 권한이 필요하면 관리자에게 요청해 주세요. / View-only access — cannot save.");
+  }
   const idem =
     method === "GET" || method === "PATCH" || method === "DELETE" ||
     (method === "PUT" && /:\/content(\?|$)/.test(String(url)));
@@ -12868,6 +13085,7 @@ async function icsCreateItem(listName, fields) {
     method: "POST",
     headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
     body: JSON.stringify({ fields }),
+    __icsLog: listName === ICS_LISTS.log,   // 활동 로그는 보기 화면에서도 남긴다
   });
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
@@ -12987,9 +13205,22 @@ async function loadIcsCategoryAccessList() {
       deptsReviewer: (f.DeptsReviewer || "").split(",").map((s) => s.trim()).filter(Boolean),
       deptsAdmin: (f.DeptsAdmin || "").split(",").map((s) => s.trim()).filter(Boolean),
       roleOverride: (f.RoleOverride || "").trim().toLowerCase() || null,
+      vo: icsParseViewOnly(f.ViewOnly),                       // 보기만인 카테고리 키(10-11 · ics-viewedit)
+      voRaw: String(f.ViewOnly == null ? "" : f.ViewOnly).trim(),
     };
   });
   return parsed;
+}
+
+// 목록의 열(내부 이름) — 아직 만들지 않은 열(ViewOnly)에 값을 쓰면 Graph 가 400 을 돌려 저장 전체가 실패하므로 먼저 확인한다
+const _icsListColumns = {};
+async function icsListColumnNames(listName) {
+  if (_icsListColumns[listName]) return _icsListColumns[listName];
+  const token = await getGraphToken();
+  const listId = await getIcsListId(listName);
+  const res = await apiGet(`/sites/${_siteId}/lists/${listId}/columns?$select=name`, token);
+  _icsListColumns[listName] = new Set((res.value || []).map((c) => c.name));
+  return _icsListColumns[listName];
 }
 
 // 부서 목록을 ICS_Departments SharePoint 목록에서 읽어온다.
@@ -13500,7 +13731,7 @@ async function icsBoot(account) {
     if (logResult.status === "fulfilled") loadedLog = logResult.value;
     else console.warn("[ICS] 활동 로그 로드 실패:", logResult.reason.message);
     // ICS_CategoryAccess 목록이 아직 없어도(첫 설치 등) 실패로 앱을 막지 않고 기본 권한(역할 기반)으로 진행.
-    if (categoryAccessResult.status === "fulfilled") ICS_CATEGORY_ACCESS = categoryAccessResult.value;
+    if (categoryAccessResult.status === "fulfilled") { ICS_CATEGORY_ACCESS = categoryAccessResult.value; ICS_ACCESS_LOADED = true; }
     else console.warn("[ICS] ICS_CategoryAccess 목록 로드 실패, 기본 권한으로 진행:", categoryAccessResult.reason.message);
 
     // ICS_Departments 목록이 있으면 부서 마스터로 사용한다 (없으면 Excel Departments 시트 값을 그대로 유지).
