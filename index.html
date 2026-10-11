@@ -10643,6 +10643,9 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
   const [addError, setAddError] = useState("");
   const [removing, setRemoving] = useState(null);
   const [confirmRemove, setConfirmRemove] = useState(null);
+  // 안내 — 한 줄 요약만 보이고 > 를 누르면 전체 설명(10-11 · ics-note). 펼침 상태는 이 브라우저에 기억
+  const [noteOpen, setNoteOpen] = useState(() => { try { return localStorage.getItem("ics.accessNoteOpen") === "1"; } catch (e) { return false; } });
+  const toggleNote = () => setNoteOpen((v) => { const nv = !v; try { localStorage.setItem("ics.accessNoteOpen", nv ? "1" : "0"); } catch (e) {} return nv; });
 
   // 「통제 관리」는 뺐다. 그 열이 여는 화면(page === "list")으로 가는 메뉴가 없어
   // 체크해도 아무 변화가 없었다. 관리자가 보고 판단만 흐려지는 열이었다.
@@ -11012,14 +11015,24 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
     <div>
       <SectionHeader icon={KeyRound} title={t("categoryAccess.title")} subtitle={t("categoryAccess.subtitle")} />
 
-      <div className="bg-slate-50 text-slate-500 text-xs px-4 py-3 rounded-lg mb-4 flex items-start gap-2">
-        <ClipboardList size={14} className="flex-shrink-0 mt-0.5" />
-        <div>
+      <div className="bg-slate-50 text-slate-500 text-xs rounded-lg mb-4 leading-relaxed">
+        <button type="button" onClick={toggleNote} aria-expanded={noteOpen}
+          className="w-full flex items-start gap-2 px-4 py-2.5 text-left rounded-lg hover:bg-slate-100/70">
+          <ChevronRight size={14} className="flex-shrink-0 mt-0.5 text-slate-400 transition-transform" style={{ transform: noteOpen ? "rotate(90deg)" : "none" }} />
+          <ClipboardList size={14} className="flex-shrink-0 mt-0.5" />
+          <span className="min-w-0 flex-1">
+            {lang === "en"
+              ? <><b className="text-slate-600">How access works</b><span className="text-slate-400"> — the 4 assessment screens open only for ticked accounts · Admin only = same as the Admin role · <b className="text-slate-600">View / Edit</b> per category · saved only after <b className="text-slate-600">Apply</b></span></>
+              : <><b className="text-slate-600">사용 안내</b><span className="text-slate-400"> — 평가 4개 화면은 체크된 계정만 · 「관리자 전용」 = Admin 과 같음 · 카테고리마다 <b className="text-slate-600">보기 / 편집</b> 따로 · <b className="text-slate-600">「반영」</b>해야 저장</span></>}
+          </span>
+          <span className="flex-shrink-0 text-[11px] text-slate-400 whitespace-nowrap">{noteOpen ? (lang === "en" ? "Hide" : "접기") : (lang === "en" ? "Details" : "자세히")}</span>
+        </button>
+        {noteOpen && <div className="px-4 pb-3 pl-[42px]">
           {t("categoryAccess.defaultNote")}
           {" "}{lang === "en"
             ? <>Each category has <b className="text-slate-600">View</b> (the menu is shown, read-only) and <b className="text-slate-600">Edit</b> (submit, save, approve, change). Ticking Edit also ticks View; clearing View clears Edit. Menus without View are hidden.</>
             : <>카테고리마다 <b className="text-slate-600">보기</b>(메뉴가 보이고 조회만)와 <b className="text-slate-600">편집</b>(제출 · 저장 · 승인 · 변경까지)을 따로 줍니다 — 편집을 켜면 보기도 켜지고, 보기를 끄면 편집도 꺼집니다. 보기가 없는 메뉴는 나타나지 않습니다.</>}
-        </div>
+        </div>}
       </div>
 
       {!isAdmin && (
@@ -11159,7 +11172,8 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
         const first = (k) => gOf(k).keys[0] === k;
         const divider = (k, body) => (first(k) ? `2px solid ${gOf(k).tone.line}` : `1px solid ${body ? "#EEF1F4" : "#E2E8F0"}`);
         const narrow = typeof window !== "undefined" && window.innerWidth < 768;
-        const UW = narrow ? 150 : 260, SUB = narrow ? 46 : 52, DW = isAdmin ? 56 : 0;
+        // 삭제(휴지통)는 따로 떨어진 맨 끝 열 대신 사용자 칸 오른쪽 끝에(10-11 · ics-note) — 그만큼 사용자 칸을 넓힘
+        const UW = narrow ? 172 : 284, SUB = narrow ? 46 : 52;
         const R1 = 30, R2 = 40;
         const keys = GROUPS.flatMap((g) => g.keys);
         const Mark = ({ on, color }) => on
@@ -11168,11 +11182,10 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
         const VIEW = lang === "en" ? "View" : "보기", EDIT = lang === "en" ? "Edit" : "편집";
         return (
       <div className="ics-perm bg-white rounded-xl border border-slate-200 shadow-sm overflow-auto" style={{ maxHeight: 560 }}>
-        <table className="text-sm table-fixed border-separate" style={{ borderSpacing: 0, width: "100%", minWidth: UW + keys.length * 2 * SUB + DW }}>
+        <table className="text-sm table-fixed border-separate" style={{ borderSpacing: 0, width: "100%", minWidth: UW + keys.length * 2 * SUB }}>
           <colgroup>
             <col style={{ width: UW }} />
             {keys.map((k) => <React.Fragment key={k}><col /><col /></React.Fragment>)}
-            {isAdmin && <col style={{ width: DW }} />}
           </colgroup>
           <thead>
             <tr>
@@ -11202,7 +11215,6 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
                   </th>
                 );
               })}
-              {isAdmin && <th rowSpan={3} className="sticky top-0 z-20 bg-white align-bottom pb-3 text-[11px] font-medium text-slate-500 border-b border-slate-200 whitespace-nowrap" style={{ borderLeft: "1px solid #E2E8F0" }}>{t("common.delete")}</th>}
             </tr>
             <tr>
               {GROUPS.filter((g) => g.keys.length > 1).flatMap((g) => g.keys).map((k) => (
@@ -11249,7 +11261,7 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
               const nm = lang === "en" ? (u.nameEn || u.name) : (u.name || u.nameEn);
               const showName = nm && nm.toLowerCase() !== email;
               return (
-                <tr key={u.id} style={{ background: rowBg }}>
+                <tr key={u.id} className="group/row" style={{ background: rowBg }}>
                   <td className="px-3 md:px-4 py-1.5 sticky left-0 z-10 border-t border-slate-100" style={{ background: rowBg, boxShadow: "inset -1px 0 0 #E2E8F0" }}>
                     <div className="flex items-center gap-2 min-w-0">
                       {isAdmin && <input type="checkbox" checked={selected.has(email)} onChange={() => toggleSel(email)} className="w-4 h-4 cursor-pointer shrink-0" style={{ accentColor: BRAND.accent }}
@@ -11271,6 +11283,16 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
                             title={lang === "en" ? `Directory has ${ds.alt.email}` : `직원 명부에는 ${ds.alt.email} 로 있음 — 같은 사람이면 그 메일로 다시 추가하고 지금 행은 삭제`}>{lang === "en" ? "Email differs" : "메일 다름"} · {ds.alt.email}</span>}
                         </div>
                       </div>
+                      {isAdmin && (
+                        <button
+                          onClick={() => setConfirmRemove(u)}
+                          disabled={removing === email}
+                          className="flex-shrink-0 -mr-1.5 w-7 h-7 inline-flex items-center justify-center rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 group-hover/row:text-slate-400 disabled:opacity-40"
+                          title={t("categoryAccess.removeUserTitle")} aria-label={`${u.email} ${t("common.delete")}`}
+                        >
+                          {removing === email ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                        </button>
+                      )}
                     </div>
                   </td>
                   {keys.map((k) => {
@@ -11296,24 +11318,12 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
                       </React.Fragment>
                     );
                   })}
-                  {isAdmin && (
-                    <td className="text-center px-2 py-1.5 border-t border-slate-100" style={{ borderLeft: "1px solid #EEF1F4" }}>
-                      <button
-                        onClick={() => setConfirmRemove(u)}
-                        disabled={removing === email}
-                        className="w-7 h-7 inline-flex items-center justify-center rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 disabled:opacity-40"
-                        title={t("categoryAccess.removeUserTitle")}
-                      >
-                        {removing === email ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-                      </button>
-                    </td>
-                  )}
                 </tr>
               );
             })}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={keys.length * 2 + (isAdmin ? 2 : 1)} className="border-t border-slate-100">
+                <td colSpan={keys.length * 2 + 1} className="border-t border-slate-100">
                   <EmptyState text={t("categoryAccess.emptyText")} />
                 </td>
               </tr>
