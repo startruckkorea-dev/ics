@@ -8489,6 +8489,39 @@ async function apsAppendAttachmentPages(doc, items, opt) {
 }
 /* ═══ /APS-ATTACH v1 ═══════════════════════════════════════════════════════════════════════════ */
 
+/* ═══ APS 공통 — 출력물 「출력자」 (APS-PRINTER v1 · 2026-10-12) ═══════════════════════════════════════
+   출력물(PDF 머리띠 · 인쇄 창 머리글)의 「출력일시」 왼쪽에 「출력자: 이름」 을 함께 적는다 — 출력물만 보고도 누가 뽑았는지 남게(10-12 요청).
+   · 이름은 로그인 계정의 표시 이름(화면 오른쪽 위 계정과 같은 값), 없으면 메일. 계정을 못 읽으면 예전처럼 「출력일시」 만 적는다.
+   · 오른쪽 글이 길어진 만큼 왼쪽 제목(긴 첨부 파일명 등)이 닿으면 제목 가운데를 「…」 로 줄인다 — 앞(「첨부파일: 」 · 이름 앞부분)과
+     끝(확장자 · 「(encrypted)」 같은 상태)은 남긴다. 예전엔 긴 파일명이 오른쪽 「출력일시」 위에 겹쳐 그려졌다.
+   고칠 때는 이 블록을 모든 시스템에서 함께 고친다. */
+function apsPrinterName() {
+  let a = null;
+  // ICS 는 전역 user 가 없다 — 다른 APS 시스템과 같은 출처인 MSAL 활성 계정(로그인 때 setActiveAccount)의 이름.
+  // ICS 화면 · 최종 보고서의 이름은 ICS 명부 기준이라 표기(한글 · 영문)가 다를 수 있다.
+  try { a = msalApp.getActiveAccount(); } catch (e) {}
+  // 제어 · 서식 문자(보이지 않는 글자 · 양방향 덮어쓰기 U+202E 등)는 지운다 — 이름이 뒤의 「출력일시」 를 뒤집어 보이게 하지 않게(외부 게스트 이름은 상대 회사가 정한다)
+  const s = String((a && (a.name || a.email || a.username)) || '')
+    .replace(/[\u0000-\u0008\u000E-\u001F\u007F-\u009F\u00AD\u061C\u180E\u200B-\u200F\u202A-\u202E\u2060-\u206F]/g, '').replace(/\s+/g, ' ').trim();
+  const c = Array.from(s);
+  return c.length > 40 ? c.slice(0, 39).join('') + '…' : s;   // 아주 긴 이름은 줄여 머리띠를 넘치지 않게
+}
+function apsPrintStamp(ds) {   // ds = '출력일시: …' → '출력자: 이름  ·  출력일시: …'
+  const n = apsPrinterName();
+  return n ? '출력자: ' + n + '  ·  ' + ds : ds;
+}
+function apsFitText(ctx, text, maxW) {   // ctx 의 지금 글꼴로 재서 maxW(px) 를 넘으면 가운데를 「…」 로 줄인다
+  const s = String(text == null ? '' : text);
+  if (ctx.measureText(s).width <= maxW) return s;
+  const c = Array.from(s);
+  let t = Math.min(24, Math.floor(c.length / 3)), h = c.length - t;
+  const cut = () => c.slice(0, h).join('') + '…' + c.slice(c.length - t).join('');
+  while (h > 1 && ctx.measureText(cut()).width > maxW) h--;
+  while (t > 0 && ctx.measureText(cut()).width > maxW) t--;
+  return cut();
+}
+/* ═══ /APS-PRINTER v1 ═══════════════════════════════════════════════════════════════════════════ */
+
 /* 고른 통제를 한 건씩 PDF 로 만든다. 서식·평가 이력을 앞에 두고 첨부 자료를 뒤에 붙인다.
    첨부는 이미지면 그대로, 그 밖은 Graph 로 PDF 변환해 이어 붙인다(ACC Others 와 같은 방식). */
 async function exportControlPackagePdf(controls, lang, users, departments, onProgress) {
@@ -9095,18 +9128,21 @@ async function exportRequestPdf(bodyId, fileName, title) {
 
     const dataUrlToUint8 = async (u) => new Uint8Array(await (await fetch(u)).arrayBuffer());
 
-    // 상단 배너. ACC 와 같은 남색 그라데이션에 왼쪽 화면 이름, 오른쪽 출력일시.
+    // 상단 배너. ACC 와 같은 남색 그라데이션에 왼쪽 화면 이름, 오른쪽 「출력자: 이름  ·  출력일시: …」(APS-PRINTER v1 · 10-12).
+    const stamp = apsPrintStamp("출력일시: " + ds);
     async function makeHeaderBytes(text) {
       const hc = document.createElement("canvas"); hc.width = 1190; hc.height = 28;
       const hx = hc.getContext("2d");
       const g = hx.createLinearGradient(0, 0, hc.width, 0);
       g.addColorStop(0, "#0f2744"); g.addColorStop(1, "#0a4a8a");
       hx.fillStyle = g; hx.fillRect(0, 0, hc.width, hc.height);
-      hx.fillStyle = "#fff"; hx.font = '500 13px "Malgun Gothic",sans-serif'; hx.textBaseline = "middle";
-      hx.fillText(text, 14, 13);
+      hx.textBaseline = "middle"; hx.font = '400 12px "Malgun Gothic",sans-serif';
+      const rw = hx.measureText(stamp).width;   // 오른쪽 글 폭을 먼저 잰다
+      hx.fillStyle = "#fff"; hx.font = '500 13px "Malgun Gothic",sans-serif';
+      hx.fillText(apsFitText(hx, text, hc.width - rw - 58), 14, 13);   // 긴 제목이 오른쪽 글에 닿으면 가운데를 줄인다(양끝 14 · 사이 30)
       hx.textAlign = "right"; hx.font = '400 12px "Malgun Gothic",sans-serif';
       hx.fillStyle = "rgba(255,255,255,.6)";
-      hx.fillText("출력일시: " + ds, hc.width - 14, 13);
+      hx.fillText(stamp, hc.width - 14, 13);
       return dataUrlToUint8(hc.toDataURL("image/png"));
     }
 
