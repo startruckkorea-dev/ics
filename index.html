@@ -84,6 +84,12 @@ html, * { scrollbar-width: thin; scrollbar-color: #CBD5E1 transparent; }
 ::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
 ::-webkit-scrollbar-thumb:hover { background: #94A3B8; background-clip: padding-box; }
 </style>
+<style id="ics-tall">
+/* 입력창 세로 확대(10-14) — 쓰는 만큼 자동으로 커지고(Chrome · Edge), 오른쪽 아래 손잡이로 직접 늘릴 수도 있다 */
+textarea.ics-tall{field-sizing:content;min-height:calc(1.5em * var(--ics-rows, 3) + 1.5rem);max-height:70vh;overflow-y:auto;line-height:1.6}
+textarea.ics-tall[rows="3"]{--ics-rows:3}textarea.ics-tall[rows="4"]{--ics-rows:4}textarea.ics-tall[rows="5"]{--ics-rows:5}textarea.ics-tall[rows="6"]{--ics-rows:6}textarea.ics-tall[rows="8"]{--ics-rows:8}
+@media print{textarea.ics-tall{max-height:none}}
+</style>
 </head>
 <body>
 <div id="login-screen">
@@ -4588,7 +4594,7 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
             <input className={inputCls} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder={t("manage.namePlaceholder")} />
           </Field>
           <Field label={t("manage.fieldDesc")}>
-            <textarea className={inputCls} rows={3} value={form.desc} onChange={(e) => setForm({ ...form, desc: e.target.value })} placeholder={t("manage.descPlaceholder")} />
+            <textarea className={inputCls + " resize-y ics-tall"} rows={5} value={form.desc} onChange={(e) => setForm({ ...form, desc: e.target.value })} placeholder={t("manage.descPlaceholder")} />
           </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label={t("manage.fieldDept")}>
@@ -5297,13 +5303,13 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
                 <div>
                   {/* 폭이 넓어져 한 줄에 더 많이 들어가므로 줄 수를 줄인다.
                       7줄 그대로 두면 모달이 세로로 길어져 결재자·사유가 스크롤 밖으로 밀린다. */}
-                  <textarea className={inputCls} rows={5} maxLength={DESC_MAX}
+                  <textarea className={inputCls + " resize-y ics-tall"} rows={6} maxLength={DESC_MAX}
                     value={reqForm.desc}
                     onChange={(e) => setReqForm({ ...reqForm, desc: e.target.value })} />
                   <p className="text-xs text-slate-400 mt-1 text-right">{(reqForm.desc || "").length} / {DESC_MAX}</p>
                 </div>
                 <div>
-                  <textarea className={inputCls} rows={5} maxLength={DESC_MAX}
+                  <textarea className={inputCls + " resize-y ics-tall"} rows={6} maxLength={DESC_MAX}
                     value={reqForm.descEn}
                     onChange={(e) => setReqForm({ ...reqForm, descEn: e.target.value })} />
                   <p className="text-xs text-slate-400 mt-1 text-right">{(reqForm.descEn || "").length} / {DESC_MAX}</p>
@@ -5408,7 +5414,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
 
           <div className="mt-3">
             <Field label={t("self.reqReasonLabel")}>
-              <textarea className={inputCls} rows={2} maxLength={REASON_MAX}
+              <textarea className={inputCls + " resize-y ics-tall"} rows={4} maxLength={REASON_MAX}
                         value={reqForm.reason}
                         onChange={(e) => setReqForm({ ...reqForm, reason: e.target.value })}
                         placeholder={t("self.reqReasonPlaceholder")} />
@@ -5855,10 +5861,10 @@ function IsaDocForms({ control, doc, setDoc, recommended, sampleCount, required,
   // 지우기 단추 — 회색이 너무 옅어 있는 줄도 몰랐다. 진하게 하고 올리면 빨갛게.
   const delCls = "flex-shrink-0 w-5 h-5 rounded-md flex items-center justify-center text-slate-500 hover:text-white hover:bg-red-500 transition-colors";
 
-  /* 「누가」 의 역할·직책과 부서는 통제 항목에 이미 있는 값이다.
-     담당자가 같은 값을 또 적게 하지 않고 자동으로 채운다(2026-09-21 회의 요청).
-     직접 쓰는 것은 역할 설명뿐이다. 둘째 줄부터는 예전처럼 직접 입력한다. */
-  const autoRole = personByEmail(control.accessor, lang, users);
+  /* 「누가」 의 부서는 통제 항목에 이미 있는 값이라 자동으로 채운다(2026-09-21 회의 요청).
+     역할/직책은 10-14 부터 직접 입력한다 — 통제 항목에는 직책 값이 없어 1차 담당자 이메일이
+     들어가 고정되던 문제(사용자 제보). 예전에 자동으로 들어간 이메일은 열 때 비운다. */
+  const autoEmail = String(control.accessor || "").trim().toLowerCase();
   const autoDept = deptName(control.dept, lang, departments);
   /* 테스트 문서의 「통제 세트(주기)」 는 통제기술서의 「수행 주기」 를 그대로 따른다(09-21 요청).
      같은 값을 두 번 적게 하지 않고, 둘이 어긋나지 않게 한다. 저장 · Word · 세부 내용에도 이 값이 간다. */
@@ -5867,15 +5873,16 @@ function IsaDocForms({ control, doc, setDoc, recommended, sampleCount, required,
   // 두 자동 값을 한 번에 맞춘다 — 따로 setDoc 하면 같은 doc 을 바탕으로 해 서로 덮어쓴다.
   useEffect(() => {
     const p0 = doc.cd.performers[0] || { role: "", desc: "", dept: "" };
-    const needP = !(p0.role === autoRole && p0.dept === autoDept);
+    const staleRole = !!autoEmail && String(p0.role || "").trim().toLowerCase() === autoEmail;
+    const needP = staleRole || p0.dept !== autoDept;
     const needC = (doc.tp.setCycle || "") !== autoSetCycle;
     if (!needP && !needC) return;
     setDoc({
       ...doc,
-      cd: needP ? { ...doc.cd, performers: doc.cd.performers.map((p, i) => (i === 0 ? { ...p, role: autoRole, dept: autoDept } : p)) } : doc.cd,
+      cd: needP ? { ...doc.cd, performers: doc.cd.performers.map((p, i) => (i === 0 ? { ...p, role: staleRole ? "" : p.role, dept: autoDept } : p)) } : doc.cd,
       tp: needC ? { ...doc.tp, setCycle: autoSetCycle } : doc.tp,
     });
-  }, [autoRole, autoDept, autoSetCycle]);
+  }, [autoEmail, autoDept, autoSetCycle]);
 
   // 어느 쪽에 내용이 들어갔는지 탭에 점으로 표시한다.
   const cdFilled = isaDocFilled({ cd: doc.cd, tp: emptyIsaDoc().tp });
@@ -6094,10 +6101,9 @@ function IsaDocForms({ control, doc, setDoc, recommended, sampleCount, required,
             </div>
             {cd.performers.map((p, i) => (
               <div key={i} className="grid border-b border-slate-300" style={{ gridTemplateColumns: `${LABEL_W} 1fr 200px` }}>
-                {/* 첫 줄은 통제 항목에서 가져온 값이라 고칠 수 없다. */}
+                {/* 역할/직책은 모든 줄에서 직접 입력한다(10-14). 첫 줄의 부서만 통제 항목에서 가져온다. */}
                 <div className="px-1 py-1 border-r border-slate-300">
-                  <input className={cellIn + (i === 0 ? " text-slate-500" : "")} readOnly={i === 0}
-                         title={i === 0 ? t("self.docAuto") : ""} placeholder={t("self.docRole")}
+                  <input className={cellIn} placeholder={t("self.docRole")}
                          value={p.role} onChange={(e) => setPerformer(i, { role: e.target.value })} />
                 </div>
                 <div className="px-1 py-1 border-r border-slate-300">
@@ -6120,17 +6126,17 @@ function IsaDocForms({ control, doc, setDoc, recommended, sampleCount, required,
 
             {qrow(t("self.docWhere"))}
             {row(Rq(lang === "en" ? "Process environment" : "프로세스 환경"),
-              <textarea rows={2} className={cellIn + " resize-none"} value={cd.processEnv} onChange={(e) => setCd({ processEnv: e.target.value })} />)}
+              <textarea rows={3} className={cellIn + " resize-y ics-tall"} value={cd.processEnv} onChange={(e) => setCd({ processEnv: e.target.value })} />)}
             {qrow(t("self.docWhat"))}
             {row(Rq(lang === "en" ? "Control activity" : "통제 내용 설명"),
-              <textarea rows={4} className={cellIn + " resize-none"} value={cd.activity} onChange={(e) => setCd({ activity: e.target.value })} />)}
+              <textarea rows={6} className={cellIn + " resize-y ics-tall"} value={cd.activity} onChange={(e) => setCd({ activity: e.target.value })} />)}
           </>)}
 
           {table(<>
             {sec(lang === "en" ? "Test Design" : "테스트 설계")}
             {qrow(t("self.docTestProc"))}
             {row(Rq(lang === "en" ? "Test procedure" : "테스트 절차 설명"),
-              <textarea rows={3} className={cellIn + " resize-none"} value={cd.testProc} onChange={(e) => setCd({ testProc: e.target.value })} />)}
+              <textarea rows={5} className={cellIn + " resize-y ics-tall"} value={cd.testProc} onChange={(e) => setCd({ testProc: e.target.value })} />)}
             {row(Rq(t("self.docEvidence")), <input className={cellIn} value={cd.evidence} onChange={(e) => setCd({ evidence: e.target.value })} />)}
             {row(t("self.docSampleNeed"), ro(`${recommended}${t("common.items")} ${lang === "en" ? "(by frequency)" : "(수행 주기에 따라)"}`))}
             {/* 표본추출방식 — 하나만 고른다. 방식마다 뜻을 함께 적어 고르기 쉽게 한다. */}
@@ -6179,7 +6185,7 @@ function IsaDocForms({ control, doc, setDoc, recommended, sampleCount, required,
                 <span className="text-[11px] text-slate-400">{t("self.docCycleAuto")}</span>
               </div>)}
             {row(t("self.docCtrlName"), ro(cName(control, lang)))}
-            {row(Rq(t("self.docTestRef")), <textarea rows={2} className={cellIn + " resize-none"} value={tp.testRef} onChange={(e) => setTp({ testRef: e.target.value })} />)}
+            {row(Rq(t("self.docTestRef")), <textarea rows={3} className={cellIn + " resize-y ics-tall"} value={tp.testRef} onChange={(e) => setTp({ testRef: e.target.value })} />)}
           </>)}
 
           <div>
@@ -6232,7 +6238,7 @@ function IsaDocForms({ control, doc, setDoc, recommended, sampleCount, required,
           </div>
 
           {table(<>
-            {row(Rq(t("self.docTestResult")), <textarea rows={3} className={cellIn + " resize-none"} value={tp.resultText} onChange={(e) => setTp({ resultText: e.target.value })} />)}
+            {row(Rq(t("self.docTestResult")), <textarea rows={5} className={cellIn + " resize-y ics-tall"} value={tp.resultText} onChange={(e) => setTp({ resultText: e.target.value })} />)}
           </>)}
         </div>
       )}
@@ -6428,8 +6434,8 @@ function SelfAssessForm({ control, draft, setDraft, onCancel, onSubmit, onSkip, 
         )}
       </p>
       <textarea
-        className="w-full border border-slate-300 rounded-xl px-3.5 py-3 text-[15px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-100 focus:border-teal-400 resize-none"
-        rows={3}
+        className="w-full border border-slate-300 rounded-xl px-3.5 py-3 text-[15px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-100 focus:border-teal-400 resize-y ics-tall"
+        rows={8}
         placeholder={t("self.commentPlaceholder")}
         value={draft.comment}
         onChange={(e) => setDraft({ ...draft, comment: e.target.value })}
@@ -6682,8 +6688,8 @@ function FSAForm({ draft, setDraft, onCancel, onSubmit, control, onSaveDoc, onSa
           )}
         </p>
         <textarea
-          className="w-full border border-slate-300 rounded-xl px-3.5 py-3 text-[15px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-100 focus:border-teal-400 resize-none"
-          rows={3}
+          className="w-full border border-slate-300 rounded-xl px-3.5 py-3 text-[15px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-100 focus:border-teal-400 resize-y ics-tall"
+          rows={8}
           placeholder={t("fsa.commentPlaceholder")}
           value={draft.comment}
           onChange={(e) => setDraft({ ...draft, comment: e.target.value })}
@@ -7175,7 +7181,7 @@ function FSAReviewPage({ controls, setControls, currentUser, addLog, isArchived,
                         </button>
                       ))}
                     </div>
-                    <textarea className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-100 focus:border-teal-400 resize-none" rows={2} placeholder={t("review.reviewCommentPlaceholder")} value={draft.comment} onChange={(e) => setDraft({ ...draft, comment: e.target.value })} />
+                    <textarea className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-100 focus:border-teal-400 resize-y ics-tall" rows={5} placeholder={t("review.reviewCommentPlaceholder")} value={draft.comment} onChange={(e) => setDraft({ ...draft, comment: e.target.value })} />
                     <div className="flex justify-end gap-2 mt-3">
                       <button onClick={() => setEditing(null)} className="px-3 py-1.5 text-xs text-slate-500 rounded-lg hover:bg-slate-50">{t("common.cancel")}</button>
                       <button onClick={() => approve(c)} disabled={!draft.risk} className="px-4 py-1.5 text-xs font-medium text-white rounded-lg disabled:opacity-40 flex items-center gap-1" style={{ backgroundColor: BRAND.accent }}>
@@ -7186,7 +7192,7 @@ function FSAReviewPage({ controls, setControls, currentUser, addLog, isArchived,
                 ) : returning === c.id && !isArchived ? (
                   <div className="border border-red-100 rounded-lg p-3">
                     <p className="text-xs font-medium text-red-600 mb-2">{t("review.rejectReasonLabel")}</p>
-                    <textarea className={inputCls} rows={2} placeholder={t("review.rejectReasonPlaceholder")} value={returnComment} onChange={(e) => setReturnComment(e.target.value)} />
+                    <textarea className={inputCls + " resize-y ics-tall"} rows={4} placeholder={t("review.rejectReasonPlaceholder")} value={returnComment} onChange={(e) => setReturnComment(e.target.value)} />
                     <div className="flex justify-end gap-2 mt-3">
                       <button onClick={() => setReturning(null)} className="px-3 py-1.5 text-xs text-slate-500 rounded-lg hover:bg-slate-50">{t("common.cancel")}</button>
                       <button onClick={() => reject(c)} disabled={!returnComment.trim()} className="px-4 py-1.5 text-xs font-medium text-white bg-red-500 rounded-lg disabled:opacity-40 flex items-center gap-1">
@@ -7379,7 +7385,7 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, sh
                         </button>
                       ))}
                     </div>
-                    <textarea className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-100 focus:border-teal-400 resize-none" rows={2} placeholder={t("review.reviewCommentPlaceholder")} value={draft.comment} onChange={(e) => setDraft({ ...draft, comment: e.target.value })} />
+                    <textarea className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-100 focus:border-teal-400 resize-y ics-tall" rows={5} placeholder={t("review.reviewCommentPlaceholder")} value={draft.comment} onChange={(e) => setDraft({ ...draft, comment: e.target.value })} />
                     <div className="flex justify-end gap-2 mt-3">
                       <button onClick={() => setEditing(null)} className="px-3 py-1.5 text-xs text-slate-500 rounded-lg hover:bg-slate-50">{t("common.cancel")}</button>
                       <button onClick={() => approve(c)} disabled={!draft.risk} className="px-4 py-1.5 text-xs font-medium text-white rounded-lg disabled:opacity-40 flex items-center gap-1" style={{ backgroundColor: BRAND.accent }}>
@@ -7390,7 +7396,7 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, sh
                 ) : returning === c.id && !isArchived ? (
                   <div className="border border-red-100 rounded-lg p-3">
                     <p className="text-xs font-medium text-red-600 mb-2">{t("review.rejectReasonLabel")}</p>
-                    <textarea className={inputCls} rows={2} placeholder={t("review.rejectReasonPlaceholder")} value={returnComment} onChange={(e) => setReturnComment(e.target.value)} />
+                    <textarea className={inputCls + " resize-y ics-tall"} rows={4} placeholder={t("review.rejectReasonPlaceholder")} value={returnComment} onChange={(e) => setReturnComment(e.target.value)} />
                     <div className="flex justify-end gap-2 mt-3">
                       <button onClick={() => setReturning(null)} className="px-3 py-1.5 text-xs text-slate-500 rounded-lg hover:bg-slate-50">{t("common.cancel")}</button>
                       <button onClick={() => reject(c)} disabled={!returnComment.trim()} className="px-4 py-1.5 text-xs font-medium text-white bg-red-500 rounded-lg disabled:opacity-40 flex items-center gap-1">
@@ -9398,8 +9404,8 @@ function RequestDetailModal({ r, controls, onClose, canAct, canCancel, acting, c
               「왜 반려가 눌리지 않는가」 를 다 누른 뒤에야 읽게 됐다.
               쓰기 전에 보이도록 입력란 바로 위, 붉은 글씨로 둔다. */}
           <textarea
-            className={`${inputCls}`}
-            rows={2}
+            className={`${inputCls} resize-y ics-tall`}
+            rows={4}
             value={comment || ""}
             onChange={(e) => setComment(e.target.value)}
             placeholder={t("approval.commentPlaceholder")}
