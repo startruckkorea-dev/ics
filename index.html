@@ -487,8 +487,8 @@ function isaDocMissing(doc, sampleCount, lang) {
   need(has(c.relatedDocs), "관련 문서", "Related documents", cd);
   need(has(c.relatedSystems), "관련 시스템", "Related systems", cd);
   need(has(c.cycle), "수행 주기", "Frequency", cd);
-  const rows = (c.performers || []).filter((p) => has(p.role) || has(p.desc) || has(p.dept));
-  need(rows.length > 0 && rows.every((p) => has(p.role) && has(p.desc) && has(p.dept)), "누가(역할 · 설명 · 부서)", "Who (role · description · dept.)", cd);
+  const rows = (c.performers || []).filter((p) => has(p.person) || has(p.role) || has(p.desc) || has(p.dept));
+  need(rows.length > 0 && rows.every((p) => has(p.person) && has(p.role) && has(p.desc) && has(p.dept)), "누가(담당자 · 역할 · 설명 · 부서)", "Who (person · role · description · dept.)", cd);
   need(has(c.processEnv), "어디서(프로세스 환경)", "Where (process environment)", cd);
   need(has(c.activity), "무엇을(통제 내용)", "What (control activity)", cd);
   need(has(c.testProc), "어떻게(테스트 절차)", "How (test procedure)", cd);
@@ -513,7 +513,7 @@ function emptyIsaDoc() {
       setCycle: "", docVersion: "", effDate: "",
       riskType: "", keyControl: "", level: "", assertions: [], method: "", ctype: "",
       relatedDocs: "", relatedSystems: "", cycle: "",
-      performers: [{ role: "", desc: "", dept: "" }],
+      performers: [{ person: "", role: "", desc: "", dept: "" }],
       processEnv: "", activity: "",
       testProc: "", evidence: "", sampling: "", population: "",
     },
@@ -527,6 +527,8 @@ function normalizeIsaDoc(raw) {
   const cd = { ...base.cd, ...(raw.cd || {}) };
   cd.assertions = Array.isArray(cd.assertions) ? cd.assertions.filter((x) => ASSERTION_OPTIONS.some((o) => o.id === x)) : [];
   cd.performers = Array.isArray(cd.performers) && cd.performers.length ? cd.performers : base.cd.performers;
+  // 「담당자」 열(10-14) — 이 칸이 없던 옛 기록도 빈 값으로 맞춘다.
+  cd.performers = cd.performers.map((p) => ({ person: "", role: "", desc: "", dept: "", ...(p || {}) }));
   // 옛 기록 옮기기 — 부정 체크는 리스크 유형 「부정」 으로, 무작위 체크는 표본추출방식 「무작위」 로.
   if (!cd.riskType && raw.cd && raw.cd.fraud === true) cd.riskType = "fraud";
   if (!cd.sampling && raw.cd && raw.cd.random === true) cd.sampling = "random";
@@ -559,7 +561,7 @@ function isaDocFilled(doc) {
     tp.setCycle, tp.testRef, tp.resultText];
   if (texts.some((v) => String(v || "").trim())) return true;
   if (cd.riskType || cd.keyControl || cd.level || cd.sampling || cd.method || cd.ctype || cd.cycle || cd.assertions.length) return true;
-  if (cd.performers.some((p) => String(p.role || p.desc || p.dept || "").trim())) return true;
+  if (cd.performers.some((p) => String(p.person || p.role || p.desc || p.dept || "").trim())) return true;
   return tp.samples.some((r) => String(r.date || r.ref || r.result || r.comment || "").trim());
 }
 
@@ -1235,7 +1237,7 @@ const STR = {
       docRelDocs: "관련 문서", docRelSystems: "관련 시스템",
       docCycle: "수행 주기 (하나만 선택)",
       docWho: "누가 — 통제를 수행하는 사람",
-      docRole: "역할/직책", docRoleDesc: "역할 설명", docRoleDept: "부서",
+      docPerson: "담당자", docPersonPh: "이름 또는 이메일", docRole: "역할/직책", docRoleDesc: "역할 설명", docRoleDept: "부서",
       docAddRow: "행 추가", docDelRow: "삭제",
       docWhere: "어디서 — 프로세스의 어느 단계에서 통제가 수행됩니까?",
       docWhat: "무엇을 — 통제 요건을 충족하기 위해 어떤 활동이 수행됩니까?",
@@ -1740,7 +1742,7 @@ const STR = {
       docRelDocs: "Related documents", docRelSystems: "Related systems",
       docCycle: "Performance frequency (choose one)",
       docWho: "Who — performs the control",
-      docRole: "Role / title", docRoleDesc: "Role description", docRoleDept: "Department",
+      docPerson: "Person", docPersonPh: "Name or e-mail", docRole: "Role / title", docRoleDesc: "Role description", docRoleDept: "Department",
       docAddRow: "Add row", docDelRow: "Remove",
       docWhere: "Where — at which step of the process is the control performed?",
       docWhat: "What — which activities are performed to meet the control requirement?",
@@ -3520,7 +3522,7 @@ function IsaDocView({ control: c }) {
     finally { setDlBusy(false); }
   }
 
-  const perf = cd.performers.filter((p) => String(p.role || p.desc || p.dept || "").trim());
+  const perf = cd.performers.filter((p) => String(p.person || p.role || p.desc || p.dept || "").trim());
   const samples = tp.samples.filter((r) => String(r.date || r.ref || r.result || r.comment || "").trim());
   const panel = "border border-t-0 border-slate-200 rounded-b-xl bg-white px-4 pt-2 pb-3";
 
@@ -3562,6 +3564,7 @@ function IsaDocView({ control: c }) {
               <table className="w-full text-[12px] border border-slate-200">
                 <thead className="bg-slate-50 text-slate-500">
                   <tr>
+                    <th className="text-left font-semibold px-2 py-1 w-44">{t("self.docPerson")}</th>
                     <th className="text-left font-semibold px-2 py-1 w-36">{t("self.docRole")}</th>
                     <th className="text-left font-semibold px-2 py-1">{t("self.docRoleDesc")}</th>
                     <th className="text-left font-semibold px-2 py-1 w-28">{t("self.docRoleDept")}</th>
@@ -3570,6 +3573,7 @@ function IsaDocView({ control: c }) {
                 <tbody>
                   {perf.map((p, i) => (
                     <tr key={i} className="border-t border-slate-100">
+                      <td className="px-2 py-1 break-all">{v(p.person)}</td>
                       <td className="px-2 py-1">{v(p.role)}</td>
                       <td className="px-2 py-1 whitespace-pre-wrap">{v(p.desc)}</td>
                       <td className="px-2 py-1">{v(p.dept)}</td>
@@ -5872,14 +5876,25 @@ function IsaDocForms({ control, doc, setDoc, recommended, sampleCount, required,
   const autoSetCycle = cycleOpt ? cycleOpt[lang] : "";
   // 두 자동 값을 한 번에 맞춘다 — 따로 setDoc 하면 같은 doc 을 바탕으로 해 서로 덮어쓴다.
   useEffect(() => {
-    const p0 = doc.cd.performers[0] || { role: "", desc: "", dept: "" };
-    const staleRole = !!autoEmail && String(p0.role || "").trim().toLowerCase() === autoEmail;
-    const needP = staleRole || p0.dept !== autoDept;
+    const isMail = (s) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(s || "").trim());
+    /* 「담당자」 열(10-14): 역할/직책 칸에 이메일을 적어 둔 줄은 그 값을 담당자로 옮기고,
+       첫 줄 담당자가 비어 있으면 통제 항목의 1차 담당자로 채운다(직접 고칠 수 있다). */
+    const fixed = doc.cd.performers.map((p, i) => {
+      let q = { person: "", role: "", desc: "", dept: "", ...p };
+      if (isMail(q.role) && !String(q.person).trim()) q = { ...q, person: q.role.trim(), role: "" };
+      else if (i === 0 && autoEmail && String(q.role).trim().toLowerCase() === autoEmail) q = { ...q, role: "" };
+      if (i === 0) {
+        if (!String(q.person).trim() && control.accessor) q = { ...q, person: String(control.accessor).trim() };
+        q = { ...q, dept: autoDept };
+      }
+      return q;
+    });
+    const needP = JSON.stringify(fixed) !== JSON.stringify(doc.cd.performers);
     const needC = (doc.tp.setCycle || "") !== autoSetCycle;
     if (!needP && !needC) return;
     setDoc({
       ...doc,
-      cd: needP ? { ...doc.cd, performers: doc.cd.performers.map((p, i) => (i === 0 ? { ...p, role: staleRole ? "" : p.role, dept: autoDept } : p)) } : doc.cd,
+      cd: needP ? { ...doc.cd, performers: fixed } : doc.cd,
       tp: needC ? { ...doc.tp, setCycle: autoSetCycle } : doc.tp,
     });
   }, [autoEmail, autoDept, autoSetCycle]);
@@ -5914,6 +5929,8 @@ function IsaDocForms({ control, doc, setDoc, recommended, sampleCount, required,
      예전에는 입력칸을 그냥 늘어놓아 무엇이 어느 구역인지 읽히지 않았다(09-21 지적).
      모두 일반 함수로 부른다 — 안쪽 컴포넌트로 만들면 입력할 때마다 칸이 새로 만들어져 커서가 사라진다. */
   const LABEL_W = "200px";
+  // 「누가」 표: 담당자 · 역할/직책 · 역할 설명 · 부서
+  const PERF_COLS = "250px 160px 1fr 150px";
   const cellIn = "w-full bg-transparent border border-transparent rounded-md px-2 py-1.5 text-[14px] text-slate-800 placeholder-slate-300 hover:border-slate-200 focus:outline-none focus:bg-white focus:border-teal-400 focus:ring-2 focus:ring-teal-100";
   const splitLabel = (str) => {
     const m = String(str).match(/^(.*?)\s+\((.*)\)\s*$/);
@@ -5995,7 +6012,7 @@ function IsaDocForms({ control, doc, setDoc, recommended, sampleCount, required,
     );
   }
 
-  function addPerformer() { setCd({ performers: [...cd.performers, { role: "", desc: "", dept: "" }] }); }
+  function addPerformer() { setCd({ performers: [...cd.performers, { person: "", role: "", desc: "", dept: "" }] }); }
   function setPerformer(i, patch) { setCd({ performers: cd.performers.map((p, j) => (j === i ? { ...p, ...patch } : p)) }); }
   function delPerformer(i) { setCd({ performers: cd.performers.length > 1 ? cd.performers.filter((_, j) => j !== i) : cd.performers }); }
 
@@ -6094,13 +6111,19 @@ function IsaDocForms({ control, doc, setDoc, recommended, sampleCount, required,
             {qrow(lang === "en" ? "Who? — Who performs the control?" : "누가? — 누가 통제를 수행합니까?")}
             {/* 지우기 단추 때문에 부서 오른쪽에 빈 열이 하나 더 있어 표 끝이 비어 보였다(09-21 지적).
                 세 열로 줄이고, 지우기 단추는 부서 칸 안 오른쪽 끝에 둔다(둘째 줄부터만). */}
-            <div className="grid border-b border-slate-300 text-[12.5px] font-semibold text-slate-600" style={{ gridTemplateColumns: `${LABEL_W} 1fr 200px`, backgroundColor: "#EEF1F4" }}>
+            <div className="grid border-b border-slate-300 text-[12.5px] font-semibold text-slate-600" style={{ gridTemplateColumns: PERF_COLS, backgroundColor: "#EEF1F4" }}>
+              <div className="px-3 py-2 text-center border-r border-slate-300">{t("self.docPerson")}<Star /></div>
               <div className="px-3 py-2 text-center border-r border-slate-300">{t("self.docRole")}<Star /></div>
               <div className="px-3 py-2 text-center border-r border-slate-300">{t("self.docRoleDesc")}<Star /></div>
               <div className="px-3 py-2 text-center">{t("self.docRoleDept")}<Star /></div>
             </div>
             {cd.performers.map((p, i) => (
-              <div key={i} className="grid border-b border-slate-300" style={{ gridTemplateColumns: `${LABEL_W} 1fr 200px` }}>
+              <div key={i} className="grid border-b border-slate-300" style={{ gridTemplateColumns: PERF_COLS }}>
+                {/* 담당자(10-14) — 직접 입력하거나 직원 목록에서 고른다. 첫 줄은 1차 담당자로 미리 채운다. */}
+                <div className="px-1 py-1 border-r border-slate-300">
+                  <input className={cellIn} list="ics-perf-dir" placeholder={t("self.docPersonPh")} title={p.person || ""}
+                         value={p.person || ""} onChange={(e) => setPerformer(i, { person: e.target.value })} />
+                </div>
                 {/* 역할/직책은 모든 줄에서 직접 입력한다(10-14). 첫 줄의 부서만 통제 항목에서 가져온다. */}
                 <div className="px-1 py-1 border-r border-slate-300">
                   <input className={cellIn} placeholder={t("self.docRole")}
@@ -6120,6 +6143,9 @@ function IsaDocForms({ control, doc, setDoc, recommended, sampleCount, required,
                 </div>
               </div>
             ))}
+            <datalist id="ics-perf-dir">
+              {ICS_EMPLOYEE_DIR.map((d) => <option key={d.email} value={d.email}>{[d.name, d.dept].filter(Boolean).join(" · ")}</option>)}
+            </datalist>
             <div className="px-3 py-1.5 border-b border-slate-300">
               <button type="button" onClick={addPerformer} className="text-xs font-semibold" style={{ color: BRAND.accent }}>+ {t("self.docAddRow")}</button>
             </div>
@@ -8286,7 +8312,7 @@ function buildControlDocHtml(c, lang, users, departments) {
     </div>`;
   };
 
-  const perf = d.cd.performers.filter((p) => String(p.role || p.desc || p.dept || "").trim());
+  const perf = d.cd.performers.filter((p) => String(p.person || p.role || p.desc || p.dept || "").trim());
   const samples = d.tp.samples.filter((r) => String(r.date || r.ref || r.result || r.comment || "").trim());
 
   return `<div style="font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;color:#1e293b;width:820px;padding:0 4px">
@@ -8735,9 +8761,9 @@ function buildControlDocBody(c, d, lang, ctx) {
   ]);
 
   // 3. 통제 설계
-  const perf = cd.performers.filter((p) => String(p.role || p.desc || p.dept || "").trim());
+  const perf = cd.performers.filter((p) => String(p.person || p.role || p.desc || p.dept || "").trim());
   const perfRows = (perf.length ? perf : [{}, {}]).map((p) => docxRow([
-    docxValue(p.role, G[0]), docxValue(p.desc, G[1] + G[2] + G[3] + G[4], 4), docxValue(p.dept, G[5] + G[6], 2)], 420));
+    docxValue(p.person, G[0]), docxValue(p.role, G[1] + G[2], 2), docxValue(p.desc, G[3] + G[4] + G[5], 3), docxValue(p.dept, G[6])], 420));
   const design = docxTbl(G, [
     docxSectionRow(L("통제 설계", "Control Design"), FULL, 7),
     one(L("통제명", "Control name"), ctx.name),
@@ -8752,9 +8778,10 @@ function buildControlDocBody(c, d, lang, ctx) {
     docxQuestionRow(L("얼마나 자주?", "How often?"), L("통제가 얼마나 자주 수행되어야 합니까?", "How often should the control be performed?"), FULL, 7),
     ...docxOptionRows(L("수행 주기", "Frequency"), PERFORM_CYCLE_OPTIONS, (id) => cd.cycle === id, lang),
     docxQuestionRow(L("누가?", "Who?"), L("누가 통제를 수행합니까?", "Who performs the control?"), FULL, 7),
-    docxRow([docxLabel(L("역할/직책", "Role / title"), G[0], { }),
-      docxCell(G[1] + G[2] + G[3] + G[4], docxP(L("역할 설명", "Role description"), { align: "center" }), { span: 4, fill: "E6E6E6" }),
-      docxCell(G[5] + G[6], docxP(L("부서", "Department"), { align: "center" }), { span: 2, fill: "E6E6E6" })], 380),
+    docxRow([docxLabel(L("담당자", "Person"), G[0], { }),
+      docxCell(G[1] + G[2], docxP(L("역할/직책", "Role / title"), { align: "center" }), { span: 2, fill: "E6E6E6" }),
+      docxCell(G[3] + G[4] + G[5], docxP(L("역할 설명", "Role description"), { align: "center" }), { span: 3, fill: "E6E6E6" }),
+      docxCell(G[6], docxP(L("부서", "Department"), { align: "center" }), { fill: "E6E6E6" })], 380),
     ...perfRows,
     docxQuestionRow(L("어디서?", "Where?"), L("프로세스의 어느 단계에서 통제가 수행됩니까?", "At which step of the process is the control performed?"), FULL, 7),
     docxRow([docxCell(FULL, docxP(L("프로세스 환경", "Process environment"), { bold: true }), { span: 7 })], 340),
@@ -8875,7 +8902,7 @@ function isaDocPrintHtml(kind, c, d, lang, users, departments) {
 
   if (kind === "cd") {
     const cd = d.cd;
-    const perf = cd.performers.filter((p) => String(p.role || p.desc || p.dept || "").trim());
+    const perf = cd.performers.filter((p) => String(p.person || p.role || p.desc || p.dept || "").trim());
     return `<div style="font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;width:760px;box-sizing:border-box;padding:6px 6px">
       ${head("ICS Control Documentation")}
       ${tbl([
@@ -8899,9 +8926,9 @@ function isaDocPrintHtml(kind, c, d, lang, users, departments) {
         q(L("얼마나 자주?", "How often?"), L("통제가 얼마나 자주 수행되어야 합니까?", "How often should the control be performed?"), 2),
         `<tr>${lab(L("수행 주기", "Frequency"))}<td style="${TD}">${opts(PERFORM_CYCLE_OPTIONS, (id) => cd.cycle === id)}</td></tr>`,
         q(L("누가?", "Who?"), L("누가 통제를 수행합니까?", "Who performs the control?"), 2),
-        `<tr><td colspan="2" style="padding:0;border:1px solid #9aa4b1"><table style="width:100%;box-sizing:border-box;border-collapse:collapse;table-layout:fixed"><colgroup><col style="width:25%"><col><col style="width:20%"></colgroup>
-          <tr>${["역할/직책|Role", "역할 설명|Role description", "부서|Department"].map((h) => `<td style="${TD}background:#E6E6E6;text-align:center;font-weight:600">${e(L(...h.split("|")))}</td>`).join("")}</tr>
-          ${(perf.length ? perf : [{}, {}]).map((p) => `<tr>${val(p.role)}${val(p.desc)}${val(p.dept)}</tr>`).join("")}
+        `<tr><td colspan="2" style="padding:0;border:1px solid #9aa4b1"><table style="width:100%;box-sizing:border-box;border-collapse:collapse;table-layout:fixed"><colgroup><col style="width:22%"><col style="width:20%"><col><col style="width:16%"></colgroup>
+          <tr>${["담당자|Person", "역할/직책|Role", "역할 설명|Role description", "부서|Department"].map((h) => `<td style="${TD}background:#E6E6E6;text-align:center;font-weight:600">${e(L(...h.split("|")))}</td>`).join("")}</tr>
+          ${(perf.length ? perf : [{}, {}]).map((p) => `<tr>${val(p.person)}${val(p.role)}${val(p.desc)}${val(p.dept)}</tr>`).join("")}
         </table></td></tr>`,
         q(L("어디서?", "Where?"), L("프로세스의 어느 단계에서 통제가 수행됩니까?", "At which step of the process is the control performed?"), 2),
         `<tr>${lab(L("프로세스 환경", "Process environment"))}${val(cd.processEnv, 1, "height:52px")}</tr>`,
