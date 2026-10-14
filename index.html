@@ -618,7 +618,30 @@ const ACTION_LABELS = {
   edit_category_access: { ko: "카테고리 접근 권한 변경", en: "Category access changed" },
   add_control: { ko: "통제 항목 신규 등록", en: "Control item added" },
   delete_control: { ko: "통제 항목 삭제", en: "Control item deleted" },
+  // 10-15 부서 관리 기록은 있었지만 표시 이름이 없어 add_dept 같은 키가 그대로 보였다
+  add_dept: { ko: "부서 추가", en: "Department added" },
+  edit_dept: { ko: "부서 수정", en: "Department updated" },
+  delete_dept: { ko: "부서 삭제", en: "Department deleted" },
+  // 10-15 출력 · 다운로드 기록(파일이 만들어진 뒤 기록, 실패하면 「…실패」)
+  export_excel: { ko: "통제 현황 Excel 내보내기", en: "Control status exported to Excel" },
+  export_excel_failed: { ko: "통제 현황 Excel 내보내기 실패", en: "Control status Excel export failed" },
+  download_template: { ko: "업로드 양식 다운로드", en: "Upload template downloaded" },
+  download_template_failed: { ko: "업로드 양식 다운로드 실패", en: "Upload template download failed" },
+  pdf_final_report: { ko: "최종 결과 보고서 PDF 출력", en: "Final report PDF exported" },
+  pdf_final_report_failed: { ko: "최종 결과 보고서 PDF 출력 실패", en: "Final report PDF export failed" },
+  pdf_control_package: { ko: "통제 패키지 PDF 출력", en: "Control package PDF exported" },
+  pdf_control_package_failed: { ko: "통제 패키지 PDF 출력 실패", en: "Control package PDF export failed" },
+  pdf_request: { ko: "결재 요청 상세 PDF 출력", en: "Approval request PDF exported" },
+  pdf_request_failed: { ko: "결재 요청 상세 PDF 출력 실패", en: "Approval request PDF export failed" },
+  pdf_control_doc: { ko: "통제기술서 · 테스트 문서 PDF 출력", en: "Control documentation PDF exported" },
+  pdf_control_doc_failed: { ko: "통제기술서 · 테스트 문서 PDF 출력 실패", en: "Control documentation PDF export failed" },
+  download_attachment: { ko: "첨부 다운로드", en: "Attachment downloaded" },
+  download_attachment_failed: { ko: "첨부 다운로드 실패", en: "Attachment download failed" },
 };
+// 10-15 전사 평가 이력 「출력 · 다운로드만」 보기에 쓰는 행위 키
+const ICS_OUTPUT_ACTIONS = new Set(["export_excel", "export_excel_failed", "download_template", "download_template_failed",
+  "pdf_final_report", "pdf_final_report_failed", "pdf_control_package", "pdf_control_package_failed", "pdf_request", "pdf_request_failed",
+  "pdf_control_doc", "pdf_control_doc_failed", "download_attachment", "download_attachment_failed"]);
 
 // 실제 사용자 목록은 로그인 시 ics_category_access.xlsx의 Users 시트에서
 // loadIcsMasterConfig()가 채워 넣는다. 이름·이메일 등 개인정보를 git 저장소에 하드코딩하지 않기 위해 여기서는 항상 빈 배열로 시작한다.
@@ -658,6 +681,55 @@ const ICS_APPR_STATUS = { wait: "대기", locked: "대기(잠김)", approved: "�
 // 화면 어디서 불리든 같은 방식으로 알리도록 여기 한 곳에 둔다.
 let _icsApprNotify = null;                      // 앱이 부팅할 때 showToast 를 꽂아 준다
 function setIcsApprovalsNotifier(fn) { _icsApprNotify = fn; }
+
+/* 10-15 활동 로그 평가 연도(FY) 묶기.
+   예전에는 생성 시각(UTC) 연도로 묶어, 2026 평가를 2027년 1~2월에 처리하면(FSA · 컨펌) 2026 평가 이력에 안 보였다.
+   ICS_Log 에 열을 새로 만들지 않고(목록 구조 · 예전 기록 그대로) 새 기록의 Detail 끝에 「 [FY2026]」 을 붙인다.
+   - CFO/RD 컨펌 · 취소 기록은 Detail 자체가 연도(로그인 때 컨펌 상태 복원이 그 값을 읽는다) — 표시를 붙이지 않고 그 값을 평가 연도로 쓴다.
+   - 표시가 없는 예전 기록 · 평가 연도 창(전년 10/1 ~ 다음 해 6/30, KST) 밖에서 생긴 기록은 생성 시각(KST) 연도로 묶는다.
+     → 어느 기록이든 한 연도에만, 빠짐없이 보인다. 읽을 때(mapIcsLogItem) 표시는 떼어 내므로 화면 · 컨펌 복원은 예전과 같다.
+   - 표시를 붙여 255자를 넘으면 붙이지 않는다(열 길이 제한이 있어도 기록 저장이 실패하지 않게). */
+const ICS_FY_TAG_RE = /\s*\[FY(\d{4})\]\s*$/;
+const ICS_CONFIRM_KEY_RE = /^(cfo|rd)_(confirm|cancel)$/;
+function icsFyWindow(y) {   // [시작, 끝) — UTC 밀리초. KST 전년 10/1 00:00 ~ 다음 해 7/1 00:00
+  const n = Number(y);
+  return [Date.UTC(n - 1, 8, 30, 15), Date.UTC(n + 1, 5, 30, 15)];
+}
+function icsKstYear(iso) {
+  const t = Date.parse(iso);
+  return isNaN(t) ? String(iso || "").slice(0, 4) : String(new Date(t + 9 * 3600 * 1000).getUTCFullYear());
+}
+function icsLogYear(fy, createdIso) {
+  if (/^\d{4}$/.test(String(fy || "")) && createdIso) {
+    const t = Date.parse(createdIso), [a, b] = icsFyWindow(fy);
+    if (!isNaN(t) && t >= a && t < b) return String(fy);
+  }
+  return icsKstYear(createdIso);
+}
+// 기록할 때의 평가 연도 — 컨펌 · 취소는 상세(연도) 그대로, 그 밖에는 화면에서 고른 평가 연도
+function icsLogFiscalYear(actionKey, name, fallback) {
+  return ICS_CONFIRM_KEY_RE.test(actionKey) && /^\d{4}$/.test(String(name || "")) ? String(name) : String(fallback || "");
+}
+function icsTagFiscalYear(detail, actionKey, fy) {
+  if (ICS_CONFIRM_KEY_RE.test(actionKey)) return detail;            // 컨펌 복원이 읽는 값 — 손대지 않는다
+  if (!/^\d{4}$/.test(String(fy || ""))) return detail;
+  const tagged = (detail ? detail + " " : "") + "[FY" + fy + "]";
+  return tagged.length <= 255 ? tagged : detail;
+}
+
+/* 10-15 출력 · 다운로드 기록 입구 — 화면 밖 함수(Excel · PDF · 첨부)에서 부른다. 앱이 렌더할 때 addLog 를 꽂아 준다.
+   기록은 기다리지 않고(fire-and-forget), 실패해도 원래 기능 · 화면에는 영향이 없다(콘솔 경고만 — 토스트 없음). */
+let _icsOutLog = null;
+function icsLogOutput(actionKey, code, ko, en, fy) {
+  try {
+    if (!_icsOutLog) return;
+    // 상세가 길면(대상 목록 · 긴 파일 이름) 한 언어로만 240자까지 — 표시 이름(ACTION_LABELS)은 두 언어 그대로
+    let k = String(ko || ""), e = String(en || k);
+    if (k.length + e.length + 3 > 240) { k = k.slice(0, 240); e = k; }
+    _icsOutLog(actionKey, code || "-", k, e, fy);
+  } catch (e) { console.warn("[ICS] 출력 기록 실패(원래 기능에는 영향 없음):", e && e.message); }
+}
+function icsErrText(e) { return String((e && e.message) || e || "").replace(/\s+/g, " ").slice(0, 80); }
 let _icsApprLastFail = null;                    // 방금 실패했는지 (호출한 쪽이 확인한다)
 function icsApprovalsFailed(where, e) {
   const msg = (e && e.message) || String(e || "");
@@ -1352,7 +1424,7 @@ const STR = {
       titleAll: "전사 평가 이력 · 리포트",
       subtitleAll: "관리자 전용 — 모든 부서의 평가 활동 로그와 종합 현황입니다. 담당 배정과 무관하게 전사 통제 항목이 모두 표시됩니다.",
       allDepts: "전체 부서",
-      logAll: "전체 활동", logAssessment: "평가 활동만", logEmpty: "표시할 활동 로그가 없습니다.",
+      logAll: "전체 활동", logAssessment: "평가 활동만", logOutput: "출력 · 다운로드만", logEmpty: "표시할 활동 로그가 없습니다.",
     },
     assess: {
       searchPlaceholder: "통제명 · 코드 · 담당자 검색",
@@ -1857,7 +1929,7 @@ const STR = {
       titleAll: "All-Dept History & Reports",
       subtitleAll: "Admin only — assessment activity log and summary for every department, regardless of assignment.",
       allDepts: "All departments",
-      logAll: "All activity", logAssessment: "Assessment only", logEmpty: "No activity to show.",
+      logAll: "All activity", logAssessment: "Assessment only", logOutput: "Exports & downloads only", logEmpty: "No activity to show.",
     },
     assess: {
       searchPlaceholder: "Search by control name, code, or accessor",
@@ -3678,7 +3750,7 @@ function ControlDetailBody({ control: c }) {
                     <li key={i} className="flex items-center gap-2 text-[13px] text-slate-600 bg-slate-50 rounded-md px-2.5 py-1.5">
                       <FileText size={13} className="text-slate-400 flex-shrink-0" />
                       {a.webUrl ? (
-                        <button type="button" onClick={() => icsDownloadAttachment(c.requestSpId, a.name, b.sub)} className="truncate hover:underline text-left bg-transparent border-0 p-0 cursor-pointer" style={{ color: BRAND.accent }}>{a.name}</button>
+                        <button type="button" onClick={() => icsDownloadAttachment(c.requestSpId, a.name, b.sub, c.code)} className="truncate hover:underline text-left bg-transparent border-0 p-0 cursor-pointer" style={{ color: BRAND.accent }}>{a.name}</button>
                       ) : (
                         <span className="truncate">{a.name}</span>
                       )}
@@ -4037,7 +4109,12 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
   // 부서·COSO영역·점검빈도·중요도는 정해진 값만 허용되므로 드롭다운(데이터 유효성)을 넣는다.
   // SheetJS 커뮤니티 버전은 유효성 쓰기를 지원하지 않아, 생성한 xlsx 를 fflate 로 풀어
   // 시트 XML 에 dataValidations 를 직접 주입한 뒤 다시 압축한다.
+  // 10-15 양식 파일을 만든 뒤 기록(실패하면 실패 기록 후 원래대로 오류를 넘긴다)
   function downloadTemplate() {
+    try { _downloadTemplateRaw(); icsLogOutput("download_template", "-", "통제 항목 업로드 양식", "Control upload template"); }
+    catch (e) { icsLogOutput("download_template_failed", "-", `통제 항목 업로드 양식 · 오류: ${icsErrText(e)}`, `Control upload template · error: ${icsErrText(e)}`); throw e; }
+  }
+  function _downloadTemplateRaw() {
     const HEADERS = ["코드", "부서", "COSO영역", "통제명", "통제명(영문)", "설명", "설명(영문)",
                      "1차담당자", "2차검토자", "점검빈도", "중요도"];
     const sampleAccessor = users.find((u) => u.role === "accessor") || users[0];
@@ -7476,7 +7553,19 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, sh
 /* 평가 이력 · 리포트                                                    */
 /* ------------------------------------------------------------------ */
 
-function exportControlsToExcel(controls, lang, departments = INITIAL_DEPARTMENTS, users = INITIAL_USERS) {
+// 10-15 파일을 만든 뒤 기록(실패하면 실패 기록 후 원래대로 오류를 넘긴다)
+function exportControlsToExcel(controls, lang, departments, users) {
+  const n = (controls || []).length, fy = n ? controls[0].year : undefined;
+  try {
+    const r = _icsExportControlsToExcelRaw(controls, lang, departments, users);
+    icsLogOutput("export_excel", "-", `통제 현황 Excel · ${n}건`, `Control status Excel · ${n} items`, fy);
+    return r;
+  } catch (e) {
+    icsLogOutput("export_excel_failed", "-", `통제 현황 Excel · ${n}건 · 오류: ${icsErrText(e)}`, `Control status Excel · ${n} items · error: ${icsErrText(e)}`, fy);
+    throw e;
+  }
+}
+function _icsExportControlsToExcelRaw(controls, lang, departments = INITIAL_DEPARTMENTS, users = INITIAL_USERS) {
   const en = lang === "en";
   const L = (ko, eng) => (en ? eng : ko);
   const risk = (r) => (r ? RISK_META[r][lang] : RISK_META.none[lang]);
@@ -8098,7 +8187,18 @@ const FINAL_PDF_T = {
   },
 };
 
+// 10-15 PDF 저장이 된 뒤 기록, 못 만들면 실패 기록
 async function exportFinalReportPdf(lang, ctx, onProgress) {
+  const y = (ctx && ctx.activeYear) || "", lg = lang === "en" ? "ENG" : "KOR";
+  let ok = false, err = null;
+  try { ok = await _icsExportFinalReportPdfRaw(lang, ctx, onProgress); return ok; }
+  catch (e) { err = e; throw e; }
+  finally {
+    icsLogOutput(ok ? "pdf_final_report" : "pdf_final_report_failed", "-",
+      `FY${y} 최종 결과 보고서 · ${lg}${err ? " · 오류: " + icsErrText(err) : ""}`, `FY${y} final report · ${lg}${err ? " · error: " + icsErrText(err) : ""}`, y);
+  }
+}
+async function _icsExportFinalReportPdfRaw(lang, ctx, onProgress) {
   const L = lang === "en" ? "en" : "ko"; const T = FINAL_PDF_T[L];
   const prog = (stage, i, n) => { try { onProgress && onProgress({ stage, i, n }); } catch (e) {} };
   prog("data", 0, 0);
@@ -8559,7 +8659,26 @@ function apsFitText(ctx, text, maxW) {   // ctx 의 지금 글꼴로 재서 maxW
 
 /* 고른 통제를 한 건씩 PDF 로 만든다. 서식·평가 이력을 앞에 두고 첨부 자료를 뒤에 붙인다.
    첨부는 이미지면 그대로, 그 밖은 Graph 로 PDF 변환해 이어 붙인다(ACC Others 와 같은 방식). */
+// 10-15 고른 통제 PDF 를 모두 저장한 뒤 한 건 기록(대상 코드 목록), 중간에 실패하면 진행 건수와 함께 실패 기록
 async function exportControlPackagePdf(controls, lang, users, departments, onProgress) {
+  const list = controls || [], n = list.length, fy = n ? list[0].year : undefined;
+  const codes = list.map((c) => c.code), code = n === 1 ? codes[0] : "-";
+  const codeTxt = codes.slice(0, 20).join(", ") + (n > 20 ? ` 외 ${n - 20}건` : "");
+  const codeTxtEn = codes.slice(0, 20).join(", ") + (n > 20 ? ` +${n - 20} more` : "");
+  let started = 0, ok = false, err = null;
+  try {
+    ok = await _icsExportControlPackagePdfRaw(controls, lang, users, departments,
+      (i, total, label) => { started = i; if (onProgress) onProgress(i, total, label); });
+    return ok;
+  } catch (e) { err = e; throw e; }
+  finally {
+    if (ok) icsLogOutput("pdf_control_package", code, `${n}건: ${codeTxt}`, `${n} items: ${codeTxtEn}`, fy);
+    else icsLogOutput("pdf_control_package_failed", code,
+      `${n}건 중 ${Math.max(0, started - 1)}건 저장 뒤 중단: ${codeTxt}${err ? " · 오류: " + icsErrText(err) : " · PDF 라이브러리 없음"}`,
+      `stopped after ${Math.max(0, started - 1)} of ${n}: ${codeTxtEn}${err ? " · error: " + icsErrText(err) : " · PDF library missing"}`, fy);
+  }
+}
+async function _icsExportControlPackagePdfRaw(controls, lang, users, departments, onProgress) {
   if (typeof html2canvas !== "function" || typeof PDFLib === "undefined") {
     alert(lang === "en" ? "Could not load the PDF library." : "PDF 라이브러리를 불러오지 못했습니다. 네트워크를 확인해 주세요.");
     return false;
@@ -9047,7 +9166,13 @@ async function icsSaveDocPdf(c, spId, doc, lang, users, departments, stage) {
   return f.name;
 }
 /* 세부 내용에서 바로 내려받기. */
+// 10-15 내려받기가 된 뒤 기록, 실패하면 실패 기록 후 원래대로 오류를 넘긴다(화면이 알림)
 async function icsDownloadDocPdf(c, doc, lang, users, departments, stage) {
+  const what = `${c.code} · ${stage} 통제기술서 · 테스트 문서`, whatEn = `${c.code} · ${stage} control documentation · test document`;
+  try { await _icsDownloadDocPdfRaw(c, doc, lang, users, departments, stage); icsLogOutput("pdf_control_doc", c.code, what, whatEn, c.year); }
+  catch (e) { icsLogOutput("pdf_control_doc_failed", c.code, `${what} · 오류: ${icsErrText(e)}`, `${whatEn} · error: ${icsErrText(e)}`, c.year); throw e; }
+}
+async function _icsDownloadDocPdfRaw(c, doc, lang, users, departments, stage) {
   const f = await icsBuildDocPdf(c, doc, lang, users, departments, stage);
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([f.bytes], { type: "application/pdf" }));
@@ -9295,7 +9420,9 @@ function RequestDetailModal({ r, controls, onClose, canAct, canCancel, acting, c
   async function onPdf() {
     setPdfBusy(true);
     // 파일명에 통제 코드와 요청일을 넣어 여러 건을 받아도 구분된다.
-    await exportRequestPdf(bodyId, `${reqNo(r)}.pdf`, `${reqNo(r)} · ${name}`);
+    const pdfOk = await exportRequestPdf(bodyId, `${reqNo(r)}.pdf`, `${reqNo(r)} · ${name}`);
+    // 10-15 PDF 저장이 된 뒤 기록, 못 만들면 실패 기록
+    icsLogOutput(pdfOk ? "pdf_request" : "pdf_request_failed", r.code || "-", `${reqNo(r)} · ${name}`, `${reqNo(r)} · ${name}`, r.year);
     setPdfBusy(false);
   }
 
@@ -9964,10 +10091,11 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
   // 전사 화면의 부서 선택 목록 — 통제 항목이 실제로 있는 부서만
   const deptOptions = all ? departments.filter((d) => baseControls.some((c) => c.dept === d.id)) : [];
   // 활동 로그는 ISA/FSA 평가 흐름(자가평가·검토·FSA)에서 발생한 기록만 보여준다 - 권한 변경, 부서 초기화 등 시스템/관리 로그는 제외.
-  const ASSESSMENT_ACTIONS = new Set(["submit_self", "review_complete", "review_reject", "fsa_submit", "fsa_review_complete", "fsa_review_reject", "withdraw_self", "withdraw_fsa"]);
+  const ASSESSMENT_ACTIONS = new Set(["submit_self", "review_complete", "review_reject", "fsa_submit", "fsa_review_complete", "fsa_review_reject", "withdraw_self", "withdraw_fsa",
+    "skip_isa", "unskip_isa"]);   // 10-15 ISA 생략 · 생략 취소도 평가 흐름 기록
   const log = allLog
     // 전사 화면은 전 활동(임시 저장 · 서식 저장 · 통제 항목 변경 · 권한 변경 …)을 보여 준다 — 제출이 아직 없어도 누가 무엇을 했는지 보인다.
-    .filter((l) => all ? (logKind === "assessment" ? ASSESSMENT_ACTIONS.has(l.actionKey) : true) : ASSESSMENT_ACTIONS.has(l.actionKey))
+    .filter((l) => all ? (logKind === "assessment" ? ASSESSMENT_ACTIONS.has(l.actionKey) : logKind === "output" ? ICS_OUTPUT_ACTIONS.has(l.actionKey) : true) : ASSESSMENT_ACTIONS.has(l.actionKey))
     .filter((l) => all ? (!deptFilter || myCodes.has(l.code)) : ((l.actor || "").toLowerCase() === myEmail || myCodes.has(l.code)));
   const pieData = ["green", "orange", "red", "none"].map((r) => ({
     name: RISK_META[r][lang], value: controls.filter((c) => stageRisk(c, stage) === r).length, color: RISK_META[r].color,
@@ -10027,6 +10155,7 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
               <select value={logKind} onChange={(e) => setLogKind(e.target.value)} className={`${inputCls} w-auto flex-shrink-0 text-xs py-1`}>
                 <option value="all">{t("history.logAll")}</option>
                 <option value="assessment">{t("history.logAssessment")}</option>
+                <option value="output">{t("history.logOutput")}</option>
               </select>
             )}
           </div>
@@ -12250,13 +12379,17 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
   const accessorDepts = permissions[currentUser.email]?.deptsAccessor || [];
   const reviewerDepts = permissions[currentUser.email]?.deptsReviewer || [];
 
-  function addLog(actor, actionKey, code, name, nameEn) {
+  function addLog(actor, actionKey, code, name, nameEn, opts) {
+    const nowIso = new Date().toISOString();   // 10-15 방금 남긴 로그도 시각이 보이게(예전엔 「-」)
     const today = new Date(new Date().getTime()+9*3600*1000).toISOString().slice(0, 10);
-    setLog((prev) => [{ id: uid("log"), date: today, actor, actionKey, code, name, nameEn, year: selectedYear }, ...prev]);
+    // 10-15 평가 연도(FY) — 읽을 때(mapIcsLogItem)와 같은 규칙으로 화면에도 넣는다
+    const fy = icsLogFiscalYear(actionKey, name, (opts && opts.fy) || selectedYear);
+    setLog((prev) => [{ id: uid("log"), date: today, dateTime: nowIso, actor, actionKey, code, name, nameEn, year: icsLogYear(fy, nowIso) }, ...prev]);
     if (usingSharePointData) {
       const detail = name ? (nameEn && nameEn !== name ? `${name} / ${nameEn}` : name) : "";
-      icsCreateItem(ICS_LISTS.log, { Title: actionKey, ActorEmail: actor, ControlId: code, Detail: detail }).catch((e) => {
+      icsCreateItem(ICS_LISTS.log, { Title: actionKey, ActorEmail: actor, ControlId: code, Detail: icsTagFiscalYear(detail, actionKey, fy) }).catch((e) => {
         console.warn("[ICS] 로그 저장 실패:", e.message);
+        if (opts && opts.quiet) return;   // 10-15 출력 · 다운로드 기록은 콘솔 경고만(파일은 이미 받았다)
         // 활동 로그는 감사 대응 근거자료라 조용히 실패하면 안 된다.
         showToast(lang === "en"
           ? "Saved, but the activity log could not be recorded. Please notify IT."
@@ -12264,6 +12397,8 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
       });
     }
   }
+  // 10-15 화면 밖 출력 함수(icsLogOutput)가 지금 로그인한 사람 · 평가 연도로 기록하게 꽂아 둔다
+  _icsOutLog = (key, code, ko, en, fy) => addLog(currentUser.email, key, code, ko, en, { quiet: true, fy });
 
   // 결재 대기 건수 갱신. 로그인 직후와 화면 전환 시 다시 센다.
   useEffect(() => {
@@ -12934,7 +13069,8 @@ async function getIcsAttachedFilesDriveId() {
 // 첨부파일을 SharePoint 원본 URL 노출 없이 안전하게 다운로드한다.
 // webUrl을 <a href>에 직접 쓰지 않고, 인증된 세션으로 파일 내용을 직접 받아와 blob으로 다운로드시킴
 // (경로는 icsUploadAttachment와 동일한 규칙: ICS_Requests_AttachedFiles/{requestItemId}/{subfolder?}/{파일명})
-async function icsDownloadAttachment(requestItemId, fileName, subfolder = "") {
+async function icsDownloadAttachment(requestItemId, fileName, subfolder = "", code = "-") {
+  const what = `${subfolder || "ISA"} 첨부 · ${fileName}`, whatEn = `${subfolder || "ISA"} attachment · ${fileName}`;   // 10-15 기록
   try {
     const token = await getGraphToken();
     const driveId = await getIcsAttachedFilesDriveId();
@@ -12954,7 +13090,9 @@ async function icsDownloadAttachment(requestItemId, fileName, subfolder = "") {
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+    icsLogOutput("download_attachment", code, what, whatEn);   // 10-15 내려받기가 된 뒤 기록
   } catch (e) {
+    icsLogOutput("download_attachment_failed", code, `${what} · 오류: ${icsErrText(e)}`, `${whatEn} · error: ${icsErrText(e)}`);
     alert("파일을 불러오지 못했습니다: " + e.message);
   }
 }
@@ -13431,10 +13569,16 @@ async function loadIcsControls() {
 function mapIcsLogItem(it) {
   const f = it.fields;
   const created = it.createdDateTime || (it.fields && it.fields.Created) || null;
-  const detail = stripSpRichText(f.Detail) || "";
+  // 10-15 Detail 끝의 평가 연도 표시(「 [FY2026]」)는 떼어 내고 연도로 쓴다 — 화면 · 컨펌 복원(entry.name)은 예전 값 그대로
+  const rawDetail = String(stripSpRichText(f.Detail) || "");
+  const fyTag = ICS_FY_TAG_RE.exec(rawDetail);
+  const detail = fyTag ? rawDetail.replace(ICS_FY_TAG_RE, "") : rawDetail;
+  const fy = fyTag ? fyTag[1] : icsLogFiscalYear(f.Title || "", detail, "");
+  const createdMs = created ? Date.parse(created) : NaN;
   return {
     id: it.id,
-    date: created ? String(created).slice(0, 10) : new Date(new Date().getTime()+9*3600*1000).toISOString().slice(0, 10),
+    // 10-15 날짜도 KST(예전엔 UTC 앞 10자리 — 오전 9시 전 기록이 전날로 보였다)
+    date: !isNaN(createdMs) ? new Date(createdMs + 9 * 3600 * 1000).toISOString().slice(0, 10) : created ? String(created).slice(0, 10) : new Date(new Date().getTime()+9*3600*1000).toISOString().slice(0, 10),
     dateTime: created || new Date().toISOString(), // 결재 시각(시:분까지) 표시용 전체 타임스탬프
     actor: f.ActorEmail || "",
     actionKey: f.Title || "edit_control",
@@ -13443,16 +13587,28 @@ function mapIcsLogItem(it) {
     nameEn: detail,
     // 예전엔 "2026"으로 하드코딩되어 있어서, 다음 회계연도가 시작되면(예: 2027) logForYear 필터링(l.year===selectedYear)이
     // 전부 빗나가 활동 로그가 텅 비어보이는 버그가 있었다. 실제 생성 시각 기준 연도로 계산하도록 수정(2026-07-29).
-    year: created ? String(created).slice(0, 4) : String(new Date(Date.now() + 9*3600*1000).getUTCFullYear()),
+    // 10-15 평가 연도(FY) 표시가 있으면 그 연도(평가 연도 창 안에서 생긴 기록만), 없으면 생성 시각(KST) 연도 — icsLogYear 참고
+    year: created ? icsLogYear(fy, created) : String(new Date(Date.now() + 9*3600*1000).getUTCFullYear()),
   };
+}
+// 10-15 최신순 — 시각(초)까지 비교한다(같은 날 컨펌 → 취소가 섞이지 않게). 같은 시각이면 받은 순서 그대로.
+function icsLogNewestFirst(a, b) {
+  const x = String(a.dateTime || a.date || ""), y = String(b.dateTime || b.date || "");
+  return x < y ? 1 : x > y ? -1 : 0;
 }
 
 async function loadIcsLog(year) {
   // 연도별로 서버에서 걸러서 가져온다 - 로그가 여러 해에 걸쳐 누적돼도 "평가 이력" 화면은 항상 그 해 분량만 처리하면 되므로
   // 시간이 지나 로그가 수천 건으로 늘어나도 조회 속도가 계속 느려지지 않는다.
-  const filter = year ? `&$filter=fields/Created ge '${year}-01-01T00:00:00Z' and fields/Created lt '${Number(year) + 1}-01-01T00:00:00Z'` : "";
+  // 10-15 평가 연도(FY) 창(전년 10/1 ~ 다음 해 6/30, KST)을 받아 온다 — 다음 해 초에 처리한 FSA · 컨펌도 그 평가 연도에 보이게.
+  // 어느 연도에 넣을지는 mapIcsLogItem 의 year 가 정하고 화면(logForYear)이 거른다. 창은 예전(1/1~12/31 UTC)을 모두 덮는다.
+  let filter = "";
+  if (year) {
+    const [a, b] = icsFyWindow(year);
+    filter = `&$filter=fields/Created ge '${new Date(a).toISOString().slice(0, 19)}Z' and fields/Created lt '${new Date(b).toISOString().slice(0, 19)}Z'`;
+  }
   const items = await icsListAll(ICS_LISTS.log, `&$orderby=lastModifiedDateTime desc${filter}`);
-  return items.map(mapIcsLogItem).sort((a, b) => (a.date < b.date ? 1 : -1));
+  return items.map(mapIcsLogItem).sort(icsLogNewestFirst);
 }
 
 // 로그인 시엔 CFO/RD 컨펌 상태 계산에 필요한 4종 이벤트만 가볍게 가져온다 (전체 활동 로그는 History 화면 진입 시 지연 로드).
@@ -13460,7 +13616,7 @@ async function loadIcsLog(year) {
 async function loadIcsConfirmEvents() {
   const filter = "&$filter=fields/Title eq 'cfo_confirm' or fields/Title eq 'rd_confirm' or fields/Title eq 'cfo_cancel' or fields/Title eq 'rd_cancel'";
   const items = await icsListAll(ICS_LISTS.log, filter);
-  return items.map(mapIcsLogItem).sort((a, b) => (a.date < b.date ? 1 : -1));
+  return items.map(mapIcsLogItem).sort(icsLogNewestFirst);
 }
 
 // KEY_PATH(예: "learn.tips[0]")를 따라가며 STR.ko/STR.en 안에 값을 채워 넣는 헬퍼.
