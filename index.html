@@ -87,8 +87,11 @@ html, * { scrollbar-width: thin; scrollbar-color: #CBD5E1 transparent; }
 <style id="ics-tall">
 /* 입력창 세로 확대(10-14) — 쓰는 만큼 자동으로 커지고(Chrome · Edge), 오른쪽 아래 손잡이로 직접 늘릴 수도 있다 */
 textarea.ics-tall{field-sizing:content;min-height:calc(1.5em * var(--ics-rows, 3) + 1.5rem);max-height:70vh;overflow-y:auto;line-height:1.6}
+textarea.ics-tall[rows="2"]{--ics-rows:2}
 textarea.ics-tall[rows="3"]{--ics-rows:3}textarea.ics-tall[rows="4"]{--ics-rows:4}textarea.ics-tall[rows="5"]{--ics-rows:5}textarea.ics-tall[rows="6"]{--ics-rows:6}textarea.ics-tall[rows="8"]{--ics-rows:8}
 @media print{textarea.ics-tall{max-height:none}}
+input.ics-perf::-webkit-calendar-picker-indicator{display:none !important}
+input.ics-perf{text-overflow:ellipsis}
 </style>
 </head>
 <body>
@@ -5930,7 +5933,7 @@ function IsaDocForms({ control, doc, setDoc, recommended, sampleCount, required,
      모두 일반 함수로 부른다 — 안쪽 컴포넌트로 만들면 입력할 때마다 칸이 새로 만들어져 커서가 사라진다. */
   const LABEL_W = "200px";
   // 「누가」 표: 담당자 · 역할/직책 · 역할 설명 · 부서
-  const PERF_COLS = "250px 160px 1fr 150px";
+  const PERF_COLS = "220px 150px 1fr 130px";
   const cellIn = "w-full bg-transparent border border-transparent rounded-md px-2 py-1.5 text-[14px] text-slate-800 placeholder-slate-300 hover:border-slate-200 focus:outline-none focus:bg-white focus:border-teal-400 focus:ring-2 focus:ring-teal-100";
   const splitLabel = (str) => {
     const m = String(str).match(/^(.*?)\s+\((.*)\)\s*$/);
@@ -6102,8 +6105,8 @@ function IsaDocForms({ control, doc, setDoc, recommended, sampleCount, required,
               </div>)}
             {row(Rq(t("self.docMethod")), <ChoiceRow name="method" options={CONTROL_METHOD_OPTIONS} value={cd.method} onPick={(id) => pickOne("method", id)} />)}
             {row(Rq(t("self.docType")), <ChoiceRow name="ctype" options={CONTROL_TYPE_OPTIONS} value={cd.ctype} onPick={(id) => pickOne("ctype", id)} />)}
-            {row(Rq(t("self.docRelDocs")), <input className={cellIn} value={cd.relatedDocs} onChange={(e) => setCd({ relatedDocs: e.target.value })} />)}
-            {row(Rq(t("self.docRelSystems")), <input className={cellIn} value={cd.relatedSystems} onChange={(e) => setCd({ relatedSystems: e.target.value })} />)}
+            {row(Rq(t("self.docRelDocs")), <textarea rows={2} className={cellIn + " resize-y ics-tall"} value={cd.relatedDocs} onChange={(e) => setCd({ relatedDocs: e.target.value })} />)}
+            {row(Rq(t("self.docRelSystems")), <textarea rows={2} className={cellIn + " resize-y ics-tall"} value={cd.relatedSystems} onChange={(e) => setCd({ relatedSystems: e.target.value })} />)}
 
             {qrow(lang === "en" ? "How often? — How often should the control be performed?" : "얼마나 자주? — 통제가 얼마나 자주 수행되어야 합니까?")}
             {row(Rq(t("self.docCycle")), <ChoiceRow name="cycle" options={PERFORM_CYCLE_OPTIONS} value={cd.cycle} onPick={(id) => pickOne("cycle", id)} />)}
@@ -6121,7 +6124,7 @@ function IsaDocForms({ control, doc, setDoc, recommended, sampleCount, required,
               <div key={i} className="grid border-b border-slate-300" style={{ gridTemplateColumns: PERF_COLS }}>
                 {/* 담당자(10-14) — 직접 입력하거나 직원 목록에서 고른다. 첫 줄은 1차 담당자로 미리 채운다. */}
                 <div className="px-1 py-1 border-r border-slate-300">
-                  <input className={cellIn} list="ics-perf-dir" placeholder={t("self.docPersonPh")} title={p.person || ""}
+                  <input className={cellIn + " ics-perf"} list="ics-perf-dir" placeholder={t("self.docPersonPh")} title={p.person || ""} style={{ fontSize: 13 }}
                          value={p.person || ""} onChange={(e) => setPerformer(i, { person: e.target.value })} />
                 </div>
                 {/* 역할/직책은 모든 줄에서 직접 입력한다(10-14). 첫 줄의 부서만 통제 항목에서 가져온다. */}
@@ -6163,7 +6166,7 @@ function IsaDocForms({ control, doc, setDoc, recommended, sampleCount, required,
             {qrow(t("self.docTestProc"))}
             {row(Rq(lang === "en" ? "Test procedure" : "테스트 절차 설명"),
               <textarea rows={5} className={cellIn + " resize-y ics-tall"} value={cd.testProc} onChange={(e) => setCd({ testProc: e.target.value })} />)}
-            {row(Rq(t("self.docEvidence")), <input className={cellIn} value={cd.evidence} onChange={(e) => setCd({ evidence: e.target.value })} />)}
+            {row(Rq(t("self.docEvidence")), <textarea rows={2} className={cellIn + " resize-y ics-tall"} value={cd.evidence} onChange={(e) => setCd({ evidence: e.target.value })} />)}
             {row(t("self.docSampleNeed"), ro(`${recommended}${t("common.items")} ${lang === "en" ? "(by frequency)" : "(수행 주기에 따라)"}`))}
             {/* 표본추출방식 — 하나만 고른다. 방식마다 뜻을 함께 적어 고르기 쉽게 한다. */}
             {row(Rq(t("self.docSampling")),
@@ -6186,7 +6189,7 @@ function IsaDocForms({ control, doc, setDoc, recommended, sampleCount, required,
                   );
                 })}
               </div>)}
-            {row(Rq(t("self.docPopulation")), <input className={cellIn} value={cd.population} onChange={(e) => setCd({ population: e.target.value })} />)}
+            {row(Rq(t("self.docPopulation")), <textarea rows={2} className={cellIn + " resize-y ics-tall"} value={cd.population} onChange={(e) => setCd({ population: e.target.value })} />)}
           </>)}
         </div>
       )}
