@@ -83,6 +83,15 @@ html, * { scrollbar-width: thin; scrollbar-color: #CBD5E1 transparent; }
 ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
 ::-webkit-scrollbar-thumb:hover { background: #94A3B8; background-clip: padding-box; }
+/* PDF 출력 단추 아래 안내(C-3, 10-16) — 「출력 이력은 Logging 시스템에 보관됩니다」. <PdfLogNote/> 가 쓴다.
+   단추와 같은 JSX 조건 안에 함께 그리므로 단추가 없으면 안내도 없다. PDF 캡처에서는 data-html2canvas-ignore 로 빠진다. */
+.pdf-log-col{display:inline-flex;flex-direction:column;align-items:flex-end;gap:3px;max-width:100%;flex-shrink:0}
+.pdf-log-note{display:inline-flex;align-items:center;gap:4px;font-size:9.5px;font-weight:400;color:#605e5c;line-height:1.3;letter-spacing:0;text-align:right;white-space:normal}
+.pdf-log-note svg{flex:0 0 auto}
+/* 줄이 빡빡한 도구 줄(평가 이력 표 머리) — 안내가 단추 폭을 넓히지 않게, 단추 폭 안에서 오른쪽 끝에 맞춰 왼쪽으로 넘친다 */
+.pdf-log-spill>.pdf-log-note{width:0;min-width:100%;justify-content:flex-end;white-space:nowrap}
+/* 팝업 머리글(휴대폰) — 제목이 더 잘리지 않게, 안내는 단추 폭 안에서 두 줄로 접힌다 */
+@media (max-width:639px){.pdf-log-fit>.pdf-log-note{width:0;min-width:100%;justify-content:flex-end}}
 </style>
 <style id="ics-tall">
 /* 입력창 세로 확대(10-14) — 쓰는 만큼 자동으로 커지고(Chrome · Edge), 오른쪽 아래 손잡이로 직접 늘릴 수도 있다 */
@@ -1135,6 +1144,7 @@ const STR = {
     },
     common: {
       save: "저장", cancel: "취소", submit: "제출", edit: "수정", delete: "삭제",
+      pdfLogNote: "출력 이력은 Logging 시스템에 보관됩니다",
       add: "추가", search: "검색", resetFilter: "필터 초기화", emptySearch: "검색 결과가 없습니다.", allDept: "전체 부서",
       allCat: "전체 통제영역", allRisk: "전체 신호등",
       assignedDeptAll: "배정 부서 전체", allCategory: "전체 통제영역", allRisk: "전체 신호등",
@@ -1650,6 +1660,7 @@ const STR = {
     },
     common: {
       save: "Save", cancel: "Cancel", submit: "Submit", edit: "Edit", delete: "Delete",
+      pdfLogNote: "Print history is stored in the logging system",
       add: "Add", search: "Search", resetFilter: "Reset filters", emptySearch: "No matching results.", allDept: "All departments",
       allCat: "All components", allRisk: "All risk levels",
       assignedDeptAll: "All assigned depts.", allCategory: "All categories", allRisk: "All risk levels",
@@ -2209,6 +2220,17 @@ function SectionHeader({ icon: Icon, title, subtitle, action, inline }) {
       </div>
       {action && <div className="max-w-full max-md:[&>div]:flex-wrap max-md:[&_button]:whitespace-nowrap md:contents">{action}</div>}
     </div>
+  );
+}
+
+/* PDF 출력 단추 바로 아래 안내(C-3, 10-16) — 출력 이력이 활동 로그(Logging)에 남는다는 고지. 문구는 common.pdfLogNote(KOR/ENG). */
+function PdfLogNote() {
+  const { t } = useLang();
+  return (
+    <span className="pdf-log-note" data-html2canvas-ignore="true">
+      <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#c4314b" strokeWidth="2.2" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      {t("common.pdfLogNote")}
+    </span>
   );
 }
 
@@ -3825,11 +3847,14 @@ function IsaDocView({ control: c }) {
           <Tab id="tp" icon={ClipboardList} label={t("self.docTpTitle")} filled={tpFilled} />
         </div>
         <div className="flex justify-end mt-2">
+        <div className="pdf-log-col">
         <button type="button" onClick={downloadWord} disabled={dlBusy}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold text-white disabled:opacity-50"
           style={{ backgroundColor: BRAND.navy }} title={t("detail.wordHint")}>
           {dlBusy ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />} {t("detail.wordBtn")}
         </button>
+        <PdfLogNote />
+        </div>
         </div>
       </div>
 
@@ -9644,6 +9669,7 @@ function RequestDetailModal({ r, controls, onClose, canAct, canCancel, acting, c
     <Modal title={`${reqNo(r)} · ${name}`} size="xl" onClose={onClose}
            bodyId={bodyId}
            headerActions={
+             <div className="pdf-log-col pdf-log-fit">
              <button onClick={onPdf} disabled={pdfBusy}
                      title={t("approval.pdfBtn")}
                      className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-50"
@@ -9651,6 +9677,8 @@ function RequestDetailModal({ r, controls, onClose, canAct, canCancel, acting, c
                {pdfBusy ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
                {t("approval.pdfBtn")}
              </button>
+             <PdfLogNote />
+             </div>
            }>
       {/* 두 배지의 글자·여백을 같게 둔다. 예전에는 왼쪽이 text-xs/py-1,
           오른쪽이 text-sm/py-1.5 라 나란히 놓았을 때 높이가 어긋났다. */}
@@ -10426,6 +10454,7 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
             <button onClick={() => exportControlsToExcel(filteredTableControls, lang, departments, users)} className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:border-teal-400 hover:text-teal-600 flex-shrink-0">
               <Download size={13} /> {t("history.downloadBtn")}
             </button>
+            <div className="pdf-log-col pdf-log-spill">
             <button
               disabled={!picked.size || !!pdfBusy}
               onClick={async () => {
@@ -10443,6 +10472,8 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
               {pdfBusy ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />}
               {pdfBusy || `${t("history.pdfPkgBtn")}${picked.size ? ` (${picked.size})` : ""}`}
             </button>
+            <PdfLogNote />
+            </div>
           </div>
         </div>
         <div className="overflow-x-auto">
@@ -10577,7 +10608,8 @@ function FinalReportPage({ controls, currentUser, activeYear, yearConfirmation, 
     <div>
       <SectionHeader icon={FileCheck2} title={t("finalReport.title")} subtitle={`${activeYear} ${t("finalReport.subtitle")}`}
         action={(
-          <div className="flex items-center gap-2">
+          <div className="pdf-log-col">
+          <div className="flex items-center justify-end gap-2 flex-wrap">
             {[["ko", "공식 PDF · KOR"], ["en", "Official PDF · ENG"]].map(([lg, label]) => (
               <button key={lg} onClick={async () => { setPdfBusy(lg); setPdfProg({ stage: "data", i: 0, n: 0 }); try { await exportFinalReportPdf(lg, { controls, departments, users, activeYear, yearConfirmation, currentUser }, setPdfProg); } finally { setPdfBusy(null); setPdfProg(null); } }}
                 disabled={!!pdfBusy}
@@ -10587,6 +10619,8 @@ function FinalReportPage({ controls, currentUser, activeYear, yearConfirmation, 
                 <FileText size={14} /> {pdfBusy === lg ? (lg === "ko" ? "생성 중…" : "Generating…") : label}
               </button>
             ))}
+          </div>
+          <PdfLogNote />
           </div>
         )} />
 
