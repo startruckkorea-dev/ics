@@ -10127,7 +10127,7 @@ function ApprovalHistoryPage({ controls }) {
                       <td className={td} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
                           title={r.requester}>{nameOfEmail(r.requester)}</td>
                       <td className={`${td} whitespace-nowrap`}>{formatDateShort(r.created)}</td>
-                      {/* 차수와 담당자를 한 줄에 둔다. 「2/3 2차 ICS Admin · Sora Kim」
+                      {/* 차수와 담당자를 한 줄에 둔다. 「2/3 2차 ICS Admin · Gildong Hong」
                           위아래로 나누면 그 행만 높이가 늘어 다른 열과 눈높이가 어긋난다.
                           (결재 승인 화면 d51d559 에서 같은 이유로 이미 한 줄로 바꿨다) */}
                       <td className={`${td} truncate`}
