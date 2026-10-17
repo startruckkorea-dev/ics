@@ -224,6 +224,8 @@ const BRAND = {
 let ICS_CONTACT_EMAIL = "";
 // 접근 권한 없음 화면에 표시할 담당자 목록 (system_config_final.xlsx 의 ICS_CONTACT)
 let ICS_CONTACT_EMAILS = [];
+// IT 문의 메일(10-17) — 코드에 메일을 두지 않는다. system_config_final.xlsx 의 ICS_IT_CONTACT → 없으면 CONTACT_EMAIL. 못 읽으면 「IT팀」
+let ICS_IT_MAIL = "";
 // 결재 요청의 1차 MC 후보. employee_search.xlsx 의 H열(Boss of Boss)에 등장하는
 // 사람만 모아 중복을 제거한 목록이다. 전 직원을 고르게 하면 목록이 길어 실수하기 쉽다.
 let ICS_MC_CANDIDATES = [];   // [{ name, email, dept, team }] — H열 기준 기본 후보
@@ -1276,7 +1278,7 @@ const STR = {
       lockedPending: "결재가 진행 중인 통제 항목입니다. 결재가 끝난 뒤에 다시 시도해 주세요.",
       lockedApproved: "이미 결재가 완료된 변경 요청이 있는 통제 항목입니다. 추가 변경이 필요하면 IT로 문의해 주세요.",
       descPlaceholder: "통제 활동에 대한 상세 설명", namePersonPlaceholder: "이름",
-      emailPlaceholder: "이메일 주소 (예: hong.gildong@startruckkorea.com)",
+      emailPlaceholder: "이메일 주소 (예: user@example.com)",
     },
     self: {
       title: "ISA 1차 자가평가",
@@ -1597,7 +1599,7 @@ const STR = {
       viewOnlyNotice: "이 화면은 조회 전용입니다. 권한 변경은 Admin 계정으로 로그인해서 진행해 주세요.",
       apply: "반영", applying: "반영 중...",
       addUserTitle: "사용자 추가",
-      addUserPlaceholder: "이메일 주소 입력 (예: hong.gildong@hyosung.com)",
+      addUserPlaceholder: "이메일 주소 입력 (예: user@example.com)",
       addUserHint: "여기서 추가한 사용자는 ICS_CategoryAccess 목록에 등록되어 다음 접속에도 유지됩니다. 추가 후 아래 표에서 필요한 카테고리를 체크하고 [반영]을 눌러 주세요.",
       removeUserTitle: "사용자 삭제",
       removeUserBody: "이 사용자의 카테고리 접근 권한을 모두 회수합니다. 사용자 마스터(Users 시트)에 등록된 계정은 목록에는 남고 권한만 초기화됩니다. 계속하시겠습니까?",
@@ -1623,7 +1625,7 @@ const STR = {
       selectAll: "전체선택", deselectAll: "전체해제",
       adminColLocked: "Admin 역할은 전 부서 관리자라 이 열은 변경할 수 없습니다. 겸직은 Accessor/Reviewer 열에서 지정하세요.",
       addTitle: "이메일로 담당자 권한 부여",
-      emailPlaceholder: "이메일 주소 입력 (예: hong.gildong@startruckkorea.com)",
+      emailPlaceholder: "이메일 주소 입력 (예: user@example.com)",
       grantBtn: "권한 부여", invalidEmail: "올바른 이메일 주소를 입력해주세요.",
       addHint: "등록된 이메일은 아래 목록에 추가되며, 체크박스로 부서별 접근 권한을 지정할 수 있습니다.",
       requestGuideTitle: "접근 권한 신청 방법",
@@ -1790,7 +1792,7 @@ const STR = {
       lockedPending: "This control item has a change request in progress. Please try again once approval is complete.",
       lockedApproved: "This control item already has an approved change request. Please contact IT if further changes are needed.",
       descPlaceholder: "Detailed description of the control activity", namePersonPlaceholder: "Name",
-      emailPlaceholder: "Email address (e.g. jane.doe@startruckkorea.com)",
+      emailPlaceholder: "Email address (e.g. user@example.com)",
       uploading: "Uploading...",
       uploadingNotice: "Processing the Excel file. Please do not close or refresh this page.",
     },
@@ -2106,7 +2108,7 @@ const STR = {
       viewOnlyNotice: "This screen is view-only. Please sign in with an Admin account to change permissions.",
       apply: "Apply", applying: "Applying...",
       addUserTitle: "Add user",
-      addUserPlaceholder: "Enter email address (e.g. jane.doe@hyosung.com)",
+      addUserPlaceholder: "Enter email address (e.g. user@example.com)",
       addUserHint: "Users added here are registered in the ICS_CategoryAccess list and persist across sessions. After adding, tick the categories below and press Apply.",
       removeUserTitle: "Remove user",
       removeUserBody: "This revokes all category access for this user. Accounts registered in the Users master sheet remain listed with their access cleared. Continue?",
@@ -2132,7 +2134,7 @@ const STR = {
       selectAll: "Select all", deselectAll: "Clear all",
       adminColLocked: "Admin covers every department, so this column is fixed. Use the Accessor/Reviewer columns for additional duties.",
       addTitle: "Grant access by email",
-      emailPlaceholder: "Enter email address (e.g. jane.doe@startruckkorea.com)",
+      emailPlaceholder: "Enter email address (e.g. user@example.com)",
       grantBtn: "Grant access", invalidEmail: "Please enter a valid email address.",
       addHint: "Registered emails appear in the list below, where department access can be set with checkboxes.",
       requestGuideTitle: "How to request access",
@@ -14075,6 +14077,11 @@ async function loadIcsContactFromSystemConfig(token) {
     };
     rows.forEach((row) => {
       const key = String((row || [])[0] || "").trim().toUpperCase();
+      if (key === "ICS_IT_CONTACT" || key === "CONTACT_EMAIL") {   // IT 문의 메일(10-17) — ICS_IT_CONTACT 가 우선
+        const e = pickEmail(row);
+        if (e && (key === "ICS_IT_CONTACT" || !ICS_IT_MAIL)) ICS_IT_MAIL = e;
+        return;
+      }
       if (key.startsWith("ICS_APPROVER_FINAL")) {
         const e = pickEmail(row);
         if (e && !ICS_APPROVER_FINAL) ICS_APPROVER_FINAL = e;
@@ -14261,9 +14268,9 @@ async function loadIcsMasterConfig(token) {
 
 // 사용자 마스터에 등록되지 않은 계정에게 보여주는 전체 화면.
 // APS 공통(SSC · MKQR) 과 같은 카드로 통일(10-08) — 권한 신청은 ITSM, 문의는 system_config_final.xlsx 의 ICS_CONTACT 메일
-// (adminEmails = ICS_CONTACT_EMAILS. 설정을 못 읽었으면 IT 공용 메일로 대신 안내)
+// (adminEmails = ICS_CONTACT_EMAILS. 없으면 ICS_IT_CONTACT · CONTACT_EMAIL, 설정을 못 읽었으면 메일 없이 「IT팀」)
 function IcsAccessDenied({ userEmail, adminEmails }) {
-  const contacts = (adminEmails && adminEmails.length ? adminEmails : ["stk_it@hyosung.com"]);
+  const contacts = (adminEmails && adminEmails.length ? adminEmails : (ICS_IT_MAIL ? [ICS_IT_MAIL] : []));
   return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", background: "linear-gradient(145deg,#0f2744 0%,#0078d4 100%)" }}>
       <div style={{ background: "#fff", borderRadius: 20, padding: "48px 44px", textAlign: "center", boxShadow: "0 24px 60px rgba(0,0,0,.22)", maxWidth: 400, width: "90%" }}>
@@ -14280,6 +14287,7 @@ function IcsAccessDenied({ userEmail, adminEmails }) {
         </div>
         <div style={{ fontSize: ".75rem", color: "#94a3b8", marginBottom: 20, lineHeight: 1.7 }}>
           문의:{" "}
+          {!contacts.length && <span>IT팀</span>}
           {contacts.map((m, i) => (
             <span key={m}>{i > 0 && ", "}<a href={`mailto:${m}`} style={{ color: "#0078d4", textDecoration: "none" }}>{m}</a></span>
           ))}
