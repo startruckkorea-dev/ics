@@ -4988,11 +4988,14 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
       {confirmDelete && (
         <Modal title={t("manage.deleteTitle")} onClose={() => setConfirmDelete(null)}>
           <p className="text-sm text-slate-600 mb-5">
-            <span className="font-medium text-slate-800">{confirmDelete.code} · {cName(confirmDelete, lang)}</span> — {t("manage.deleteBody")}
+            <span className="font-medium text-slate-800">{confirmDelete.code} · {cName(confirmDelete, lang)}</span> — {usingSharePointData
+              /* 10-19 실제로는 바로 지우지 않고 변경 결재(ICS_ChangeRequests)로 상신한다 — 「되돌릴 수 없습니다」 문구가 바로 삭제로 오해되었다 */
+              ? (lang === "en" ? "Submit a delete request for approval? The item is not deleted now — it is deleted only after the approval line (MC → ICS Admin → final approver) approves it. You can follow it in Control Change Approvals." : "이 항목의 삭제 요청을 결재로 상신할까요? 지금 바로 지워지지 않고, 결재선(MC → ICS Admin → 최종 승인자)이 모두 승인하면 그때 삭제됩니다. 진행 상황은 「통제 항목 변경 결재」에서 볼 수 있습니다.")
+              : t("manage.deleteBody")}
           </p>
           <div className="flex justify-end gap-2">
             <button onClick={() => setConfirmDelete(null)} className="px-4 py-2 text-sm text-slate-500 rounded-lg hover:bg-slate-50">{t("common.cancel")}</button>
-            <button onClick={() => remove(confirmDelete)} className="px-4 py-2 text-sm text-white bg-red-500 rounded-lg hover:bg-red-600">{t("common.delete")}</button>
+            <button onClick={() => remove(confirmDelete)} className="px-4 py-2 text-sm text-white bg-red-500 rounded-lg hover:bg-red-600">{usingSharePointData ? (lang === "en" ? "Request deletion" : "삭제 요청 상신") : t("common.delete")}</button>
           </div>
         </Modal>
       )}
@@ -9006,27 +9009,9 @@ async function _icsExportControlPackagePdfRaw(controls, lang, users, departments
           (await doc.copyPages(src, src.getPageIndices())).forEach((pg) => doc.addPage(pg));
         } catch (e) { console.warn("[ICS] 서식 PDF 붙이기 실패:", c.code, e.message); }
       }
-      for (const a of (c.attachments || [])) {
-        if (!a.name || !c.requestSpId) continue;
-        if (onProgress) onProgress(done, controls.length, c.code + " · " + a.name);
-        try {
-          const token = await getGraphToken();
-          const driveId = await getIcsAttachedFilesDriveId();
-          const path = `ICS_Requests_AttachedFiles/${c.requestSpId}/${encodeURIComponent(a.name)}`;
-          const ext = String(a.name).split(".").pop().toLowerCase();
-          const isImg = ["jpg", "jpeg", "png", "gif", "webp"].includes(ext);
-          const url = `${GRAPH}/drives/${driveId}/root:/${path}:/content` + (isImg || ext === "pdf" ? "" : "?format=pdf");
-          const res = await icsFetch(url, { headers: { Authorization: "Bearer " + token } });
-          if (!res.ok) throw new Error(String(res.status));
-          const buf = new Uint8Array(await res.arrayBuffer());
-          // APS 공통 첨부 병합(APS-ATTACH v1 · 10-06 일원화) — 머리띠 위치 보정 · 암호화 PDF 는 안내 카드
-          await apsAppendAttachmentBytes(doc, a.name, buf, { header: t => hdrPng(t), label: lang === "en" ? "Attachment: " : "첨부파일: ", A4W, A4H, hdrH, marginPt: margin });
-        } catch (e) {
-          console.warn("[ICS] 첨부 변환 실패:", a.name, (e && e.message) || e);
-          try { await apsAddNoticePage(doc, "failed", a.name, "Error: " + String((e && e.message) || e || "").slice(0, 80), { header: t => hdrPng(t), label: lang === "en" ? "Attachment: " : "첨부파일: ", A4W, A4H, hdrH }); }
-          catch (e2) { console.warn("[ICS] 안내 페이지 생성 실패:", e2.message); }
-        }
-      }
+      // 표본 첨부(10-19) — 제출본이 없거나 임시 저장 중이면 임시 저장본의 첨부도 붙인다(예전엔 제출된 첨부만 · 미제출 통제는 빠졌다). FSA 단계면 FSA 첨부까지.
+      await icsAppendSampleFiles(doc, c, c.fsaStatus && c.fsaStatus !== "not_started" ? "FSA" : "ISA", lang,
+        { header: (t) => hdrPng(t), A4W, A4H, hdrH, margin, onFile: (name) => onProgress && onProgress(done, controls.length, c.code + " · " + name) });
 
       const blob = new Blob([await doc.save()], { type: "application/pdf" });
       const link = document.createElement("a");
@@ -9361,8 +9346,47 @@ function isaDocPrintHtml(kind, c, d, lang, users, departments) {
   </div>`;
 }
 
+/* 표본 첨부 목록(10-19 · ics-samplepdf) — 단계마다 「임시 저장본이 있으면 그 첨부(작업 중인 최신), 없으면 제출된 첨부」.
+   ISA 첨부는 요청 폴더 바로 아래, FSA 첨부는 FSA 하위 폴더. 돌려주는 값: [{ name, sub, draft, fsa }] */
+function icsSampleFiles(c, stage) {
+  const pick = (st, submitted, sub) => {
+    const d = c.draft && c.draft.stage === st ? c.draft : null;
+    const list = d ? (d.attachments || []) : (submitted || []);
+    return list.filter((a) => a && a.name).map((a) => ({ name: a.name, sub, draft: !!d, fsa: st === "fsa" }));
+  };
+  const out = pick("isa", c.attachments, "");
+  if (stage === "FSA") out.push(...pick("fsa", c.fsaAttachments, "FSA"));
+  return out;
+}
+/* 표본 첨부를 PDF 뒤에 붙인다 — 통제 패키지 · 서식 PDF(세부 내용 「PDF 출력」)가 같이 쓴다. 한 건이 실패해도 안내 쪽을 넣고 계속. 붙인 건수를 돌려준다. */
+async function icsAppendSampleFiles(doc, c, stage, lang, o) {
+  const files = c.requestSpId ? icsSampleFiles(c, stage) : [];
+  for (const a of files) {
+    if (o.onFile) o.onFile(a.name);
+    const label = (lang === "en" ? "Attachment" : "첨부파일") + (a.fsa ? " (FSA)" : "") + (a.draft ? (lang === "en" ? " (draft)" : " (임시 저장)") : "") + ": ";
+    try {
+      const token = await getGraphToken();
+      const driveId = await getIcsAttachedFilesDriveId();
+      const path = `ICS_Requests_AttachedFiles/${c.requestSpId}/${a.sub ? a.sub + "/" : ""}${encodeURIComponent(a.name)}`;
+      const ext = String(a.name).split(".").pop().toLowerCase();
+      const isImg = ["jpg", "jpeg", "png", "gif", "webp"].includes(ext);
+      const url = `${GRAPH}/drives/${driveId}/root:/${path}:/content` + (isImg || ext === "pdf" ? "" : "?format=pdf");
+      const res = await icsFetch(url, { headers: { Authorization: "Bearer " + token } });
+      if (!res.ok) throw new Error(String(res.status));
+      const buf = new Uint8Array(await res.arrayBuffer());
+      // APS 공통 첨부 병합(APS-ATTACH v1 · 10-06 일원화) — 머리띠 위치 보정 · 암호화 PDF 는 안내 카드
+      await apsAppendAttachmentBytes(doc, a.name, buf, { header: o.header, label, A4W: o.A4W, A4H: o.A4H, hdrH: o.hdrH, marginPt: o.margin });
+    } catch (e) {
+      console.warn("[ICS] 첨부 변환 실패:", a.name, (e && e.message) || e);
+      try { await apsAddNoticePage(doc, "failed", a.name, "Error: " + String((e && e.message) || e || "").slice(0, 80), { header: o.header, label, A4W: o.A4W, A4H: o.A4H, hdrH: o.hdrH }); }
+      catch (e2) { console.warn("[ICS] 안내 페이지 생성 실패:", e2.message); }
+    }
+  }
+  return files.length;
+}
+
 /* 두 문서를 한 PDF 로. 돌려주는 값: { name, bytes } */
-async function icsBuildDocPdf(c, doc, lang, users, departments, stage) {
+async function icsBuildDocPdf(c, doc, lang, users, departments, stage, opts = {}) {   // opts.withSamples — 표본 첨부까지(세부 내용 「PDF 출력」 · 10-19)
   if (typeof html2canvas !== "function" || typeof PDFLib === "undefined") throw new Error(lang === "en" ? "Could not load the PDF library." : "PDF 라이브러리를 불러오지 못했습니다.");
   const d = normalizeIsaDoc(doc);
   const { PDFDocument } = PDFLib;
@@ -9426,7 +9450,8 @@ async function icsBuildDocPdf(c, doc, lang, users, departments, stage) {
         page.drawImage(img, { x: margin, y: A4H - hdrH - margin - h / pxPerPt, width: printW, height: h / pxPerPt });
       }
     }
-    return { name: `STK_통제기술서_테스트수행_${c.code}_${c.year}_${stage}.pdf`, bytes: await pdf.save() };
+    const samples = opts.withSamples ? await icsAppendSampleFiles(pdf, c, stage, lang, { header: (t) => band(t), A4W, A4H, hdrH, margin }) : 0;
+    return { name: `STK_통제기술서_테스트수행_${c.code}_${c.year}_${stage}.pdf`, bytes: await pdf.save(), samples };
   } finally { host.remove(); }
 }
 /* 제출 때 첨부 폴더(Documentation)에 PDF 로 남긴다. */
@@ -9439,15 +9464,17 @@ async function icsSaveDocPdf(c, spId, doc, lang, users, departments, stage) {
 // 10-15 내려받기가 된 뒤 기록, 실패하면 실패 기록 후 원래대로 오류를 넘긴다(화면이 알림)
 async function icsDownloadDocPdf(c, doc, lang, users, departments, stage) {
   const what = `${c.code} · ${stage} 통제기술서 · 테스트 문서`, whatEn = `${c.code} · ${stage} control documentation · test document`;
-  try { await _icsDownloadDocPdfRaw(c, doc, lang, users, departments, stage); icsLogOutput("pdf_control_doc", c.code, what, whatEn, c.year); }
+  try { const n = await _icsDownloadDocPdfRaw(c, doc, lang, users, departments, stage); icsLogOutput("pdf_control_doc", c.code, `${what} · 표본 첨부 ${n}건`, `${whatEn} · ${n} sample attachment(s)`, c.year); }
   catch (e) { icsLogOutput("pdf_control_doc_failed", c.code, `${what} · 오류: ${icsErrText(e)}`, `${whatEn} · error: ${icsErrText(e)}`, c.year); throw e; }
 }
 async function _icsDownloadDocPdfRaw(c, doc, lang, users, departments, stage) {
-  const f = await icsBuildDocPdf(c, doc, lang, users, departments, stage);
+  // 세부 내용에서 받는 PDF 는 표본 첨부까지 붙인다(10-19 요청). 제출 때 Documentation 폴더에 남기는 사본(icsSaveDocPdf)은 서식만.
+  const f = await icsBuildDocPdf(c, doc, lang, users, departments, stage, { withSamples: true });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([f.bytes], { type: "application/pdf" }));
   a.download = f.name; document.body.appendChild(a); a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+  return f.samples || 0;
 }
 
 /* ICS 에서 부르는 입구. 서식 파일은 같은 사이트(templates/)에서 받는다. */
