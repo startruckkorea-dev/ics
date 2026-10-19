@@ -182,6 +182,7 @@ import {
   RefreshCw,
   MoreHorizontal,
   LogIn,
+  ArrowRight,
 } from "lucide-react";
 import {
   BarChart,
@@ -638,6 +639,7 @@ const ACTION_LABELS = {
   edit_control: { ko: "통제 항목 수정", en: "Control item edited" },
   request_edit_control: { ko: "통제 항목 수정 요청", en: "Control item change requested" },
   request_delete_control: { ko: "통제 항목 삭제 요청", en: "Control item deletion requested" },
+  request_bulk_accessor: { ko: "담당자 일괄 변경 요청", en: "Bulk accessor change requested" },
   approve_change: { ko: "변경 요청 승인", en: "Change request approved" },
   reject_change: { ko: "변경 요청 반려", en: "Change request rejected" },
   cancel_change: { ko: "변경 요청 철회", en: "Change request withdrawn" },
@@ -4255,6 +4257,195 @@ function resolvePersonEmail(raw, users) {
 
 // 이메일을 직접 몰라도 이름(한글/영문)이나 이메일 일부로 검색해서 등록된 계정을 바로 찾아 넣을 수 있는 입력창.
 // 직접 타이핑한 값도 그대로 허용(수동 입력 폴백), 매칭되는 사람이 있으면 드롭다운으로 골라서 채울 수 있다.
+
+/* ---- 담당자 일괄 변경(10-20 · ics-bulkacc) ------------------------------------------------------------
+   휴직 · 이동으로 한 사람의 통제 항목을 다른 사람에게 넘길 때, 항목마다 결재를 올리지 않고 결재 한 건으로 묶는다.
+   ICS_ChangeRequests 한 행: Title = BULK-ACCESSOR · ReqType = bulk_accessor · Payload = { from, to, reason, items: [{ code, name, dept }], skipped }.
+   최종 승인 때 항목마다 지금 담당자가 아직 from 이면 to 로 바꾸고(이미 to 면 반영된 것으로), 바뀐 · 건너뛴 결과를 Payload.result 에 남긴다.
+   진행 중에는 그 항목들의 개별 수정 · 삭제 · 자가평가 수정 요청을 막는다(icsChangeReqMap). 새 열은 없다. */
+const ICS_BULK_ACC = "bulk_accessor";
+const ICS_BULK_TITLE = "BULK-ACCESSOR";
+function icsIsBulk(r) { return !!r && r.reqType === ICS_BULK_ACC; }
+function icsReqChip(r, t, lang) {
+  if (icsIsBulk(r)) return { label: lang === "en" ? "Bulk accessor change" : "담당자 일괄 변경", bg: "#E0E7FF", fg: "#4338CA" };
+  return r.reqType === "delete" ? { label: t("approval.typeDelete"), bg: "#FEE2E2", fg: "#B91C1C" } : { label: t("approval.typeEdit"), bg: "#E4F1F0", fg: BRAND.accent };
+}
+function icsBulkLabel(r, lang) {
+  const pl = r.payload || {}, n = (pl.items || []).length;
+  return (lang === "en" ? "Bulk accessor change · " : "담당자 일괄 변경 · ") + personByEmail(pl.from, lang) + " → " + personByEmail(pl.to, lang) + (lang === "en" ? ` (${n})` : ` (${n}건)`);
+}
+// 변경 요청 목록 → 통제 코드별 요청(진행 중 우선). 진행 중인 일괄 변경은 그 항목들의 코드에도 걸어 개별 요청을 막는다.
+function icsChangeReqMap(list) {
+  const map = {};
+  list.forEach((r) => { if (icsIsBulk(r)) return; const prev = map[r.code]; if (!prev || (r.status === "pending" && prev.status !== "pending")) map[r.code] = r; });
+  list.forEach((r) => {
+    if (!icsIsBulk(r) || r.status !== "pending") return;
+    ((r.payload || {}).items || []).forEach((it) => { const prev = map[it.code]; if (!prev || prev.status !== "pending") map[it.code] = r; });
+  });
+  return map;
+}
+// 최종 승인 때 반영 — 항목마다 따로 쓴다. 중간에 실패하면 요청은 대기로 남고, 다시 승인하면 이미 바뀐 항목은 「반영됨」 으로 넘어간다.
+async function icsApplyBulkAccessor(r, controls) {
+  const pl = r.payload || {}, lo = (v) => String(v || "").trim().toLowerCase();
+  const from = lo(pl.from), to = String(pl.to || "").trim();
+  const done = [], skipped = [];
+  for (const it of pl.items || []) {
+    const c = controls.find((x) => x.code === it.code && x.year === r.year);
+    if (!c) { skipped.push({ code: it.code, why: "missing" }); continue; }
+    const cur = lo(c.accessor);
+    if (cur === lo(to)) { done.push({ code: c.code, id: c.id }); continue; }
+    if (cur !== from) { skipped.push({ code: it.code, why: "changed", now: c.accessor || "" }); continue; }
+    if (c.spId) await icsUpdateItem(ICS_LISTS.controls, c.spId, { AccessorEmail: to });
+    done.push({ code: c.code, id: c.id });
+  }
+  return { to, done, skipped, at: new Date().toISOString() };
+}
+
+// 결재 상세 · PDF — 일괄 변경 대상 표(코드 · 통제명 · 부서 · 결과)
+function BulkAccessorTable({ r, controls }) {
+  const { lang } = useLang();
+  const { departments } = useAppData();
+  const pl = r.payload || {}, res = pl.result || null;
+  const why = (code) => { const sk = res && (res.skipped || []).find((x) => x.code === code); if (!sk) return null;
+    return sk.why === "missing" ? (lang === "en" ? "Skipped — item no longer exists" : "건너뜀 — 항목 없음")
+      : (lang === "en" ? `Skipped — accessor already changed (${sk.now || "-"})` : `건너뜀 — 그사이 담당자가 바뀜(${sk.now || "-"})`); };
+  return (
+    <div className="mt-3" data-bulk-table>
+      <div className="rounded-lg px-4 py-3 text-sm flex items-center gap-2 flex-wrap" style={{ background: "#EEF2FF", color: "#3730A3" }}>
+        <span className="font-semibold">{lang === "en" ? "1st accessor" : "1차 담당자"}</span>
+        <span>{personByEmail(pl.from, lang)} <span className="text-xs opacity-70">{pl.from}</span></span>
+        <ArrowRight size={14} />
+        <span className="font-semibold">{personByEmail(pl.to, lang)} <span className="text-xs font-normal opacity-70">{pl.to}</span></span>
+        <span className="ml-auto text-xs">{lang === "en" ? `${(pl.items || []).length} item(s)` : `${(pl.items || []).length}건`}</span>
+      </div>
+      <div className="mt-2 border border-slate-200 rounded-lg overflow-hidden">
+        <table className="w-full text-xs">
+          <thead className="bg-slate-50 text-slate-500"><tr>
+            <th className="text-left font-medium px-3 py-2 w-28">{lang === "en" ? "Code" : "코드"}</th>
+            <th className="text-left font-medium px-3 py-2">{lang === "en" ? "Control" : "통제명"}</th>
+            <th className="text-left font-medium px-3 py-2 w-32">{lang === "en" ? "Dept." : "부서"}</th>
+            {res && <th className="text-left font-medium px-3 py-2 w-48">{lang === "en" ? "Result" : "결과"}</th>}
+          </tr></thead>
+          <tbody>{(pl.items || []).map((it) => {
+            const c = controls.find((x) => x.code === it.code && x.year === r.year); const w = why(it.code);
+            return (<tr key={it.code} className="border-t border-slate-100">
+              <td className="px-3 py-1.5 font-mono text-slate-500">{it.code}</td>
+              <td className="px-3 py-1.5 text-slate-700">{c ? cName(c, lang) : it.name || "-"}</td>
+              <td className="px-3 py-1.5 text-slate-600">{deptName((c && c.dept) || it.dept, lang, departments)}</td>
+              {res && <td className={"px-3 py-1.5 " + (w ? "text-amber-700" : "text-emerald-700")}>{w || (lang === "en" ? "Applied" : "반영됨")}</td>}
+            </tr>); })}</tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// 통제 항목 관리 — 「담당자 일괄 변경」 창
+function BulkAccessorModal({ controls, year, currentUser, changeReqs, addLog, showToast, onClose, onDone }) {
+  const { lang, t } = useLang();
+  const { departments, users } = useAppData();
+  const lo = (v) => String(v || "").trim().toLowerCase();
+  const owners = [...controls.reduce((m, c) => { const e = lo(c.accessor); if (e) m.set(e, (m.get(e) || 0) + 1); return m; }, new Map()).entries()]
+    .sort((a, b) => personByEmail(a[0], lang, users).localeCompare(personByEmail(b[0], lang, users)));
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [reason, setReason] = useState("");
+  const [sel, setSel] = useState(() => new Set());
+  const [busy, setBusy] = useState(false);
+  const items = controls.filter((c) => from && lo(c.accessor) === from).sort((a, b) => a.code.localeCompare(b.code));
+  const locked = (c) => { const r = changeReqs[c.code]; return r && r.status === "pending"; };
+  useEffect(() => { setSel(new Set(items.filter((c) => !locked(c)).map((c) => c.code))); }, [from]);
+  const picked = items.filter((c) => sel.has(c.code) && !locked(c));
+  const L = (ko, en) => (lang === "en" ? en : ko);
+  async function submit() {
+    const toE = String(to || "").trim().toLowerCase();
+    if (!from || !toE || !picked.length) return;
+    if (toE === from) { alert(L("지금 담당자와 같은 사람입니다.", "Same as the current accessor.")); return; }
+    if (!reason.trim()) { alert(L("변경 사유를 입력해 주세요.", "Please enter the reason.")); return; }
+    const u = users.find((x) => lo(x.email) === toE);
+    if (!u || !hasCategoryAccess(u, "self")) {
+      alert(L(`${to} 님은 「ISA 1차 자가평가」 권한이 없어 넘겨받은 통제를 평가할 수 없습니다.\n\n카테고리 접근 권한에서 먼저 부여한 뒤 다시 시도해 주세요.`,
+              `${to} has no access to "ISA 1st self-assessment", so they could not assess these controls.\n\nGrant it in Category Access first.`));
+      return;
+    }
+    const g = ICS_CATEGORY_ACCESS[toE] || {};
+    const noDept = [...new Set(picked.map((c) => c.dept))].filter((d) => !(u.role === "admin" || (u.role === "accessor" && u.dept === d) || (g.deptsAccessor || []).includes(d) || (g.deptsAdmin || []).includes(d)));
+    if (noDept.length && !window.confirm(L(`${to} 님은 권한 관리에서 「${noDept.map((d) => deptName(d, lang, departments)).join(", ")}」 부서 Accessor 로 지정되어 있지 않습니다.\n자가평가는 할 수 있지만 대시보드 등에서 그 부서 현황은 보이지 않습니다.\n\n그대로 진행할까요?`,
+      `${to} is not an Accessor of ${noDept.map((d) => deptName(d, lang, departments)).join(", ")} in Access Control.\nThey can assess the controls but will not see those departments on the dashboard.\n\nContinue?`))) return;
+    const mcEmail = pickMcApprover(users, currentUser.email, lang);
+    if (mcEmail === null) return;
+    const steps = buildApprovalSteps(currentUser.email, mcEmail);
+    if (!steps.length) { alert(L("결재선을 확인할 수 없습니다. IT로 문의해 주세요.", "Approval line could not be determined. Please contact IT.")); return; }
+    setBusy(true);
+    try {
+      const payload = { from, to: toE, reason: reason.trim(),
+        items: picked.map((c) => ({ code: c.code, name: c.name || "", dept: c.dept || "" })),
+        skipped: (steps.skipped || []).map((sk) => ({ role: sk.role, approver: sk.approver, reason: sk.reason })) };
+      const label = icsBulkLabel({ payload }, "ko");
+      const created = await icsCreateItem(ICS_LISTS.changeRequests, { Title: ICS_BULK_TITLE, Year: year, ReqType: ICS_BULK_ACC, RequesterEmail: currentUser.email,
+        Payload: JSON.stringify(payload), Steps: JSON.stringify(steps), Step: 1, Status: "pending" });
+      await icsApprovalsCreate(created, ICS_BULK_TITLE, label, currentUser.email, steps);
+      addLog(currentUser.email, "request_bulk_accessor", ICS_BULK_TITLE, `${label}: ${picked.map((c) => c.code).join(", ")}`.slice(0, 200), icsBulkLabel({ payload }, "en"));
+      showToast(L(`담당자 일괄 변경 ${picked.length}건을 결재로 상신했습니다.`, `Bulk accessor change (${picked.length}) submitted for approval.`));
+      onDone(picked.map((c) => c.code), { code: ICS_BULK_TITLE, status: "pending", reqType: ICS_BULK_ACC, payload });
+    } catch (e) {
+      alert(L("상신에 실패했습니다: ", "Failed to submit: ") + e.message);
+    } finally { setBusy(false); }
+  }
+  const allOn = items.length > 0 && items.filter((c) => !locked(c)).every((c) => sel.has(c.code));
+  return (
+    <Modal title={L("담당자 일괄 변경", "Bulk accessor change")} onClose={() => !busy && onClose()} size="xl">
+      <p className="text-xs text-slate-500 mb-4 leading-relaxed">{L(
+        "휴직 · 이동 등으로 한 사람이 맡던 통제 항목의 1차 담당자를 한 번에 바꿉니다. 고른 항목 전체가 결재 한 건으로 상신되고(MC → ICS Admin → 최종 승인자), 최종 승인되면 함께 바뀌며 변경 결재 이력에 남습니다. 결재가 끝나기 전까지는 지금 담당자 그대로입니다.",
+        "Change the 1st accessor of many controls at once (e.g. leave or transfer). The selected items go up as one approval (MC → ICS Admin → final approver) and are changed together when it is approved.")}</p>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+        <label className="block"><span className="block text-xs font-medium text-slate-600 mb-1">{L("지금 담당자", "Current accessor")}</span>
+          <select value={from} onChange={(e) => setFrom(e.target.value)} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" data-bulk-from>
+            <option value="">{L("— 선택 —", "— Select —")}</option>
+            {owners.map(([e, n]) => { const nm = personByEmail(e, lang, users); return <option key={e} value={e}>{nm && nm.toLowerCase() !== e ? nm + " · " + e : e} ({n})</option>; })}
+          </select></label>
+        <div><span className="block text-xs font-medium text-slate-600 mb-1">{L("새 담당자", "New accessor")}</span>
+          <PersonAutocomplete value={to} onChange={setTo} users={users} lang={lang} placeholder={t("manage.emailPlaceholder")} /></div>
+      </div>
+      <label className="block mb-3"><span className="block text-xs font-medium text-slate-600 mb-1">{L("변경 사유", "Reason")} <span className="text-red-500">*</span></span>
+        <textarea value={reason} onChange={(e) => setReason(e.target.value.slice(0, REASON_MAX))} rows={2} data-bulk-reason
+          placeholder={L("예) Hyojung Kim 휴직(2026-10 ~) — 복직 전까지 Misun Lee 담당", "e.g. Leave of absence — Misun Lee covers until return")}
+          className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm resize-y" /></label>
+      {from && (
+        <div className="border border-slate-200 rounded-lg overflow-hidden mb-4">
+          <div className="max-h-72 overflow-y-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-slate-50 text-slate-500 sticky top-0"><tr>
+                <th className="w-9 px-3 py-2"><input type="checkbox" checked={allOn} onChange={() => setSel(allOn ? new Set() : new Set(items.filter((c) => !locked(c)).map((c) => c.code)))} /></th>
+                <th className="text-left font-medium px-2 py-2 w-28">{L("코드", "Code")}</th>
+                <th className="text-left font-medium px-2 py-2">{L("통제명", "Control")}</th>
+                <th className="text-left font-medium px-2 py-2 w-32">{L("부서", "Dept.")}</th>
+              </tr></thead>
+              <tbody>{items.map((c) => { const lk = locked(c); return (
+                <tr key={c.code} className={"border-t border-slate-100 " + (lk ? "opacity-50" : "")} title={lk ? t("manage.lockedPending") : undefined}>
+                  <td className="px-3 py-1.5"><input type="checkbox" disabled={lk} checked={!lk && sel.has(c.code)} onChange={() => setSel((p) => { const n = new Set(p); n.has(c.code) ? n.delete(c.code) : n.add(c.code); return n; })} data-bulk-item={c.code} /></td>
+                  <td className="px-2 py-1.5 font-mono text-slate-500">{c.code}</td>
+                  <td className="px-2 py-1.5 text-slate-700">{cName(c, lang)}{lk && <span className="ml-1 text-amber-600">({L("결재 중", "in approval")})</span>}</td>
+                  <td className="px-2 py-1.5 text-slate-600">{deptName(c.dept, lang, departments)}</td>
+                </tr>); })}
+                {!items.length && <tr><td colSpan={4} className="text-center text-slate-400 py-6">{L("이 담당자의 통제 항목이 없습니다.", "No controls for this accessor.")}</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+      <div className="flex items-center justify-end gap-2">
+        <span className="mr-auto text-xs text-slate-500">{from ? L(`${picked.length}건 선택`, `${picked.length} selected`) : ""}</span>
+        <button onClick={onClose} disabled={busy} className="px-4 py-2 text-sm text-slate-500 rounded-lg hover:bg-slate-50">{t("common.cancel")}</button>
+        <button onClick={submit} disabled={busy || !from || !String(to).trim() || !picked.length || !reason.trim()} data-bulk-submit
+          className="px-4 py-2 text-sm text-white rounded-lg disabled:opacity-40 flex items-center gap-1.5" style={{ backgroundColor: BRAND.accent }}>
+          {busy && <Loader2 size={14} className="animate-spin" />}{L("결재 상신", "Submit for approval")}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 function PersonAutocomplete({ value, onChange, users, lang, placeholder }) {
   const [query, setQuery] = useState(value || "");
   const [open, setOpen] = useState(false);
@@ -4313,6 +4504,7 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
   // 통제 항목별 변경 요청 상태 (코드 → { status, step, steps, requester })
   // 결재가 진행 중이거나 이미 승인된 항목은 다시 수정·삭제할 수 없다.
   const [changeReqs, setChangeReqs] = useState({});
+  const [bulkOpen, setBulkOpen] = useState(false);   // 담당자 일괄 변경(10-20)
   // 부서별 통제 현황을 통합하면서 가져온 조회 조건.
   // 관리자만 쓰는 화면이라 조회와 편집을 한곳에서 처리한다.
   const [search, setSearch] = useState("");
@@ -4329,13 +4521,8 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
     if (!usingSharePointData) return;
     loadIcsChangeRequests()
       .then((list) => {
-        const map = {};
-        list.forEach((r) => {
-          const prev = map[r.code];
-          // 같은 코드에 여러 건이 있으면 진행 중인 건을 우선한다.
-          if (!prev || (r.status === "pending" && prev.status !== "pending")) map[r.code] = r;
-        });
-        setChangeReqs(map);
+        // 같은 코드에 여러 건이 있으면 진행 중인 건을 우선한다. 진행 중인 담당자 일괄 변경(10-20)의 항목도 잠근다.
+        setChangeReqs(icsChangeReqMap(list));
       })
       .catch((e) => console.warn("[ICS] 변경 요청 로드 실패:", e.message));
   }, []);
@@ -4805,6 +4992,13 @@ Continue?`
                 <input ref={fileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleUploadFile} />
               </>
             )}
+            {isAdmin && canEdit && usingSharePointData && (
+              <button onClick={() => setBulkOpen(true)} data-bulk-open
+                className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg border border-slate-200 text-slate-600 hover:border-teal-400 hover:text-teal-600"
+                title={lang === "en" ? "Change the 1st accessor of many controls in one approval" : "여러 통제 항목의 1차 담당자를 결재 한 건으로 바꿉니다(휴직 · 이동 등)"}>
+                <Users size={14} /> {lang === "en" ? "Bulk accessor change" : "담당자 일괄 변경"}
+              </button>
+            )}
             {canEdit && (
               <button onClick={openAdd} className="flex items-center gap-1.5 text-white text-sm font-medium px-4 py-2 rounded-lg" style={{ backgroundColor: BRAND.accent }}>
                 <Plus size={16} /> {t("manage.addBtn")}
@@ -5022,6 +5216,12 @@ Continue?`
         </Modal>
       )}
 
+      {bulkOpen && (
+        <BulkAccessorModal controls={allControls} year={year} currentUser={currentUser} changeReqs={changeReqs} addLog={addLog} showToast={showToast}
+          onClose={() => setBulkOpen(false)}
+          onDone={(codes, req) => { setChangeReqs((prev) => { const n = { ...prev }; codes.forEach((c) => { n[c] = req; }); return n; }); setBulkOpen(false); }} />
+      )}
+
       {confirmDelete && (
         <Modal title={t("manage.deleteTitle")} onClose={() => { setConfirmDelete(null); setDeleteReason(""); }}>
           <p className="text-sm text-slate-600 mb-5">
@@ -5189,14 +5389,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
   useEffect(() => {
     if (!usingSharePointData) { setChangeReqsLoading(false); return; }
     loadIcsChangeRequests()
-      .then((list) => {
-        const map = {};
-        list.forEach((r) => {
-          const prev = map[r.code];
-          if (!prev || (r.status === "pending" && prev.status !== "pending")) map[r.code] = r;
-        });
-        setChangeReqs(map);
-      })
+      .then((list) => { setChangeReqs(icsChangeReqMap(list)); })   // 진행 중인 담당자 일괄 변경(10-20) 항목도 잠근다
       .catch((e) => console.warn("[ICS] 변경 요청 로드 실패:", e.message))
       .finally(() => setChangeReqsLoading(false));
   }, []);
@@ -8075,6 +8268,7 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
     .sort(byNewest);
 
   function labelOf(r) {
+    if (icsIsBulk(r)) return icsBulkLabel(r, lang);   // 담당자 일괄 변경(10-20)
     const c = controls.find((x) => x.code === r.code && x.year === r.year);
     return c ? cName(c, lang) : r.code;
   }
@@ -8154,7 +8348,10 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
       // PATCH 가 실패하면 같은 건이 한 번 더 보이지만, 같은 값을 다시 쓰는 것이라
       // 결과가 달라지지 않는다(삭제는 이미 사라진 항목이라 아래 「없음」 안내로 빠진다).
       let applied = null;
-      if (nextStatus === "approved") {
+      if (nextStatus === "approved" && icsIsBulk(r)) {
+        // 담당자 일괄 변경(10-20) — 항목마다 반영하고 결과는 아래 요청 저장 때 Payload.result 로 함께 남긴다
+        applied = { kind: "bulk", result: await icsApplyBulkAccessor(r, controls) };
+      } else if (nextStatus === "approved") {
         const target = controls.find((x) => x.code === r.code && x.year === r.year);
         if (!target) {
           // 결재 진행 중에 대상 통제 항목이 사라진 경우(다른 삭제 요청이 먼저 승인되는 등).
@@ -8185,6 +8382,7 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
 
       await icsUpdateItem(ICS_LISTS.changeRequests, r.spId, {
         Steps: JSON.stringify(steps), Step: nextStep, Status: nextStatus,
+        ...(applied && applied.kind === "bulk" ? { Payload: JSON.stringify({ ...(r.payload || {}), result: applied.result }) } : {}),
       });
 
       // Power Automate 메일용 결재행에도 같은 결과를 남긴다.
@@ -8197,7 +8395,13 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
 
       // 화면 반영은 두 저장이 모두 끝난 뒤에 한다. 먼저 지워 버리면 요청 PATCH 가
       // 실패했을 때 화면과 서버가 어긋난다.
-      if (applied && applied.kind === "delete") {
+      if (applied && applied.kind === "bulk") {
+        const ids = new Set(applied.result.done.map((d) => d.id)), to = applied.result.to;
+        setControls((prev) => prev.map((x) => (ids.has(x.id) ? { ...x, accessor: to } : x)));
+        if (applied.result.skipped.length) alert(lang === "en"
+          ? `${applied.result.done.length} item(s) changed. ${applied.result.skipped.length} skipped because the item no longer exists or its accessor was already changed:\n${applied.result.skipped.map((x) => x.code).join(", ")}`
+          : `${applied.result.done.length}건을 바꿨습니다. ${applied.result.skipped.length}건은 항목이 없거나 그사이 담당자가 바뀌어 건너뛰었습니다:\n${applied.result.skipped.map((x) => x.code).join(", ")}`);
+      } else if (applied && applied.kind === "delete") {
         setControls((prev) => prev.filter((x) => x.id !== applied.target.id));
       } else if (applied && applied.kind === "edit") {
         const pl = applied.pl;
@@ -8339,6 +8543,7 @@ function RequestTable({ rows, controls, kind, onPick }) {
   const ell = { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
 
   const labelOf = (r) => {
+    if (icsIsBulk(r)) return icsBulkLabel(r, lang);   // 담당자 일괄 변경(10-20)
     const c = controls.find((x) => x.code === r.code && x.year === r.year);
     return c ? cName(c, lang) : r.code;
   };
@@ -8388,9 +8593,7 @@ function RequestTable({ rows, controls, kind, onPick }) {
                 <td className={td} style={ell} title={labelOf(r)}>{labelOf(r)}</td>
                 <td className={td}>
                   <span className="px-2 pt-[4px] pb-[5px] leading-none rounded-full text-[11px] font-medium whitespace-nowrap"
-                        style={{ backgroundColor: r.reqType === "delete" ? "#FEE2E2" : "#E4F1F0",
-                                 color: r.reqType === "delete" ? "#B91C1C" : BRAND.accent }}>
-                    {r.reqType === "delete" ? t("approval.typeDelete") : t("approval.typeEdit")}
+                        style={{ backgroundColor: icsReqChip(r, t, lang).bg, color: icsReqChip(r, t, lang).fg }}>{icsReqChip(r, t, lang).label}
                   </span>
                 </td>
                 <td className={td} style={ell} title={r.requester}>{nameOfEmail(r.requester)}</td>
@@ -8629,7 +8832,7 @@ async function _icsExportFinalReportPdfRaw(lang, ctx, onProgress) {
   const stepName = (st) => !st ? "–" : (st.role === "LM1" || st.role === "MC") ? (L === "en" ? "1st MC" : "1차 MC") : st.role === "LM2" ? (L === "en" ? "1st MC" : "1차 MC") : st.role === "ICS_CONTACT" ? (L === "en" ? "2nd ICS Admin" : "2차 ICS Admin") : (L === "en" ? "3rd CFO" : "3차 CFO");
   const reqRows = requests.sort((a, b) => String(b.created || "").localeCompare(String(a.created || ""))).map((r) => { const steps = Array.isArray(r.steps) ? r.steps : []; const last = [...steps].reverse().find((st) => st.status && st.status !== "pending"); const cur = r.status === "pending" ? steps[(r.step || 1) - 1] : null;
     const stTxt = r.status === "approved" ? `<span style="color:#166A43;font-weight:600">${T.stApproved}</span>` : r.status === "rejected" ? `<span style="color:#8F2822;font-weight:600">${T.stRejected}</span>` : `<span style="color:#A6631E;font-weight:600">${T.stPending}</span>`;
-    return [`<span style="font-family:Consolas,monospace;font-size:9px">${esc(r.code)}</span>`, r.reqType === "delete" ? T.typeDelete : T.typeEdit, esc(who(r.requester)), r.created ? esc(fmtD(r.created).slice(0, 10)) : "–", cur ? `(${r.step}/${steps.length}) ${stepName(cur)} · ${esc(who(cur.approver))}` : T.stageDone, stTxt, last ? `${esc(who(last.approver))} · ${esc(fmtD(last.date).slice(0, 16))}` : "–"]; });
+    return [`<span style="font-family:Consolas,monospace;font-size:9px">${esc(r.code)}</span>`, (icsIsBulk(r) ? (L === "en" ? "Bulk accessor" : "담당자 일괄") : r.reqType === "delete" ? T.typeDelete : T.typeEdit), esc(who(r.requester)), r.created ? esc(fmtD(r.created).slice(0, 10)) : "–", cur ? `(${r.step}/${steps.length}) ${stepName(cur)} · ${esc(who(cur.approver))}` : T.stageDone, stTxt, last ? `${esc(who(last.approver))} · ${esc(fmtD(last.date).slice(0, 16))}` : "–"]; });
   seg(`<div>${H2(`${T.s8} (${requests.length})`)}${requests.length ? TBL([{ t: T.colCode, w: "11%" }, { t: T.colType, w: "7%" }, { t: T.colRequester, w: "15%" }, { t: T.colRequested, w: "11%" }, { t: T.colStage, w: "24%" }, { t: T.colStatus, w: "9%" }, { t: T.colDecided, w: "23%" }], reqRows) : P(T.s8None)}</div>`);
   // 9 결론·확인
   const sign = (title, info) => `<td style="width:50%;vertical-align:top;padding:0 8px 0 0"><div style="border:1px solid ${RULE};padding:12px 14px;min-height:112px"><div style="font-size:11px;font-weight:700;color:${NAVY};margin-bottom:8px">${esc(title)}</div>
@@ -9744,6 +9947,7 @@ async function exportRequestPdf(bodyId, fileName, title) {
 function RequestDetailModal({ r, controls, onClose, canAct, canCancel, acting, comment, setComment, onAct, onCancelReq }) {
   const { lang, t } = useLang();
   const { users } = useAppData();
+  const [pdfBusy, setPdfBusy] = useState(false);   // 훅은 아래 「r 없음」 조기 반환보다 먼저(10-20 — 승인 뒤 닫힐 때 훅 순서 경고)
   if (!r) return null;
 
   const c = controls.find((x) => x.code === r.code && x.year === r.year);
@@ -9772,7 +9976,6 @@ function RequestDetailModal({ r, controls, onClose, canAct, canCancel, acting, c
     </div>
   );
 
-  const [pdfBusy, setPdfBusy] = useState(false);
   const bodyId = "ics-req-detail-body";
   async function onPdf() {
     setPdfBusy(true);
@@ -9806,9 +10009,7 @@ function RequestDetailModal({ r, controls, onClose, canAct, canCancel, acting, c
         {/* 화면용 모양은 단순하게 둔다. PDF 정렬은 exportRequestPdf 가 캡처 직전에
             배경과 여백을 걷어내는 방식으로 해결한다(그 함수 주석 참고). */}
         <span className="text-xs px-3 py-1 rounded-full font-semibold"
-              style={{ backgroundColor: r.reqType === "delete" ? "#FEE2E2" : "#E4F1F0",
-                       color: r.reqType === "delete" ? "#B91C1C" : BRAND.accent }}>
-          {r.reqType === "delete" ? t("approval.typeDelete") : t("approval.typeEdit")}
+              style={{ backgroundColor: icsReqChip(r, t, lang).bg, color: icsReqChip(r, t, lang).fg }}>{icsReqChip(r, t, lang).label}
         </span>
         <span className="text-xs px-3 py-1 rounded-full font-semibold"
               style={{ backgroundColor: S.bg, color: S.fg }}>{S.label}</span>
@@ -9834,6 +10035,7 @@ function RequestDetailModal({ r, controls, onClose, canAct, canCancel, acting, c
 
       {/* 무엇을 어떻게 바꾸려 했는지. 삭제 요청은 비교할 대상이 없다. */}
       {r.reqType === "edit" && <DiffTable r={r} controls={controls} />}
+      {icsIsBulk(r) && <BulkAccessorTable r={r} controls={controls} />}
       {r.reqType === "delete" && (
         <div className="bg-red-50 rounded-lg p-3 mt-3 text-xs text-red-700">{t("approval.deleteNotice")}</div>
       )}
@@ -9971,6 +10173,7 @@ function MyApprovalsPage({ controls, currentUser }) {
   useEffect(() => { reload(); }, []);
 
   function labelOf(r) {
+    if (icsIsBulk(r)) return icsBulkLabel(r, lang);   // 담당자 일괄 변경(10-20)
     const c = controls.find((x) => x.code === r.code && x.year === r.year);
     return c ? cName(c, lang) : r.code;
   }
@@ -10069,9 +10272,7 @@ function MyApprovalsPage({ controls, currentUser }) {
                     <td className={td} style={ell} title={labelOf(r)}>{labelOf(r)}</td>
                     <td className={td}>
                       <span className="px-2 pt-[4px] pb-[5px] leading-none rounded-full text-[11px] font-medium whitespace-nowrap"
-                            style={{ backgroundColor: r.reqType === "delete" ? "#FEE2E2" : "#E4F1F0",
-                                     color: r.reqType === "delete" ? "#B91C1C" : BRAND.accent }}>
-                        {r.reqType === "delete" ? t("approval.typeDelete") : t("approval.typeEdit")}
+                            style={{ backgroundColor: icsReqChip(r, t, lang).bg, color: icsReqChip(r, t, lang).fg }}>{icsReqChip(r, t, lang).label}
                       </span>
                     </td>
                     <td className={td} style={ell} title={r.requester}>{nameOfEmail(r.requester)}</td>
@@ -10121,6 +10322,7 @@ function ApprovalHistoryPage({ controls }) {
   useEffect(() => { reload(); }, []);
 
   function labelOf(r) {
+    if (icsIsBulk(r)) return icsBulkLabel(r, lang);   // 담당자 일괄 변경(10-20)
     const c = controls.find((x) => x.code === r.code && x.year === r.year);
     return c ? cName(c, lang) : r.code;
   }
@@ -10237,9 +10439,7 @@ function ApprovalHistoryPage({ controls }) {
                           title={labelOf(r)}>{labelOf(r)}</td>
                       <td className={td}>
                         <span className="px-2 pt-[4px] pb-[5px] leading-none rounded-full text-[11px] font-medium whitespace-nowrap"
-                              style={{ backgroundColor: r.reqType === "delete" ? "#FEE2E2" : "#E4F1F0",
-                                       color: r.reqType === "delete" ? "#B91C1C" : BRAND.accent }}>
-                          {r.reqType === "delete" ? t("approval.typeDelete") : t("approval.typeEdit")}
+                              style={{ backgroundColor: icsReqChip(r, t, lang).bg, color: icsReqChip(r, t, lang).fg }}>{icsReqChip(r, t, lang).label}
                         </span>
                       </td>
                       <td className={td} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
@@ -10292,6 +10492,7 @@ function ChangeHistoryPage({ controls, currentUser }) {
   useEffect(() => { reload(); }, []);
 
   function labelOf(r) {
+    if (icsIsBulk(r)) return icsBulkLabel(r, lang);   // 담당자 일괄 변경(10-20)
     const c = controls.find((x) => x.code === r.code && x.year === r.year);
     return c ? cName(c, lang) : r.code;
   }
@@ -10396,9 +10597,7 @@ function ChangeHistoryPage({ controls, currentUser }) {
                     <td className={td} style={ell} title={labelOf(r)}>{labelOf(r)}</td>
                     <td className={td}>
                       <span className="px-2 pt-[4px] pb-[5px] leading-none rounded-full text-[11px] font-medium whitespace-nowrap"
-                            style={{ backgroundColor: r.reqType === "delete" ? "#FEE2E2" : "#E4F1F0",
-                                     color: r.reqType === "delete" ? "#B91C1C" : BRAND.accent }}>
-                        {r.reqType === "delete" ? t("approval.typeDelete") : t("approval.typeEdit")}
+                            style={{ backgroundColor: icsReqChip(r, t, lang).bg, color: icsReqChip(r, t, lang).fg }}>{icsReqChip(r, t, lang).label}
                       </span>
                     </td>
                     <td className={td} style={ell} title={r.requester}>{nameOfEmail(r.requester)}</td>
