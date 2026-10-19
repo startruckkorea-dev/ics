@@ -3712,14 +3712,14 @@ function ReturnReasonPopup({ control: c, phase, onClose }) {
           {isa ? (
             <StageCard
               stage="isaSelf" control={c} title={t("detail.selfAssessment")}
-              risk={c.selfRisk} who={personByEmail(c.accessor, lang, users)} when={c.selfDate}
+              risk={c.selfRisk} who={personByEmail(c.accessor, lang, users)} actor={c.selfActor} when={c.selfDate}
               text={lang === "en" ? c.selfCommentEn || c.selfComment : c.selfComment}
               empty={t("detail.noSelf")}
             />
           ) : (
             <StageCard
               stage="fsaSelf" control={c} title={t("detail.fsa")}
-              risk={c.fsaRisk} who={personByEmail(c.accessor, lang, users)} when={c.fsaDate}
+              risk={c.fsaRisk} who={personByEmail(c.accessor, lang, users)} actor={c.fsaActor} when={c.fsaDate}
               text={lang === "en" ? c.fsaCommentEn || c.fsaComment : c.fsaComment}
               empty={t("detail.noFsa")}
             />
@@ -4043,7 +4043,7 @@ function ControlDetailBody({ control: c }) {
       <div className="border-t border-slate-100 pt-4 space-y-2">
         <StageCard
           stage="isaSelf" control={c} title={t("detail.selfAssessment")}
-          risk={c.selfRisk} who={personByEmail(c.accessor, lang, users)} when={c.selfDate}
+          risk={c.selfRisk} who={personByEmail(c.accessor, lang, users)} actor={c.selfActor} when={c.selfDate}
           text={lang === "en" ? c.selfCommentEn || c.selfComment : c.selfComment}
           empty={t("detail.noSelf")}
         />
@@ -4055,7 +4055,7 @@ function ControlDetailBody({ control: c }) {
         />
         <StageCard
           stage="fsaSelf" control={c} title={t("detail.fsa")}
-          risk={c.fsaRisk} who={personByEmail(c.accessor, lang, users)} when={c.fsaDate}
+          risk={c.fsaRisk} who={personByEmail(c.accessor, lang, users)} actor={c.fsaActor} when={c.fsaDate}
           text={lang === "en" ? c.fsaCommentEn || c.fsaComment : c.fsaComment}
           empty={t("detail.noFsa")}
         />
@@ -5468,7 +5468,10 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
       );
       if (docFilled && !docSaved) showToast(t("self.docSaveFailed"));
       // 배정된 담당자가 아닌 사람(부서 Accessor 권한)이 제출했으면 실제 제출자를 남긴다(10-19 · 열 SelfActor) — 실패해도 제출은 그대로
-      await icsSaveActor(spId, "SelfActor", currentUser, c.accessor, (m) => alert(m));
+      const selfActor = await icsSaveActor(spId, "SelfActor", currentUser, c.accessor, (m) => alert(m));
+      // 배정 담당자 본인이 다시 제출했으면 예전 부서 권한 제출자 표시를 지운다(철회 → 재제출)
+      if (!selfActor && c.selfActor) icsUpdateItem(ICS_LISTS.requests, spId, { SelfActor: "" }).catch((e) => console.warn("[ICS] SelfActor 정리 실패:", e.message));
+      setControls((prev) => prev.map((x) => (x.id === c.id ? { ...x, selfActor } : x)));
       addLog(currentUser.email, "submit_self", c.code, c.name, c.nameEn);
       showToast(lang === "en" ? "Self-assessment submitted." : "자가평가가 제출되었습니다.");
     } catch (e) {
@@ -7282,7 +7285,9 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
         )
       );
       if (docFilled && !docSaved) showToast(t("self.docSaveFailed"));
-      await icsSaveActor(c.requestSpId, "FsaActor", currentUser, c.accessor, (m) => alert(m));   // 부서 Accessor 권한 제출자(10-19 · 열 FsaActor)
+      const fsaActor = await icsSaveActor(c.requestSpId, "FsaActor", currentUser, c.accessor, (m) => alert(m));   // 부서 Accessor 권한 제출자(10-19 · 열 FsaActor)
+      if (!fsaActor && c.fsaActor) icsUpdateItem(ICS_LISTS.requests, c.requestSpId, { FsaActor: "" }).catch((e) => console.warn("[ICS] FsaActor 정리 실패:", e.message));
+      setControls((prev) => prev.map((x) => (x.id === c.id ? { ...x, fsaActor } : x)));
       addLog(currentUser.email, "fsa_submit", c.code, c.name, c.nameEn);
       showToast(lang === "en" ? "Final self-assessment submitted." : "최종 자가평가가 제출되었습니다.");
     } catch (e) {
@@ -8714,9 +8719,9 @@ function buildControlDocHtml(c, lang, users, departments) {
     ${R(L("FSA 샘플링", "FSA sampling"), c.fsaFrequency || c.fsaActualSample != null
       ? esc(freqLabel(c.fsaFrequency || c.frequency, lang)) + " · " + esc(importanceLabel(c.fsaImportance || c.importance, lang)) + " · " + esc((c.fsaActualSample == null ? "-" : c.fsaActualSample)) + " / " + esc(recommendedSample(c.fsaImportance || c.importance, c.fsaFrequency || c.frequency))
       : dash)}
-    ${stage(L("ISA 1차 자가평가", "ISA 1st self-assessment"), "isaSelf", c.selfRisk, personByEmail(c.accessor, lang, users), "", c.selfDate, lang === "en" ? c.selfCommentEn || c.selfComment : c.selfComment)}
+    ${stage(L("ISA 1차 자가평가", "ISA 1st self-assessment"), "isaSelf", c.selfRisk, personByEmail(c.accessor, lang, users), c.selfActor, c.selfDate, lang === "en" ? c.selfCommentEn || c.selfComment : c.selfComment)}
     ${stage(L("ISA 2차 검토", "ISA 2nd review"), "isaReview", c.reviewRisk, personByEmail(c.reviewer, lang, users), c.reviewActor, c.reviewDate, lang === "en" ? c.reviewCommentEn || c.reviewComment : c.reviewComment)}
-    ${stage(L("FSA 최종 자가평가", "FSA final self-assessment"), "fsaSelf", c.fsaRisk, personByEmail(c.accessor, lang, users), "", c.fsaDate, lang === "en" ? c.fsaCommentEn || c.fsaComment : c.fsaComment)}
+    ${stage(L("FSA 최종 자가평가", "FSA final self-assessment"), "fsaSelf", c.fsaRisk, personByEmail(c.accessor, lang, users), c.fsaActor, c.fsaDate, lang === "en" ? c.fsaCommentEn || c.fsaComment : c.fsaComment)}
     ${stage(L("FSA 2차 검토", "FSA 2nd review"), "fsaReview", c.fsaReviewRisk, personByEmail(c.reviewer, lang, users), c.fsaReviewActor, c.fsaReviewDate, lang === "en" ? c.fsaReviewCommentEn || c.fsaReviewComment : c.fsaReviewComment)}
   </div>`;
 }
@@ -14361,6 +14366,8 @@ async function loadIcsControls() {
       try { const d = JSON.parse(stripSpRichText(f[DRAFT_FIELD])); if (d && typeof d === "object" && d.stage) match.draft = d; }
       catch (e) { console.warn("[ICS] 임시 저장 JSON 해석 실패:", match.code, e.message); }
     }
+    match.selfActor = stripSpRichText(f.SelfActor) || "";            // 배정 담당자와 다른 실제 제출자(부서 Accessor 권한 · 10-19)
+    match.fsaActor = stripSpRichText(f.FsaActor) || "";
     match.reviewRisk = f.ReviewRisk || null;
     match.reviewComment = stripSpRichText(f.ReviewCommentKo) || "";
     match.reviewCommentEn = stripSpRichText(f.ReviewCommentEn) || "";
