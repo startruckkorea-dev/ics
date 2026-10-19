@@ -181,6 +181,7 @@ import {
   BookOpen,
   RefreshCw,
   MoreHorizontal,
+  LogIn,
 } from "lucide-react";
 import {
   BarChart,
@@ -251,7 +252,16 @@ let ICS_CATEGORY_ACCESS = {};
 // 역할(Admin · CFO · RD)로 들어오는 기본 권한도 ViewOnly 에 키가 없으면 편집이다. 알아볼 수 없는 값이면 전부 보기만(fail-closed).
 let ICS_ACCESS_LOADED = false;          // ICS_CategoryAccess 를 제대로 읽었는지 — 못 읽었으면 권한이 필요한 화면은 편집 잠금(fail-closed)
 const ICS_VIEWONLY_FIELD = "ViewOnly";
-const ICS_VIEW_NATURE = new Set(["history"]);   // 조회만 하는 화면(평가 이력 · 리포트)
+const ICS_VIEW_NATURE = new Set(["history", "accessLog"]);   // 조회만 하는 화면(평가 이력 · 리포트 · 접속 기록)
+// 접속 기록 권한(10-19 · ics-access) — ICS_CategoryAccess 의 AccessLog 열(한 줄 텍스트 Y/N). 비어 있으면(열을 새로 만든 직후의 기존 행 · 열이 없을 때)
+// 「관리자 전용」(Admin 역할 포함) 값을 따른다 — MKQR 접속 기록(Access_accessLog ← Access_admins)과 같은 규칙.
+const ICS_ACCESSLOG_FIELD = "AccessLog";
+function icsAccessLogRaw(v) {
+  const s = String(v == null ? "" : v).trim().toUpperCase();
+  if (["Y", "TRUE", "1", "YES"].includes(s)) return "Y";
+  if (["N", "FALSE", "0", "NO"].includes(s)) return "N";
+  return "";
+}
 function icsParseViewOnly(raw) {
   const s = raw == null ? "" : String(raw).trim();
   if (!s) return [];
@@ -291,6 +301,11 @@ function hasCategoryAccess(user, categoryKey) {
   if (categoryKey === "history") {
     return hasCategoryAccess(user, "review") || hasCategoryAccess(user, "fsa") || hasCategoryAccess(user, "fsaReview");
   }
+  // 접속 기록(10-19) — AccessLog 열에 Y/N 이 있으면 그 값, 비어 있으면 「관리자 전용」 · Admin 역할을 따른다
+  if (categoryKey === "accessLog") {
+    if (grant && (grant.alRaw === "Y" || grant.alRaw === "N")) return grant.alRaw === "Y";
+    return isIcsAdmin(user);
+  }
   if (grant && grant[categoryKey]) return true;
   if (categoryKey === "adminOnly") return user.role === "admin";
   // controlMgmt 는 page === "list"(부서별 통제 현황) 하나만 여는데, 그 화면으로 가는
@@ -318,7 +333,7 @@ function icsCanEdit(user, key) {
 function isIcsAdminEditor(user) { return isIcsAdmin(user) && icsCanEdit(user, "adminOnly"); }
 // 화면 → 편집 판정 키(쓰기 잠금 · 보기 전용 띠). 없는 화면(대시보드 · 결재 승인 · 나의 결재 이력)은 지금 그대로.
 const ICS_PAGE_EDIT_KEY = { self: "self", review: "review", fsa: "fsa", fsaReview: "fsaReview", history: "history",
-  settings: "adminOnly", manage: "adminOnly", permissions: "adminOnly", categoryAccess: "adminOnly", historyAll: "adminOnly",
+  settings: "adminOnly", manage: "adminOnly", permissions: "adminOnly", categoryAccess: "adminOnly", historyAll: "adminOnly", accessLog: "accessLog",
   approvalHistory: "executive", changeHistory: "executive", finalReport: "executive", list: "controlMgmt", learn: "learn" };
 // 쓰기 잠금 — 버튼을 숨기는 것과 별개로 마지막 안전장치. App 이 그릴 때마다 지금 화면 기준으로 바꾼다(활동 로그 기록은 예외).
 let _icsWriteBlock = false;
@@ -644,6 +659,8 @@ const ACTION_LABELS = {
   pdf_final_report: { ko: "최종 결과 보고서 PDF 출력", en: "Final report PDF exported" },
   pdf_final_report_failed: { ko: "최종 결과 보고서 PDF 출력 실패", en: "Final report PDF export failed" },
   pdf_control_package: { ko: "통제 패키지 PDF 출력", en: "Control package PDF exported" },
+  export_access_log: { ko: "접속 기록 Excel 내보내기", en: "Access log exported to Excel" },
+  export_access_log_failed: { ko: "접속 기록 Excel 내보내기 실패", en: "Access log Excel export failed" },
   pdf_control_package_failed: { ko: "통제 패키지 PDF 출력 실패", en: "Control package PDF export failed" },
   pdf_request: { ko: "결재 요청 상세 PDF 출력", en: "Approval request PDF exported" },
   pdf_request_failed: { ko: "결재 요청 상세 PDF 출력 실패", en: "Approval request PDF export failed" },
@@ -661,7 +678,8 @@ const ACTION_LABELS = {
 // 10-15 전사 평가 이력 「출력 · 다운로드만」 보기에 쓰는 행위 키
 const ICS_OUTPUT_ACTIONS = new Set(["export_excel", "export_excel_failed", "download_template", "download_template_failed",
   "pdf_final_report", "pdf_final_report_failed", "pdf_control_package", "pdf_control_package_failed", "pdf_request", "pdf_request_failed",
-  "pdf_control_doc", "pdf_control_doc_failed", "download_attachment", "download_attachment_failed", "download_manual", "download_manual_failed"]);
+  "pdf_control_doc", "pdf_control_doc_failed", "download_attachment", "download_attachment_failed", "download_manual", "download_manual_failed",
+  "export_access_log", "export_access_log_failed"]);
 
 // 실제 사용자 목록은 로그인 시 ics_category_access.xlsx의 Users 시트에서
 // loadIcsMasterConfig()가 채워 넣는다. 이름·이메일 등 개인정보를 git 저장소에 하드코딩하지 않기 위해 여기서는 항상 빈 배열로 시작한다.
@@ -1138,6 +1156,7 @@ const STR = {
       settings: "부서 및 ISA · FSA사용자 권한",
       categoryAccess: "카테고리 접근 권한",
       historyAll: "전사 평가 이력 · 리포트",
+      accessLog: "접속 기록",
       permissions: "권한 관리",
       myApprovals: "내가 처리한 변경 결재",
       approvalHistory: "변경 결재 전체 이력",
@@ -1654,6 +1673,7 @@ const STR = {
       settings: "Dept. & ISA/FSA User Access",
       categoryAccess: "Category Access",
       historyAll: "All-Dept History & Reports",
+      accessLog: "Access Log",
       permissions: "Access Control",
       myApprovals: "Changes I decided",
       approvalHistory: "All change approvals",
@@ -2361,6 +2381,8 @@ const MENU_GROUPS = [
     { key: "manage", icon: ClipboardEdit, categoryKey: "adminOnly" },
     { key: "permissions", icon: KeyRound },
     { key: "categoryAccess", icon: KeyRound },
+    // 접속 기록(10-19 · ics-access) — MKQR · Training365 와 같은 화면. 권한 열 AccessLog(비어 있으면 관리자 전용 값)
+    { key: "accessLog", icon: LogIn, categoryKey: "accessLog" },
     // 전사 평가 이력 · 리포트(10-08). 평가 그룹의 「평가 이력 · 리포트」 는 Admin 이라도 본인 배정분만 보여 주므로,
     // 관리자가 모든 부서의 평가 활동을 한 화면에서 보는 자리를 관리자 전용에 둔다. 같은 HistoryPage 를 scope="all" 로 연다.
     { key: "historyAll", icon: History, categoryKey: "adminOnly" },
@@ -8929,16 +8951,20 @@ async function _icsExportControlPackagePdfRaw(controls, lang, users, departments
   const printW = A4W - margin * 2, printH = A4H - margin * 2 - hdrH;
   const now = new Date(new Date().getTime() + 9 * 3600 * 1000);
   const ds = now.toISOString().slice(0, 16).replace("T", " ");
+  const stamp = apsPrintStamp("출력일시: " + ds);   // APS-PRINTER v1(10-19) — 통제 패키지 머리띠에도 출력자
   const b64 = (u) => { const bin = atob(String(u).slice(String(u).indexOf(",") + 1)); const out = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i); return out; };
   const hdrPng = (left) => {
     const hc = document.createElement("canvas"); hc.width = 1190; hc.height = 28;
     const hx = hc.getContext("2d");
     const g = hx.createLinearGradient(0, 0, hc.width, 0); g.addColorStop(0, "#0f2744"); g.addColorStop(1, "#0a4a8a");
     hx.fillStyle = g; hx.fillRect(0, 0, hc.width, hc.height);
-    hx.fillStyle = "#fff"; hx.font = "500 13px 'Malgun Gothic',sans-serif"; hx.textBaseline = "middle";
-    hx.fillText(left, 14, 13);
+    // 오른쪽 「출력자: 이름  ·  출력일시: …」(APS-PRINTER v1 · 10-19 통제 패키지에도) — 긴 제목(첨부 파일명)은 가운데를 줄인다
+    hx.textBaseline = "middle"; hx.font = "400 12px 'Malgun Gothic',sans-serif";
+    const rw = hx.measureText(stamp).width;
+    hx.fillStyle = "#fff"; hx.font = "500 13px 'Malgun Gothic',sans-serif";
+    hx.fillText(apsFitText(hx, left, hc.width - rw - 58), 14, 13);
     hx.textAlign = "right"; hx.font = "400 12px 'Malgun Gothic',sans-serif"; hx.fillStyle = "rgba(255,255,255,.6)";
-    hx.fillText(ds, hc.width - 14, 13);
+    hx.fillText(stamp, hc.width - 14, 13);
     return b64(hc.toDataURL("image/png"));
   };
 
@@ -9343,6 +9369,7 @@ async function icsBuildDocPdf(c, doc, lang, users, departments, stage) {
   const A4W = 595, A4H = 842, margin = 30, hdrH = 22;
   const printW = A4W - margin * 2, printH = A4H - margin * 2 - hdrH;
   const ds = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 16).replace("T", " ");
+  const stamp = apsPrintStamp("출력일시: " + ds);   // APS-PRINTER v1(10-19) — 통제기술서 · 테스트 문서 서식에도 출력자
   const b64 = (u) => { const bin = atob(String(u).slice(String(u).indexOf(",") + 1)); const o = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) o[i] = bin.charCodeAt(i); return o; };
   // IT Ticket · GW 와 같은 상단 띠 — 남색 그라데이션 · 흰 글자 · 아래 파란 줄
   const band = (left) => {
@@ -9351,10 +9378,12 @@ async function icsBuildDocPdf(c, doc, lang, users, departments, stage) {
     const g = hx.createLinearGradient(0, 0, hc.width, 0); g.addColorStop(0, "#0f2744"); g.addColorStop(1, "#0a4a8a");
     hx.fillStyle = g; hx.fillRect(0, 0, hc.width, hc.height);
     hx.fillStyle = "#3b82f6"; hx.fillRect(0, hc.height - 2, hc.width, 2);
-    hx.fillStyle = "#fff"; hx.font = '500 13px "Malgun Gothic","Apple SD Gothic Neo",sans-serif'; hx.textBaseline = "middle";
-    hx.fillText(left, 14, 13);
+    hx.textBaseline = "middle"; hx.font = '400 12px "Malgun Gothic","Apple SD Gothic Neo",sans-serif';
+    const rw = hx.measureText(stamp).width;   // 오른쪽 「출력자 · 출력일시」(APS-PRINTER v1 · 10-19)
+    hx.fillStyle = "#fff"; hx.font = '500 13px "Malgun Gothic","Apple SD Gothic Neo",sans-serif';
+    hx.fillText(apsFitText(hx, left, hc.width - rw - 58), 14, 13);
     hx.textAlign = "right"; hx.font = '400 12px "Malgun Gothic","Apple SD Gothic Neo",sans-serif'; hx.fillStyle = "rgba(255,255,255,.6)";
-    hx.fillText(ds, hc.width - 14, 13);
+    hx.fillText(stamp, hc.width - 14, 13);
     return b64(hc.toDataURL("image/png"));
   };
   const host = document.createElement("div");
@@ -11081,6 +11110,223 @@ function SettingsPage({ currentUser, years, selectedYear, activeYear, startNewYe
 /* 카테고리 접근 권한 (조회 전용, ics_category_access.xlsx 기반)            */
 /* ------------------------------------------------------------------ */
 
+// ---- 접속 기록 화면(10-19 · ics-access) — MKQR · Training365 「접속 기록」과 같은 구성 ----------------------------------------
+function AccessLogPage() {
+  const { lang, t } = useLang();
+  const en = lang === "en";
+  const L = (ko, e) => (en ? e : ko);
+  const today = icsAccToday();
+  const [from, setFrom] = useState(icsAccDayAdd(today, -6));
+  const [to, setTo] = useState(today);
+  const [rows, setRows] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [missing, setMissing] = useState(false);
+  const [roleF, setRoleF] = useState("");
+  const [statusF, setStatusF] = useState("");
+  const [q, setQ] = useState("");
+  const [mode, setMode] = useState("session");
+  const [page, setPage] = useState(1);
+  const [detail, setDetail] = useState(null);
+  const [loaded, setLoaded] = useState("");
+  const PAGE_SIZE = 20;
+  const dir = new Map(ICS_EMPLOYEE_DIR.map((p) => [String(p.email || "").toLowerCase(), p]));   // 직원 명부(부서 표시용) — 없으면 부서 칸만 비운다
+  async function load(f = from, tt = to) {
+    if (!f || !tt || f > tt) { alert(L("조회 기간을 확인해 주세요.", "Please check the period.")); return; }
+    if (icsAccDayAdd(f, 92) < tt) { alert(L("한 번에 93일까지 조회할 수 있습니다. 기간을 줄여 주세요.", "Up to 93 days at a time — please shorten the period.")); return; }
+    setLoading(true); setError(""); setMissing(false);
+    const fi = icsAccDayStartIso(f), ti = icsAccDayStartIso(icsAccDayAdd(tt, 1));
+    try {
+      let list;
+      try { list = await icsListAll(ICS_LISTS.accessLog, `&$filter=${encodeURIComponent(`fields/LoginAt ge '${fi}' and fields/LoginAt lt '${ti}'`)}`); }
+      catch (e) { if (icsIsMissingList(e)) throw e; list = await icsListAll(ICS_LISTS.accessLog); }   // LoginAt 인덱스가 없을 때 — 전체를 읽어 화면에서 거른다
+      setRows(list.map((x) => ({ id: x.id, ...x.fields })).filter((r) => r.LoginAt && r.LoginAt >= fi && r.LoginAt < ti).sort((a, b) => String(b.LoginAt).localeCompare(String(a.LoginAt))));
+      setLoaded(`${f} ~ ${tt}`); setPage(1);
+    } catch (e) { setMissing(icsIsMissingList(e)); setError(e.message); setRows([]); }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, []);
+  useEffect(() => { setPage(1); }, [roleF, statusF, q, mode]);
+  const now = Date.now();
+  const stLabel = (st) => ICS_ACC_STATUS[st.k][en ? 1 : 0];
+  const roleText = (r) => (r === "권한 없음" ? L("권한 없음", "No access") : r || "-");
+  const deptOf = (email) => { const p = dir.get(String(email || "").toLowerCase()); return (p && (p.dept || p.team)) || ""; };
+  const enrich = (r) => { const st = icsSessionStatus(r, now); const end = st.end ? Date.parse(st.end) : now; return { ...r, Dept: r.Company || deptOf(r.UserEmail), st, dur: (end || now) - (Date.parse(r.LoginAt) || now) }; };
+  const qq = q.trim().toLowerCase();
+  const all = (rows || []).map(enrich);
+  const roles = [...new Set(all.map((r) => r.Role).filter(Boolean))].sort();
+  const view = all
+    .filter((r) => !roleF || r.Role === roleF).filter((r) => !statusF || r.st.k === statusF)
+    .filter((r) => !qq || [r.UserEmail, r.UserName, r.Dept, r.Device].some((v) => String(v || "").toLowerCase().includes(qq)));
+  const byUser = [...view.reduce((m, r) => {
+    const k = String(r.UserEmail || "").toLowerCase();
+    let o = m.get(k); if (!o) { o = { email: k, name: r.UserName || k, dept: r.Dept, role: r.Role, n: 0, last: null, logouts: 0, inferred: 0, blocked: 0, total: 0 }; m.set(k, o); }
+    o.n++; if (r.st.k !== "blocked") o.total += Math.max(0, r.dur);
+    if (r.st.k === "logout") o.logouts++; if (r.st.inferred) o.inferred++; if (r.st.k === "blocked") o.blocked++;
+    if (!o.last || r.LoginAt > o.last.LoginAt) { o.last = r; o.role = r.Role; }
+    return m;
+  }, new Map()).values()].sort((a, b) => String(b.last.LoginAt).localeCompare(String(a.last.LoginAt)));
+  const list = mode === "user" ? byUser : view;
+  const totalPages = Math.max(1, Math.ceil(list.length / PAGE_SIZE));
+  const pageSafe = Math.min(page, totalPages);
+  const pageRows = list.slice((pageSafe - 1) * PAGE_SIZE, pageSafe * PAGE_SIZE);
+  const cnt = (k) => view.filter((r) => r.st.k === k).length;
+  function exportExcel() {
+    const S = (k) => ICS_ACC_STATUS[k][0];   // 파일은 국문 머리글 — MKQR · Training365 와 같은 형식
+    const data = view.map((r, i) => ({ 번호: view.length - i, "로그인(KST)": icsAccFmt(r.LoginAt), 이름: r.UserName || "", 메일: r.UserEmail || "", 부서: r.Dept || "", 구분: r.Role || "", 상태: S(r.st.k),
+      "로그아웃/종료(KST)": r.st.end ? icsAccFmt(r.st.end) + (r.st.inferred ? " (추정)" : "") : "", "접속 시간": r.st.k === "blocked" ? "" : icsFmtDuration(r.dur), "마지막 활동(KST)": icsAccFmt(r.LastActivityAt), 기기: r.Device || "", 세션: r.Title || "" }));
+    const users = byUser.map((u) => ({ 이름: u.name, 메일: u.email, 부서: u.dept || "", 구분: u.role || "", 접속: u.n, 로그아웃: u.logouts, "세션 종료(추정)": u.inferred, "접근 차단": u.blocked, "마지막 로그인(KST)": icsAccFmt(u.last.LoginAt), "접속 시간 합": u.n === u.blocked ? "" : icsFmtDuration(u.total) }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data.length ? data : [{ 안내: "조회 결과가 없습니다." }]), "접속기록");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(users.length ? users : [{ 안내: "조회 결과가 없습니다." }]), "사용자별");
+    const cond = [roleF && `구분 ${roleF}`, statusF && `상태 ${S(statusF)}`, q.trim() && `검색 「${q.trim()}」`].filter(Boolean).join(" · ");
+    const condEn = [roleF && `role ${roleF}`, statusF && `status ${ICS_ACC_STATUS[statusF][1]}`, q.trim() && `search "${q.trim()}"`].filter(Boolean).join(" · ");
+    try { XLSX.writeFile(wb, `ICS_접속기록_${from}_${to}.xlsx`); }
+    catch (e) { icsLogOutput("export_access_log_failed", "-", `${from} ~ ${to} · ${data.length}건${cond ? ` · ${cond}` : ""} · 오류: ${icsErrText(e)}`, `${from} ~ ${to} · ${data.length} rows${condEn ? ` · ${condEn}` : ""} · error: ${icsErrText(e)}`); throw e; }
+    icsLogOutput("export_access_log", "-", `${from} ~ ${to} · ${data.length}건${cond ? ` · ${cond}` : ""}`, `${from} ~ ${to} · ${data.length} rows${condEn ? ` · ${condEn}` : ""}`);
+  }
+  function preset(days) { const f = days === 1 ? today : icsAccDayAdd(today, -(days - 1)); setFrom(f); setTo(today); load(f, today); }
+  const ctrl = "h-9 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#2F7B7A]/40";
+  const btn = "h-9 flex items-center gap-1.5 px-3 border border-slate-300 rounded-lg text-sm text-slate-600 bg-white hover:bg-slate-50 disabled:opacity-50";
+  const td = "px-3 h-8 align-middle overflow-hidden whitespace-nowrap text-ellipsis";
+  const dtShort = (v) => { const s = icsAccFmt(v); return s && s.length > 5 && s.slice(0, 4) === today.slice(0, 4) ? s.slice(5) : s; };   // 올해면 연도 생략(말풍선에 전체)
+  const curLen = Math.round((new Date(to + "T00:00:00Z") - new Date(from + "T00:00:00Z")) / 864e5) + 1;
+  const Role = ({ role }) => <span className={`text-[11px] px-2 rounded-full font-medium leading-5 inline-block whitespace-nowrap ${icsAccRoleCls(role)}`}>{roleText(role)}</span>;
+  const Row = ({ label, value }) => (
+    <div className="flex py-2 border-b border-slate-100 last:border-0">
+      <div className="w-36 shrink-0 text-xs text-slate-400">{label}</div>
+      <div className="text-sm text-slate-700 break-all">{value == null || value === "" ? "-" : value}</div>
+    </div>
+  );
+  const idleMin = Math.round(ICS_ACC_TIMING.idleEndMs / 60e3), beatMin = Math.round(ICS_ACC_TIMING.heartbeatMs / 60e3);
+  return (
+    <div>
+      <SectionHeader icon={LogIn} title={t("nav.accessLog")} subtitle={L("계정별 로그인 · 로그아웃 시각과 세션 종료(추정)를 조회하고 Excel 로 내보냅니다", "Sign-in and sign-out times per account, with estimated session ends — export to Excel")} />
+      <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 mb-4 text-xs text-slate-500 flex items-start gap-2.5 leading-relaxed">
+        <LogIn size={15} className="text-slate-400 shrink-0 mt-0.5" />
+        <div>{en
+          ? <>A row is added at each sign-in (after the user-master check), and the sign-out time is saved when 「Sign out」 is pressed. If the window is closed without signing out or there is no activity for over {idleMin} min, it counts as <b className="text-amber-700">Session ended (est.)</b> and the <b className="text-slate-600">last activity time</b> is used as the end (activity signal every {beatMin} min). Attempts by accounts not in the user master are saved as <b className="text-red-600">Blocked</b>.</>
+          : <>로그인(사용자 마스터 확인 통과 시점)마다 한 줄이 생기고, 「로그아웃」 단추를 누르면 로그아웃 시각이 남습니다. 로그아웃 없이 창을 닫거나 {idleMin}분 넘게 활동이 없으면 <b className="text-amber-700">세션 종료(추정)</b>로 보고 <b className="text-slate-600">마지막 활동 시각</b>을 종료 시각으로 씁니다(활동 신호 {beatMin}분 간격). 사용자 마스터에 없는 계정의 시도는 <b className="text-red-600">접근 차단</b>으로 남습니다.</>}</div>
+      </div>
+      {IcsSession.lastError && !missing && (
+        <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 mb-4 text-xs text-red-700 leading-relaxed break-all" data-testid="access-write-error">
+          <b>{L("이번 접속이 기록되지 않았습니다", "This sign-in was not recorded")}</b> — {IcsSession.lastError}<br />{L("목록 열 이름(내부 이름) · 종류와 목록 권한을 확인해 주세요. 고친 뒤 다시 로그인하면 기록됩니다.", "Check the list column names (internal names), types and list permissions, then sign in again.")}
+        </div>
+      )}
+      {missing ? (
+        <div className="bg-white rounded-xl border border-amber-200 shadow-sm p-5" data-testid="access-missing">
+          <div className="text-sm font-semibold text-amber-800 mb-1">{L("접속 기록 목록(SharePoint)이 아직 없습니다", "The access log list (SharePoint) does not exist yet")}</div>
+          <div className="text-xs text-slate-500 mb-3 leading-relaxed">{en
+            ? <>Create the list <b className="text-slate-700">{ICS_LISTS.accessLog}</b> and add the columns below (internal names as shown) — sign-ins are recorded from then on.</>
+            : <>목록 <b className="text-slate-700">{ICS_LISTS.accessLog}</b> 을 만들고 아래 열을 추가하면 그때부터 접속이 기록됩니다(내부 이름 그대로). 목록이 생기기 전 접속은 남지 않습니다.</>}</div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-[12.5px] border border-slate-200 rounded-lg overflow-hidden">
+              <thead className="bg-slate-50 text-slate-500 text-[11.5px]"><tr><th className="text-left px-3 py-1.5 font-medium w-44">{L("열 이름(내부 이름)", "Column (internal name)")}</th><th className="text-left px-3 py-1.5 font-medium w-36">{L("종류", "Type")}</th><th className="text-left px-3 py-1.5 font-medium">{L("설명", "Description")}</th></tr></thead>
+              <tbody>{ICS_ACCESS_COLUMNS.map(([n, ty, d]) => <tr key={n} className="border-t border-slate-100"><td className="px-3 py-1.5 font-mono text-slate-700">{n}</td><td className="px-3 py-1.5 text-slate-600">{ty}</td><td className="px-3 py-1.5 text-slate-500">{d}</td></tr>)}</tbody>
+            </table>
+          </div>
+        </div>
+      ) : (<>
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-4" data-testid="access-summary">
+        {[[L("접속", "Sign-ins"), view.length, L("건", "")], [L("사용자", "Users"), byUser.length, L("명", "")], [ICS_ACC_STATUS.logout[en ? 1 : 0], cnt("logout"), L("건", "")], [ICS_ACC_STATUS.inferred[en ? 1 : 0], cnt("inferred"), L("건", "")], [ICS_ACC_STATUS.active[en ? 1 : 0], cnt("active"), L("건", "")]].map(([l, v, u], i) => (
+          <div key={i} className={`bg-white rounded-xl border border-slate-200 shadow-sm px-4 py-3 ${i === 4 ? "col-span-2 lg:col-span-1" : ""}`}><div className="text-[11.5px] text-slate-500">{l}</div><div className="text-xl font-bold text-slate-800 tabular-nums">{v}<span className="text-xs font-normal text-slate-400 ml-0.5">{u}</span></div></div>
+        ))}
+      </div>
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2 flex-wrap">
+          <div className="flex items-center rounded-lg border border-slate-300 overflow-hidden h-9">
+            {[[1, L("오늘", "Today")], [7, L("7일", "7 days")], [30, L("30일", "30 days")]].map(([n, label], i) => { const on = to === today && curLen === n; return (
+              <button key={n} onClick={() => preset(n)} disabled={loading} className={`px-3 h-full text-sm ${i ? "border-l border-slate-300" : ""} ${on ? "text-white" : "text-slate-600 bg-white hover:bg-slate-50"}`} style={on ? { background: BRAND.accent } : undefined}>{label}</button>); })}
+          </div>
+          <div className="flex items-center gap-1 w-full sm:w-auto">
+            <input type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} className={`${ctrl} px-2 min-w-0 flex-1 sm:flex-none`} />
+            <span className="text-slate-400 text-xs">~</span>
+            <input type="date" value={to} min={from} max={today} onChange={(e) => setTo(e.target.value)} className={`${ctrl} px-2 min-w-0 flex-1 sm:flex-none`} />
+            <button onClick={() => load()} disabled={loading} className="h-9 text-sm px-4 rounded-lg text-white disabled:opacity-50 whitespace-nowrap" style={{ background: BRAND.accent }}>{L("조회", "Search")}</button>
+          </div>
+          <select value={roleF} onChange={(e) => setRoleF(e.target.value)} className={`${ctrl} px-3 w-32`} data-testid="access-role"><option value="">{L("전체 구분", "All roles")}</option>{roles.map((r) => <option key={r} value={r}>{roleText(r)}</option>)}</select>
+          <select value={statusF} onChange={(e) => setStatusF(e.target.value)} className={`${ctrl} px-3 w-40`} data-testid="access-status"><option value="">{L("전체 상태", "All statuses")}</option>{["logout", "inferred", "active", "blocked"].map((k) => <option key={k} value={k}>{ICS_ACC_STATUS[k][en ? 1 : 0]}</option>)}</select>
+          <div className="relative w-full sm:w-auto"><Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder={L("이름 · 메일 · 부서 · 기기", "Name · email · dept · device")} className={`${ctrl} pl-8 pr-3 w-full sm:w-56`} /></div>
+          <div className="ml-auto flex items-center gap-2">
+            <div className="flex items-center rounded-lg border border-slate-300 overflow-hidden h-9">
+              {[["session", L("세션별", "By session")], ["user", L("사용자별", "By user")]].map(([k, l], i) => <button key={k} onClick={() => setMode(k)} className={`px-3 h-full text-sm whitespace-nowrap ${i ? "border-l border-slate-300" : ""} ${mode === k ? "text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`} style={mode === k ? { background: BRAND.navy } : undefined} data-testid={`access-mode-${k}`}>{l}</button>)}
+            </div>
+            <button onClick={exportExcel} disabled={!view.length} className={`${btn} whitespace-nowrap`} data-testid="access-export"><Download size={14} /> {L("Excel 내보내기", "Export Excel")}</button>
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          {mode === "session" ? (
+            <table className="w-full table-fixed" style={{ minWidth: 960 }} data-testid="access-table">
+              <colgroup><col style={{ width: "15%" }} /><col style={{ width: "9%" }} /><col style={{ width: "13%" }} /><col style={{ width: "12%" }} /><col style={{ width: "12%" }} /><col style={{ width: "10%" }} /><col style={{ width: "12%" }} /><col /></colgroup>
+              <thead className="bg-slate-50 text-slate-500 text-[11.5px]"><tr>{[L("사용자", "User"), L("구분", "Role"), L("부서", "Dept"), L("로그인", "Sign-in"), L("로그아웃 · 종료", "Sign-out · end"), L("접속 시간", "Duration"), L("상태", "Status"), L("기기", "Device")].map((h) => <th key={h} className="px-3 h-8 font-medium text-left whitespace-nowrap border-b border-slate-200">{h}</th>)}</tr></thead>
+              <tbody>
+                {loading ? <tr><td colSpan={8} className="text-center text-slate-400 text-sm py-14"><Loader2 size={22} className="animate-spin mx-auto mb-2" style={{ color: BRAND.accent }} />{L("접속 기록을 불러오는 중입니다...", "Loading the access log...")}</td></tr>
+                  : error ? <tr><td colSpan={8} className="text-center text-red-500 text-sm py-12">{L("접속 기록을 불러오지 못했습니다", "Could not load the access log")} — {error}</td></tr>
+                  : pageRows.length ? pageRows.map((r) => (
+                    <tr key={r.id} onClick={() => setDetail(r)} className="border-t border-slate-100 first:border-t-0 hover:bg-slate-50 cursor-pointer" data-session={r.Title}>
+                      <td className={`${td} text-[13px] text-slate-800 font-medium`} title={r.UserEmail}>{r.UserName || r.UserEmail}</td>
+                      <td className={td}><Role role={r.Role} /></td>
+                      <td className={`${td} text-[12.5px] text-slate-600`} title={r.Dept || ""}>{r.Dept || <span className="text-slate-300">-</span>}</td>
+                      <td className={`${td} text-[12.5px] text-slate-700 tabular-nums`} title={icsAccFmt(r.LoginAt)}>{dtShort(r.LoginAt)}</td>
+                      <td className={`${td} text-[12.5px] tabular-nums ${r.st.inferred ? "text-amber-700" : "text-slate-700"}`} title={r.st.end ? icsAccFmt(r.st.end) + (r.st.inferred ? L(" — 마지막 활동 시각(추정)", " — last activity (est.)") : "") : ""}>{r.st.end ? dtShort(r.st.end) : <span className="text-slate-300">-</span>}</td>
+                      <td className={`${td} text-[12.5px] text-slate-600 tabular-nums`}>{r.st.k === "blocked" ? <span className="text-slate-300">-</span> : icsFmtDuration(r.dur, en)}</td>
+                      <td className={td}><span className={`text-[11px] px-2 rounded-full font-medium leading-5 inline-block whitespace-nowrap ${r.st.cls}`}>{stLabel(r.st)}</span></td>
+                      <td className={`${td} text-[12px] text-slate-500`} title={r.Device || ""}>{r.Device || "-"}</td>
+                    </tr>
+                  )) : <tr><td colSpan={8} className="text-center text-slate-400 text-sm py-12">{L("조회 결과가 없습니다.", "No results.")}</td></tr>}
+              </tbody>
+            </table>
+          ) : (
+            <table className="w-full table-fixed" style={{ minWidth: 900 }} data-testid="access-users">
+              <colgroup><col style={{ width: "16%" }} /><col style={{ width: "9%" }} /><col style={{ width: "14%" }} /><col style={{ width: "8%" }} /><col style={{ width: "9%" }} /><col style={{ width: "12%" }} /><col style={{ width: "9%" }} /><col style={{ width: "12%" }} /><col /></colgroup>
+              <thead className="bg-slate-50 text-slate-500 text-[11.5px]"><tr>{[L("사용자", "User"), L("구분", "Role"), L("부서", "Dept"), L("접속", "Sign-ins"), ICS_ACC_STATUS.logout[en ? 1 : 0], ICS_ACC_STATUS.inferred[en ? 1 : 0], ICS_ACC_STATUS.blocked[en ? 1 : 0], L("마지막 로그인", "Last sign-in"), L("접속 시간 합", "Total time")].map((h) => <th key={h} className="px-3 h-8 font-medium text-left whitespace-nowrap border-b border-slate-200">{h}</th>)}</tr></thead>
+              <tbody>
+                {pageRows.length ? pageRows.map((u) => (
+                  <tr key={u.email} className="border-t border-slate-100 first:border-t-0">
+                    <td className={`${td} text-[13px] text-slate-800 font-medium`} title={u.email}>{u.name}</td>
+                    <td className={td}><Role role={u.role} /></td>
+                    <td className={`${td} text-[12.5px] text-slate-600`}>{u.dept || <span className="text-slate-300">-</span>}</td>
+                    <td className={`${td} text-[12.5px] tabular-nums`}>{u.n}</td>
+                    <td className={`${td} text-[12.5px] tabular-nums text-emerald-700`}>{u.logouts}</td>
+                    <td className={`${td} text-[12.5px] tabular-nums text-amber-700`}>{u.inferred}</td>
+                    <td className={`${td} text-[12.5px] tabular-nums text-red-600`}>{u.blocked}</td>
+                    <td className={`${td} text-[12.5px] tabular-nums text-slate-700`} title={icsAccFmt(u.last.LoginAt)}>{dtShort(u.last.LoginAt)}</td>
+                    <td className={`${td} text-[12.5px] tabular-nums text-slate-600`}>{u.n === u.blocked ? <span className="text-slate-300">-</span> : icsFmtDuration(u.total, en)}</td>
+                  </tr>
+                )) : <tr><td colSpan={9} className="text-center text-slate-400 text-sm py-12">{loading ? L("불러오는 중...", "Loading...") : error ? L("접속 기록을 불러오지 못했습니다 — ", "Could not load the access log — ") + error : L("조회 결과가 없습니다.", "No results.")}</td></tr>}
+              </tbody>
+            </table>
+          )}
+        </div>
+        <div className="px-4 py-2.5 border-t border-slate-100 flex items-center justify-between gap-3 text-xs text-slate-500">
+          <span>{loaded && <>{loaded} · </>}{L("총", "Total")} <b className="text-slate-700 font-semibold">{list.length}</b>{mode === "user" ? L("명", "") : L("건", "")}</span>
+          {totalPages > 1 && (
+            <div className="flex items-center gap-1">
+              <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={pageSafe <= 1} className="px-2.5 py-1 rounded-md border border-slate-300 disabled:opacity-40 hover:bg-slate-50">{L("이전", "Prev")}</button>
+              <span className="px-2 tabular-nums">{pageSafe} / {totalPages}</span>
+              <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={pageSafe >= totalPages} className="px-2.5 py-1 rounded-md border border-slate-300 disabled:opacity-40 hover:bg-slate-50">{L("다음", "Next")}</button>
+            </div>
+          )}
+        </div>
+      </div>
+      </>)}
+      {detail && (
+        <Modal title={L("접속 상세", "Sign-in detail")} onClose={() => setDetail(null)} wide>
+          <div className="flex items-center gap-2 mb-3 flex-wrap"><Role role={detail.Role} /><span className="font-semibold text-slate-800">{detail.UserName}</span><span className="text-sm text-slate-400">{detail.UserEmail}</span><span className={`text-[11px] px-2 rounded-full font-medium leading-5 ${detail.st.cls}`}>{stLabel(detail.st)}</span></div>
+          <Row label={L("로그인 (KST)", "Sign-in (KST)")} value={icsAccFmt(detail.LoginAt)} />
+          <Row label={L("마지막 활동 (KST)", "Last activity (KST)")} value={icsAccFmt(detail.LastActivityAt)} />
+          <Row label={L("로그아웃 (KST)", "Sign-out (KST)")} value={detail.LogoutAt ? icsAccFmt(detail.LogoutAt) : detail.st.inferred ? L(`기록 없음 — 세션 종료(추정), 마지막 활동 ${icsAccFmt(detail.LastActivityAt)}`, `Not recorded — session ended (est.), last activity ${icsAccFmt(detail.LastActivityAt)}`) : "-"} />
+          <Row label={L("접속 시간", "Duration")} value={detail.st.k === "blocked" ? "-" : icsFmtDuration(detail.dur, en)} />
+          <Row label={L("부서", "Dept")} value={detail.Dept} />
+          <Row label={L("기기", "Device")} value={detail.Device} />
+          <Row label={L("브라우저 정보", "Browser")} value={detail.UserAgent} />
+          <Row label={L("세션 번호", "Session")} value={detail.Title} />
+        </Modal>
+      )}
+    </div>
+  );
+}
+
 function CategoryAccessPage({ currentUser, addLog, showToast }) {
   const { lang, t } = useLang();
   const { users } = useAppData();
@@ -11103,13 +11349,16 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
   // 체크해도 아무 변화가 없었다. 관리자가 보고 판단만 흐려지는 열이었다.
   // SharePoint 의 ControlMgmt 컬럼과 hasCategoryAccess 분기는 남겨 둔다 —
   // 기존에 저장된 값을 지우지 않기 위해서다(화면에서만 다루지 않는다).
-  const categoryKeys = ["self", "review", "fsa", "fsaReview", "adminOnly", "executive"];
+  // 접속 기록(10-19 · ics-access) — 조회만 하는 화면이라 「보기」 칸만(편집 칸은 「—」). 열 AccessLog 가 없으면 「관리자 전용」 보기 값을 따른다.
+  const categoryKeys = ["self", "review", "fsa", "fsaReview", "adminOnly", "accessLog", "executive"];
+  const VIEW_ONLY_KEYS = new Set(["accessLog"]);
   const categoryLabelPath = {
     self: "nav.self",
     review: "nav.review",
     fsa: "nav.fsa",
     fsaReview: "nav.fsaReview",
     adminOnly: "navGroup.adminOnly",
+    accessLog: "nav.accessLog",
     executive: "navGroup.executive",
   };
 
@@ -11160,18 +11409,28 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
   // ViewOnly 열 — 없으면(아직 안 만듦 · 확인 못 함) 「편집」 칸은 「보기」 와 함께 움직이고(=지금처럼 전부 편집) 그 열에는 쓰지 않는다
   const viewOnlyReady = voCols ? voCols.has(ICS_VIEWONLY_FIELD) : Object.values(ICS_CATEGORY_ACCESS).some((g) => g && g.voRaw);
   const voList = (g) => { const vo = (g && g.vo) || []; return vo.includes("*") ? categoryKeys.filter((k) => g[k]) : vo; };   // 「*」(알아볼 수 없는 값) → 켜진 칸 모두 보기만
-  const lvOf = (g, k) => (!g || !g[k] ? 0 : voList(g).includes(k) ? 1 : 2);
+  const lvOf = (g, k) => (!g || !g[k] ? 0 : VIEW_ONLY_KEYS.has(k) ? 1 : voList(g).includes(k) ? 1 : 2);
+  // AccessLog 열 — 없으면(아직 안 만듦 · 확인 못 함) 접속 기록 칸은 잠그고 「관리자 전용」 보기 값을 그대로 따른다(쓰지 않는다)
+  const alReady = voCols ? voCols.has(ICS_ACCESSLOG_FIELD) : Object.values(ICS_CATEGORY_ACCESS).some((g) => g && g.alRaw);
+  const cellLocked = (k) => k === "accessLog" && !alReady;
   const fixLevel = (lv) => (lv <= 0 ? 0 : !viewOnlyReady ? 2 : lv >= 2 ? 2 : 1);
   // 한 사람 값에 수준을 넣는다(짝 카테고리도 함께)
   function withLevel(g, k, lv) {
     const next = { ...(g || {}) };
     let vo = voList(g).filter((x) => x !== "*");
+    if (VIEW_ONLY_KEYS.has(k)) {   // 접속 기록 — 보기만 있는 칸(ViewOnly 목록에 넣지 않는다)
+      next[k] = lv > 0;
+      if (k === "accessLog") next.alTouched = true;
+      return next;
+    }
     [k, CATEGORY_PAIRS[k]].filter(Boolean).forEach((key) => {
       next[key] = lv > 0;
       vo = vo.filter((x) => x !== key);
       if (lv === 1) vo.push(key);
     });
     next.vo = vo;
+    // 접속 기록이 아직 「관리자 전용」 을 따르고 있으면(AccessLog 비어 있음 · 이 화면에서 따로 안 고침 · 열 없음) 함께 움직인다
+    if (k === "adminOnly" && (!alReady || (!(g && g.alRaw) && !(g && g.alTouched)))) next.accessLog = lv > 0;
     return next;
   }
   // 권한(카테고리 · 역할)을 고칠 수 있는 사람 — Admin 역할 또는 「관리자 전용」 이고, 관리자 전용이 보기만이 아닌 사람
@@ -11194,8 +11453,9 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
       return;
     }
     if (mode === "edit" && !viewOnlyReady) return;
+    if (cellLocked(categoryKey) || (mode === "edit" && VIEW_ONLY_KEYS.has(categoryKey))) return;
     const cur = lvOf(draft[email], categoryKey);
-    const lv = fixLevel(mode === "edit" ? (cur === 2 ? 1 : 2) : (cur > 0 ? 0 : 1));
+    const lv = VIEW_ONLY_KEYS.has(categoryKey) ? (cur > 0 ? 0 : 1) : fixLevel(mode === "edit" ? (cur === 2 ? 1 : 2) : (cur > 0 ? 0 : 1));
     const g = withLevel(draft[email], categoryKey, lv);
     /* 「관리자 전용」 권한만으로 이 화면에 들어온 사람이 자기 권한을 지우거나 보기만으로 내리면 되돌릴 화면을 잃는다
        (Admin 역할 계정이 없으면 SharePoint 목록을 직접 고쳐야 한다). 본인 편집 권한이 없어지는 변경은 막는다. */
@@ -11211,13 +11471,14 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
       return;
     }
     if (mode === "edit" && !viewOnlyReady) return;
+    if (cellLocked(categoryKey) || (mode === "edit" && VIEW_ONLY_KEYS.has(categoryKey))) return;
     const on = !allOnFor(categoryKey, mode);
     let skippedSelf = false;
     const next = { ...draft };
     rows.forEach((u) => {
       const email = u.email.toLowerCase();
       const cur = lvOf(next[email], categoryKey);
-      const lv = fixLevel(mode === "edit" ? (on ? 2 : Math.min(cur, 1)) : (on ? Math.max(cur, 1) : 0));
+      const lv = VIEW_ONLY_KEYS.has(categoryKey) ? (on ? 1 : 0) : fixLevel(mode === "edit" ? (on ? 2 : Math.min(cur, 1)) : (on ? Math.max(cur, 1) : 0));
       const g = withLevel(next[email], categoryKey, lv);
       if (selfLocked(email, g)) { skippedSelf = true; return; }   // 열 전체 해제로도 본인 편집 권한은 풀리지 않게
       next[email] = g;
@@ -11250,7 +11511,7 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
     setAdding(true);
     try {
       const created = await icsCreateItem(ICS_LISTS.categoryAccess, { Title: email });
-      const entry = { spId: created.id, vo: [], voRaw: "" };
+      const entry = { spId: created.id, vo: [], voRaw: "", alRaw: "" };
       ICS_CATEGORY_ACCESS[email] = entry;
       setSaved((prev) => ({ ...prev, [email]: { ...entry } }));
       setDraft((prev) => ({ ...prev, [email]: { ...entry } }));
@@ -11271,7 +11532,7 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
   //   · 그 밖(목록에만 있던 계정 · 명부 없음 · 역할/부서 배정 없음) → 행을 지운다(역할 · 부서 배정도 함께 — 확인 창 · 로그에 표시)
   //   · 저장된 행이 없으면 바꿀 것이 없다
   // 본인 계정은 여기서 지울 수 없고, 마지막 Admin(역할)의 행은 지우지 않는다. 성공 여부를 true/false 로 돌려준다.
-  const CAT_FIELD = { self: "Self", review: "Review", fsa: "FSA", fsaReview: "FSAReview", adminOnly: "AdminOnly", executive: "Executive" };
+  const CAT_FIELD = { self: "Self", review: "Review", fsa: "FSA", fsaReview: "FSAReview", adminOnly: "AdminOnly", accessLog: ICS_ACCESSLOG_FIELD, executive: "Executive" };
   const tKo = makeT("ko"), tEn = makeT("en");
   const meEmail = (currentUser.email || "").toLowerCase();
   function removePlan(u) {
@@ -11314,10 +11575,10 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
     try {
       const row = ICS_CATEGORY_ACCESS[email];
       if (plan === "reset") {
-        const fields = {}; categoryKeys.forEach((k) => { fields[CAT_FIELD[k]] = ""; });
+        const fields = {}; categoryKeys.filter((k) => !cellLocked(k)).forEach((k) => { fields[CAT_FIELD[k]] = ""; });
         if (viewOnlyReady) fields[ICS_VIEWONLY_FIELD] = "";
         await icsUpdateItem(ICS_LISTS.categoryAccess, row.spId, fields);
-        const cleared = { vo: [], voRaw: "" }; categoryKeys.forEach((k) => { cleared[k] = false; });
+        const cleared = { vo: [], voRaw: "", alRaw: "", alTouched: false }; categoryKeys.forEach((k) => { cleared[k] = false; });
         ICS_CATEGORY_ACCESS[email] = { ...row, ...cleared };
         setSaved((prev) => ({ ...prev, [email]: { ...(prev[email] || {}), ...cleared } }));
         setDraft((prev) => ({ ...prev, [email]: { ...(prev[email] || {}), ...cleared } }));
@@ -11367,8 +11628,10 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
       const e = u.email.toLowerCase();
       let g = next[e] || {};
       bulkCats.forEach((k) => {
+        if (cellLocked(k)) return;
         const cur = lvOf(g, k);
-        const lv = fixLevel(val ? Math.max(cur, bulkMode === "edit" ? 2 : 1) : bulkMode === "edit" ? Math.min(cur, 1) : 0);
+        const lv = VIEW_ONLY_KEYS.has(k) ? (val ? 1 : bulkMode === "edit" ? cur : 0)   // 접속 기록 — 「편집」 해제는 보기를 남긴다
+          : fixLevel(val ? Math.max(cur, bulkMode === "edit" ? 2 : 1) : bulkMode === "edit" ? Math.min(cur, 1) : 0);
         const g2 = withLevel(g, k, lv);
         if (selfLocked(e, g2)) { skippedSelf = true; return; }   // 본인 「관리자 전용」 편집은 내리지 않는다
         g = g2;
@@ -11423,6 +11686,8 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
       const voKeep = ((saved[email] && saved[email].vo) || []).filter((k) => k !== "*" && !categoryKeys.includes(k));
       const voNew = viewOnlyReady ? [...new Set([...voKeep, ...voList(entry).filter((k) => categoryKeys.includes(k) && entry[k])])].sort() : voList(saved[email]);
       if (viewOnlyReady) fields[ICS_VIEWONLY_FIELD] = voNew.length ? JSON.stringify(voNew) : "";
+      // 접속 기록 — 열이 있으면 Y/N 으로 분명히 적는다(비어 있던 행도 지금 보이는 값으로 굳힌다 · MKQR 과 같은 방식)
+      if (alReady) fields[ICS_ACCESSLOG_FIELD] = entry.accessLog ? "Y" : "N";
       try {
         const existing = ICS_CATEGORY_ACCESS[email];
         if (existing?.spId) {
@@ -11431,7 +11696,8 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
           const created = await icsCreateItem(ICS_LISTS.categoryAccess, { Title: email, ...fields });
           entry.spId = created.id;
         }
-        const stored = { ...entry, vo: voNew, voRaw: viewOnlyReady ? (fields[ICS_VIEWONLY_FIELD] || "") : ((saved[email] && saved[email].voRaw) || "") };
+        const stored = { ...entry, vo: voNew, voRaw: viewOnlyReady ? (fields[ICS_VIEWONLY_FIELD] || "") : ((saved[email] && saved[email].voRaw) || ""),
+          alRaw: alReady ? fields[ICS_ACCESSLOG_FIELD] : ((saved[email] && saved[email].alRaw) || ""), alTouched: false };
         ICS_CATEGORY_ACCESS[email] = { ...(ICS_CATEGORY_ACCESS[email] || {}), ...stored };
         draft[email] = { ...entry, vo: voNew };
         // 사람별 이력 — 카테고리마다 「없음 · 보기 · 편집」 이전 → 이후
@@ -11572,7 +11838,7 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
             <span className="w-px h-5 bg-slate-300" />
             <span className="text-xs text-slate-500">{lang === "en" ? "Access" : "권한"}</span>
             <div className="flex items-center gap-1 flex-wrap">
-              {categoryKeys.map((k) => {
+              {categoryKeys.filter((k) => !cellLocked(k)).map((k) => {
                 const on = bulkCats.has(k);
                 return (
                   <button key={k} onClick={() => setBulkCats((prev) => { const n = new Set(prev); n.has(k) ? n.delete(k) : n.add(k); return n; })}
@@ -11611,11 +11877,20 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
         </div>
       )}
 
+      {!alReady && (
+        <div className="mb-3 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 leading-relaxed flex items-start gap-2" data-testid="accesslog-col-missing">
+          <AlertTriangle size={14} className="flex-shrink-0 mt-0.5 text-amber-500" />
+          <div>{lang === "en"
+            ? <>{voCols ? <>The SharePoint list ICS_CategoryAccess has no <b>AccessLog</b> column (single line of text) yet.</> : <>Could not check the list columns.</>} Until then <b>Access Log</b> follows Admin-only (View) and cannot be changed here.</>
+            : <>{voCols ? <>SharePoint 목록 ICS_CategoryAccess 에 <b>AccessLog</b> 열(한 줄 텍스트)이 아직 없습니다.</> : <>목록 열을 확인하지 못했습니다.</>} 그동안 <b>접속 기록</b> 권한은 「관리자 전용」 보기 값을 그대로 따르고, 여기서 따로 바꿀 수 없습니다.</>}</div>
+        </div>
+      )}
+
       {(() => {
         // 권한 표(10-11 · ics-viewedit) — 머리 3단: 묶음 띠 · 화면 이름 · 보기 / 편집(열 전체 선택). 사용자 칸 · 머리는 스크롤해도 고정
         const GROUPS = [
           { key: "assessment", keys: ["self", "review", "fsa", "fsaReview"], tone: { main: "#2F7B7A", band: "#E1EFEE", soft: "#F2F8F8", line: "#9DCBC9", tint: "#F8FBFB" } },
-          { key: "adminOnly", keys: ["adminOnly"], tone: { main: "#6A4BA6", band: "#ECE7F6", soft: "#F7F5FC", line: "#C2B3E0", tint: "#FBFAFD" },
+          { key: "adminOnly", keys: ["adminOnly", "accessLog"], tone: { main: "#6A4BA6", band: "#ECE7F6", soft: "#F7F5FC", line: "#C2B3E0", tint: "#FBFAFD" },
             sub: lang === "en" ? "Settings · Controls · Access · History" : "설정 · 통제 항목 · 권한 · 이력" },
           { key: "executive", keys: ["executive"], tone: { main: "#3B5B8C", band: "#E5EBF5", soft: "#F3F6FB", line: "#A7B9D7", tint: "#F9FAFD" },
             sub: lang === "en" ? "Final report · Approval · Change history" : "최종 리포트 · 결재 · 변경 이력" },
@@ -11672,7 +11947,8 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
               {GROUPS.filter((g) => g.keys.length > 1).flatMap((g) => g.keys).map((k) => (
                 <th key={k} colSpan={2} className="sticky z-20 px-1.5 text-center text-[11.5px] font-medium text-slate-700 leading-[1.25]"
                   style={{ top: R1, height: R2, background: gOf(k).tone.soft, borderLeft: divider(k) }}>
-                  <span style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", wordBreak: "keep-all" }}>{t(categoryLabelPath[k])}</span>
+                  <span style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", wordBreak: "keep-all" }}
+                    title={k === "adminOnly" ? gOf(k).sub : undefined}>{k === "adminOnly" ? (lang === "en" ? "Admin menus" : "관리 메뉴") : t(categoryLabelPath[k])}</span>
                 </th>
               ))}
             </tr>
@@ -11682,14 +11958,15 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
                 const head = (mode) => {
                   const isEdit = mode === "edit";
                   const lab = <span className="text-[10px] font-semibold tracking-wide leading-none" style={{ color: isEdit ? tone.main : "#64748B" }}>{isEdit ? EDIT : VIEW}</span>;
+                  if (isEdit && VIEW_ONLY_KEYS.has(k)) return <div className="flex flex-col items-center gap-1.5" title={lang === "en" ? "View-only screen — no Edit" : "조회만 하는 화면이라 편집 칸이 없습니다"}><span className="text-[10px] font-semibold leading-none text-slate-300">{EDIT}</span><span className="h-3.5 text-slate-300 text-xs leading-none">—</span></div>;
                   if (!isAdmin) return <div className="flex flex-col items-center gap-1.5">{lab}<span className="h-3.5" /></div>;
-                  const dis = isEdit && !viewOnlyReady;
+                  const dis = (isEdit && !viewOnlyReady) || cellLocked(k);
                   return (
                     <label className={`flex flex-col items-center gap-1.5 ${dis ? "" : "cursor-pointer"}`}>
                       {lab}
                       <input type="checkbox" checked={allOnFor(k, mode)} disabled={dis} onChange={() => toggleColumn(k, mode)}
                         className="w-3.5 h-3.5 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40" style={{ accentColor: tone.main }}
-                        title={dis ? (lang === "en" ? "No ViewOnly column — Edit follows View" : "ViewOnly 열이 없어 편집은 보기와 함께 움직입니다") : `${t(categoryLabelPath[k])} ${isEdit ? EDIT : VIEW} — ${t("permissions.selectAll")}`} />
+                        title={cellLocked(k) ? (lang === "en" ? "No AccessLog column — follows Admin-only" : "AccessLog 열이 없어 「관리자 전용」 보기 값을 따릅니다") : dis ? (lang === "en" ? "No ViewOnly column — Edit follows View" : "ViewOnly 열이 없어 편집은 보기와 함께 움직입니다") : `${t(categoryLabelPath[k])} ${isEdit ? EDIT : VIEW} — ${t("permissions.selectAll")}`} />
                     </label>
                   );
                 };
@@ -11756,12 +12033,13 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
                       <React.Fragment key={k}>
                         <td className="text-center py-1.5 border-t border-slate-100" style={{ borderLeft: divider(k, true), background: bg }}>
                           {isAdmin
-                            ? <input type="checkbox" checked={lv > 0} onChange={() => toggleCell(email, k, "view")} aria-label={`${u.email} ${label} ${VIEW}`}
-                                className="w-4 h-4 align-middle cursor-pointer" style={{ accentColor: tone.main }} />
+                            ? <input type="checkbox" checked={lv > 0} disabled={cellLocked(k)} onChange={() => toggleCell(email, k, "view")} aria-label={`${u.email} ${label} ${VIEW}`}
+                                className="w-4 h-4 align-middle cursor-pointer disabled:cursor-not-allowed disabled:opacity-40" style={{ accentColor: tone.main }}
+                                title={cellLocked(k) ? (lang === "en" ? "No AccessLog column — follows Admin-only" : "AccessLog 열이 없어 「관리자 전용」 보기 값을 따릅니다") : undefined} />
                             : <Mark on={lv > 0} color={tone.main} />}
                         </td>
                         <td className="text-center py-1.5 border-t border-slate-100" style={{ background: bg }}>
-                          {isAdmin
+                          {VIEW_ONLY_KEYS.has(k) ? <span className="text-slate-300 text-xs" aria-label={lang === "en" ? "no edit" : "편집 없음"}>—</span> : isAdmin
                             ? <input type="checkbox" checked={lv === 2} disabled={!viewOnlyReady} onChange={() => toggleCell(email, k, "edit")} aria-label={`${u.email} ${label} ${EDIT}`}
                                 className="w-4 h-4 align-middle cursor-pointer disabled:cursor-not-allowed disabled:opacity-40" style={{ accentColor: tone.main }}
                                 title={!viewOnlyReady ? (lang === "en" ? "No ViewOnly column — Edit follows View" : "ViewOnly 열이 없어 편집은 보기와 함께 움직입니다") : undefined} />
@@ -13105,6 +13383,7 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
               )
             )}
             {page === "categoryAccess" && (hasCategoryAccess(currentUser, "adminOnly") ? <CategoryAccessPage currentUser={currentUser} addLog={addLog} showToast={showToast} /> : <EmptyState text="Access denied" />)}
+            {page === "accessLog" && (hasCategoryAccess(currentUser, "accessLog") ? <AccessLogPage /> : <EmptyState text="Access denied" />)}
             {/* 전사 평가 이력 · 리포트(10-08) — 관리자 전용. 같은 HistoryPage 를 scope="all" 로 열어 전 부서 통제 항목 · 활동 로그를 본다. */}
             {page === "historyAll" && (
               hasCategoryAccess(currentUser, "adminOnly")
@@ -13265,7 +13544,7 @@ async function apiGet(path, token) {
  * ICS_* SharePoint 목록 연동 (Controls / Requests / Log)
  * 목록 GUID를 하드코딩하지 않고 displayName으로 조회해서 캐싱한다 (오타/재생성에 안전).
  * ------------------------------------------------------------------ */
-const ICS_LISTS = { controls: "ICS_Controls", requests: "ICS_Requests", approvals: "ICS_Approvals", log: "ICS_Log", categoryAccess: "ICS_CategoryAccess", departments: "ICS_Departments", changeRequests: "ICS_ChangeRequests" };
+const ICS_LISTS = { controls: "ICS_Controls", requests: "ICS_Requests", approvals: "ICS_Approvals", log: "ICS_Log", categoryAccess: "ICS_CategoryAccess", departments: "ICS_Departments", changeRequests: "ICS_ChangeRequests", accessLog: "ICS_AccessLog" };
 // ICS_Departments 목록이 존재하는지 여부. 없으면 부서는 ics_category_access.xlsx의 Departments 시트(읽기 전용)에서만 오고,
 // 권한 관리 화면의 부서 추가·수정·삭제는 비활성화된다.
 let ICS_DEPT_LIST_READY = false;
@@ -13303,6 +13582,153 @@ async function icsListAll(listName, extraQuery = "") {
   }
   return items;
 }
+
+/* ---- 접속 기록(10-19 · ics-access) — MKQR · Training365 접속 기록과 같은 방식 ---------------------------------------
+ * SharePoint 목록 ICS_AccessLog 에 로그인(사용자 마스터 확인 통과 · 차단)마다 한 행. 같은 탭에서 새로고침하면 같은 행을 이어 쓴다(sessionStorage).
+ * 활동 신호: 화면이 보이고 사용자가 움직였을 때만 heartbeatMs 마다 LastActivityAt 갱신, 탭을 닫거나 숨길 때도 한 번(keepalive).
+ * 로그아웃: 「로그아웃」 단추에서 LogoutAt · EndType=로그아웃. 로그아웃 없이 idleEndMs 동안 활동이 없으면 화면에서 「세션 종료(추정)」.
+ * 기록은 화면 권한(보기 · 편집 잠금)과 무관하게 남긴다(활동 로그와 같은 예외). 기록 실패는 화면을 막지 않는다(콘솔 경고 · 접속 기록 화면에 원인).
+ * 목록 열(내부 이름): Title(세션 번호) · UserEmail · UserName · Role · Company · LoginAt(날짜 및 시간) · LastActivityAt(날짜 및 시간)
+ *   · LogoutAt(날짜 및 시간) · EndType · Device · UserAgent(여러 줄 텍스트). LoginAt 인덱스를 권장(없어도 전체를 읽어 화면에서 거른다). */
+const ICS_ACCESS_COLUMNS = [["Title", "한 줄 텍스트", "세션 번호"], ["UserEmail", "한 줄 텍스트", "메일"], ["UserName", "한 줄 텍스트", "이름"], ["Role", "한 줄 텍스트", "Admin · Accessor · Reviewer · CFO · RD · Guest · 권한 없음"],
+  ["Company", "한 줄 텍스트", "부서(비워 둠 — 화면에서 직원 명부로 채움)"], ["LoginAt", "날짜 및 시간", "로그인 시각 · 인덱스 권장"], ["LastActivityAt", "날짜 및 시간", "마지막 활동 시각"],
+  ["LogoutAt", "날짜 및 시간", "로그아웃 시각"], ["EndType", "한 줄 텍스트", "로그아웃 · 접근 차단"], ["Device", "한 줄 텍스트", "기기 · 브라우저"], ["UserAgent", "여러 줄 텍스트", "브라우저 원문"]];
+const ICS_ACC_ROLE_LABEL = { admin: "Admin", accessor: "Accessor", reviewer: "Reviewer", cfo: "CFO", rd: "RD", guest: "Guest" };
+const ICS_ACC_TIMING = Object.assign({ heartbeatMs: 5 * 60e3, idleEndMs: 30 * 60e3, tickMs: 30e3 }, (typeof window !== "undefined" && window.ICS_ACC_TIMING) || {});
+function icsDeviceLabel(ua) {
+  if (!ua) return "-";
+  let os = "기타 OS";
+  if (/iPhone/i.test(ua)) os = "iPhone";
+  else if (/iPad/i.test(ua)) os = "iPad";
+  else if (/Android/i.test(ua)) { const m = ua.match(/Android[^;)]*;\s*([^;)]+)/i); os = m && m[1] ? `Android(${m[1].trim().slice(0, 18)})` : "Android"; }
+  else if (/Macintosh/i.test(ua)) os = "Mac";
+  else if (/Windows/i.test(ua)) os = "Windows";
+  else if (/Linux/i.test(ua)) os = "Linux";
+  let browser = "기타 브라우저", v = null;
+  if (/EdgA|Edg\//i.test(ua)) { browser = "Edge"; v = ua.match(/Edg[A]?\/([\d.]+)/i); }
+  else if (/KAKAOTALK/i.test(ua)) browser = "카카오톡 인앱";
+  else if (/NAVER/i.test(ua)) browser = "네이버 인앱";
+  else if (/SamsungBrowser/i.test(ua)) { browser = "Samsung Internet"; v = ua.match(/SamsungBrowser\/([\d.]+)/i); }
+  else if (/FxiOS|Firefox/i.test(ua)) { browser = "Firefox"; v = ua.match(/(?:FxiOS|Firefox)\/([\d.]+)/i); }
+  else if (/CriOS|Chrome/i.test(ua)) { browser = "Chrome"; v = ua.match(/(?:CriOS|Chrome)\/([\d.]+)/i); }
+  else if (/Safari/i.test(ua)) { browser = "Safari"; v = ua.match(/Version\/([\d.]+)/i); }
+  if (v && v[1]) browser += ` ${v[1].split(".")[0]}`;
+  return `${os} · ${browser}`;
+}
+async function icsAccWrite(method, itemId, fields) {
+  const token = await getGraphToken();
+  const listId = await getIcsListId(ICS_LISTS.accessLog);
+  const url = `${GRAPH}/sites/${_siteId}/lists/${listId}/items` + (itemId ? `/${encodeURIComponent(itemId)}/fields` : "");
+  const res = await icsFetch(url, { method, __icsLog: true, headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" }, body: JSON.stringify(itemId ? fields : { fields }) });
+  if (!res.ok) { const d = await res.text().catch(() => ""); throw new Error(`${ICS_LISTS.accessLog} ${itemId ? "수정" : "생성"} 실패 (${res.status}): ${d.slice(0, 200)}`); }
+  return res.json().catch(() => ({}));
+}
+const IcsSession = {
+  itemId: null, sid: "", lastActivity: 0, lastBeat: 0, timer: null, info: null, token: "", listId: "", starting: null, lastError: "",
+  async start(info) {
+    this.info = info;
+    const now = Date.now();
+    this.lastActivity = now;
+    let sid = "", itemId = "", prevAct = 0, prevUser = "";
+    try { sid = sessionStorage.getItem("ics.sid") || ""; itemId = sessionStorage.getItem("ics.sessItem") || ""; prevAct = Number(sessionStorage.getItem("ics.lastAct") || 0); prevUser = sessionStorage.getItem("ics.sessUser") || ""; } catch (e) {}
+    // 같은 탭의 새로고침 — 같은 사람이고 아직 세션이 살아 있으면(idleEndMs 이내) 그 행을 이어 쓴다
+    let resumed = false;
+    try {
+      if (info.role && sid && itemId && prevUser === info.email && prevAct && now - prevAct < ICS_ACC_TIMING.idleEndMs) {
+        await icsAccWrite("PATCH", itemId, { LastActivityAt: new Date(now).toISOString() });
+        resumed = true;
+      }
+    } catch (e) { resumed = false; }
+    if (!resumed) {
+      sid = `${new Date(now + 9 * 36e5).toISOString().slice(0, 10).replace(/-/g, "")}-${Math.random().toString(36).slice(2, 10)}`;
+      const iso = new Date(now).toISOString();
+      const fields = { Title: sid, UserEmail: info.email, UserName: info.name, Role: info.role || "권한 없음", LoginAt: iso, LastActivityAt: iso,
+        Device: icsDeviceLabel(navigator.userAgent), UserAgent: String(navigator.userAgent || "").slice(0, 500) };
+      if (!info.role) { fields.EndType = "접근 차단"; fields.LogoutAt = iso; }
+      const row = await icsAccWrite("POST", null, fields);
+      itemId = row.id;
+    }
+    this.sid = sid; this.itemId = info.role ? itemId : null; this.lastBeat = now;   // 차단된 접속은 활동 신호를 보내지 않는다
+    if (info.role) this.persist(); else this.clear();
+    return { resumed, itemId };
+  },
+  begin(info) {
+    const p = Promise.resolve().then(() => this.start(info)).then(() => { this.lastError = ""; }).catch((e) => { this.lastError = String((e && e.message) || e).slice(0, 300); console.warn("[ICS] 접속 기록 실패:", e && e.message); });
+    this.starting = p;
+    p.then(() => { if (this.starting === p) this.starting = null; });
+    return p;
+  },
+  persist() {
+    try {
+      sessionStorage.setItem("ics.sid", this.sid); sessionStorage.setItem("ics.sessItem", this.itemId || "");
+      sessionStorage.setItem("ics.sessUser", (this.info && this.info.email) || ""); sessionStorage.setItem("ics.lastAct", String(this.lastActivity));
+    } catch (e) {}
+  },
+  clear() { try { ["ics.sid", "ics.sessItem", "ics.sessUser", "ics.lastAct"].forEach((k) => sessionStorage.removeItem(k)); } catch (e) {} },
+  touch() { this.lastActivity = Date.now(); try { sessionStorage.setItem("ics.lastAct", String(this.lastActivity)); } catch (e) {} },
+  async beat(force) {
+    if (!this.itemId) return false;
+    if (!force && (this.lastActivity <= this.lastBeat || Date.now() - this.lastBeat < ICS_ACC_TIMING.heartbeatMs)) return false;
+    const at = this.lastActivity;
+    try { await icsAccWrite("PATCH", this.itemId, { LastActivityAt: new Date(at).toISOString() }); this.lastBeat = at; return true; }
+    catch (e) { console.warn("[ICS] 활동 신호 기록 실패:", e.message); return false; }
+  },
+  // 탭을 닫거나 숨길 때 — 마지막 활동 시각만(로그아웃으로 적지 않는다: 새로고침 · 탭 전환과 구분할 수 없어서)
+  flush() {
+    if (!this.itemId || !this.token || !this.listId || this.lastActivity <= this.lastBeat) return;
+    const at = this.lastActivity;
+    try {
+      fetch(`${GRAPH}/sites/${_siteId}/lists/${this.listId}/items/${encodeURIComponent(this.itemId)}/fields`, {
+        method: "PATCH", keepalive: true, headers: { Authorization: "Bearer " + this.token, "Content-Type": "application/json" }, body: JSON.stringify({ LastActivityAt: new Date(at).toISOString() }),
+      }).catch(() => {});
+      this.lastBeat = at;
+    } catch (e) {}
+  },
+  startTimers() {
+    if (this.timer) return;
+    const act = () => this.touch();
+    ["pointerdown", "keydown", "scroll", "touchstart", "mousemove"].forEach((ev) => window.addEventListener(ev, act, { passive: true, capture: true }));
+    const refresh = () => { getGraphToken().then((t) => { this.token = t; }).catch(() => {}); getIcsListId(ICS_LISTS.accessLog).then((id) => { this.listId = id; }).catch(() => {}); };
+    refresh();
+    this.timer = setInterval(() => { if (document.visibilityState === "visible") this.beat(false); refresh(); }, ICS_ACC_TIMING.tickMs);
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") this.flush(); });
+    window.addEventListener("pagehide", () => this.flush());
+  },
+  async logout() {
+    // 로그인 기록이 아직 진행 중이면 잠깐(3초까지) 기다린다 — 그 행에 로그아웃을 적기 위해
+    if (this.starting) { try { await Promise.race([this.starting, new Promise((ok) => setTimeout(ok, 3000))]); } catch (e) {} }
+    if (this.itemId) {
+      const now = new Date().toISOString();
+      try { await Promise.race([icsAccWrite("PATCH", this.itemId, { LogoutAt: now, LastActivityAt: now, EndType: "로그아웃" }), new Promise((ok) => setTimeout(ok, 3000))]); }
+      catch (e) { console.warn("[ICS] 로그아웃 기록 실패:", e.message); }
+    }
+    this.clear();
+    if (this.timer) { clearInterval(this.timer); this.timer = null; }
+    this.itemId = null;
+  },
+};
+// 접속 상태 — 로그아웃 · 접근 차단 · 세션 종료(추정) · 접속 중 (k: 화면 문구 키)
+function icsSessionStatus(r, now = Date.now()) {
+  if (r.EndType === "접근 차단") return { k: "blocked", end: r.LogoutAt || r.LoginAt, cls: "bg-red-50 text-red-700" };
+  if (r.LogoutAt) return { k: "logout", end: r.LogoutAt, cls: "bg-emerald-50 text-emerald-700" };
+  const last = Date.parse(r.LastActivityAt || r.LoginAt || 0) || 0;
+  if (now - last > ICS_ACC_TIMING.idleEndMs) return { k: "inferred", end: r.LastActivityAt || r.LoginAt, cls: "bg-amber-50 text-amber-700", inferred: true };
+  return { k: "active", end: "", cls: "bg-blue-50 text-blue-700" };
+}
+const ICS_ACC_STATUS = { logout: ["로그아웃", "Signed out"], inferred: ["세션 종료(추정)", "Session ended (est.)"], active: ["접속 중", "Active"], blocked: ["접근 차단", "Blocked"] };
+function icsFmtDuration(ms, en) { if (!(ms >= 0)) return "-"; if (ms < 60e3) return en ? "< 1 min" : "1분 미만"; const m = Math.round(ms / 60e3); return m < 60 ? (en ? `${m} min` : `${m}분`) : (en ? `${Math.floor(m / 60)} h ${m % 60} min` : `${Math.floor(m / 60)}시간 ${m % 60}분`); }
+function icsAccRoleCls(role) { return role === "Admin" ? "bg-violet-50 text-violet-700" : role === "권한 없음" ? "bg-red-50 text-red-600" : role === "CFO" || role === "RD" ? "bg-blue-50 text-blue-700" : "bg-teal-50 text-teal-700"; }
+function icsAccDay(d) { return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`; }
+function icsAccDayAdd(s, n) { const d = new Date(s + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return icsAccDay(d); }
+function icsAccToday() { return icsAccDay(new Date(Date.now() + 9 * 36e5)); }
+function icsAccDayStartIso(day) { return new Date(Date.parse(day + "T00:00:00Z") - 9 * 36e5).toISOString(); }
+function icsAccFmt(iso) {
+  if (!iso) return "-";
+  const t = Date.parse(iso); if (isNaN(t)) return "-";
+  const k = new Date(t + 9 * 36e5), p = (n) => String(n).padStart(2, "0");
+  return `${k.getUTCFullYear()}-${p(k.getUTCMonth() + 1)}-${p(k.getUTCDate())} ${p(k.getUTCHours())}:${p(k.getUTCMinutes())}`;
+}
+function icsIsMissingList(e) { return /목록을 찾을 수 없습니다/.test(String((e && e.message) || "")); }
 
 // AttachedFiles 문서 라이브러리(다른 APS 시스템들과 동일한 공용 라이브러리)의 driveId를 이름으로 찾아 캐싱.
 // GW에서 겪었던 문제(첫 번째 드라이브를 그냥 써버려서 잘못된 드라이브로 업로드되던 버그)를 피하려고
@@ -13789,7 +14215,9 @@ async function loadIcsCategoryAccessList() {
       roleOverride: (f.RoleOverride || "").trim().toLowerCase() || null,
       vo: icsParseViewOnly(f.ViewOnly),                       // 보기만인 카테고리 키(10-11 · ics-viewedit)
       voRaw: String(f.ViewOnly == null ? "" : f.ViewOnly).trim(),
+      alRaw: icsAccessLogRaw(f[ICS_ACCESSLOG_FIELD]),          // 접속 기록(10-19) — "Y" · "N" · ""(관리자 전용 값을 따름)
     };
+    parsed[email].accessLog = parsed[email].alRaw ? parsed[email].alRaw === "Y" : parsed[email].adminOnly;
   });
   return parsed;
 }
@@ -14414,13 +14842,18 @@ async function icsBoot(account) {
     const loadingEl0 = document.getElementById("loading");
     if (loadingEl0) loadingEl0.remove();
     const rootEl0 = document.getElementById("root");
+    // 접속 기록(10-19) — 사용자 마스터에 없는 계정의 시도는 「접근 차단」 한 줄. 기다리지 않는다
+    if (myEmail) IcsSession.begin({ email: myEmail, name: account.name || myEmail, role: "" });
     createRoot(rootEl0).render(
       <IcsAccessDenied userEmail={myEmail || "(알 수 없음)"} adminEmails={ICS_CONTACT_EMAILS} />
     );
     return;
   }
 
-  window.icsSignOut = () => msalApp.logoutRedirect();
+  // 접속 기록(10-19 · ics-access) — 로그인(사용자 마스터 확인 통과)마다 한 줄. 기다리지 않는다(기록이 늦거나 실패해도 첫 화면은 바로)
+  IcsSession.begin({ email: (matched.email || myEmail).toLowerCase(), name: account.name || matched.nameEn || matched.name || myEmail, role: ICS_ACC_ROLE_LABEL[matched.role] || matched.role || "Guest" });
+  IcsSession.startTimers();
+  window.icsSignOut = async () => { try { await IcsSession.logout(); } catch (e) {} msalApp.logoutRedirect(); };
 
   const loadingEl = document.getElementById("loading");
   if (loadingEl) loadingEl.remove();
