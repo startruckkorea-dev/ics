@@ -10427,6 +10427,8 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3 flex-wrap">
           <h3 className="text-sm font-semibold text-slate-700">{t("history.tableTitle")}</h3>
+          {/* 10-19 출력 안내는 단추 줄 아래 오른쪽 끝에 따로 — 예전엔 PDF 단추 칸 안에서 왼쪽으로 넘쳐 엑셀 단추 아래와 겹쳐 보였다 */}
+          <div className="flex flex-col items-end gap-1">
           <div className="flex items-center gap-2">
             <input
               type="text"
@@ -10456,7 +10458,6 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
             <button onClick={() => exportControlsToExcel(filteredTableControls, lang, departments, users)} className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:border-teal-400 hover:text-teal-600 flex-shrink-0">
               <Download size={13} /> {t("history.downloadBtn")}
             </button>
-            <div className="pdf-log-col pdf-log-spill">
             <button
               disabled={!picked.size || !!pdfBusy}
               onClick={async () => {
@@ -10474,8 +10475,8 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
               {pdfBusy ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />}
               {pdfBusy || `${t("history.pdfPkgBtn")}${picked.size ? ` (${picked.size})` : ""}`}
             </button>
-            <PdfLogNote />
-            </div>
+          </div>
+          <PdfLogNote />
           </div>
         </div>
         <div className="overflow-x-auto">
