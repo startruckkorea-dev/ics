@@ -2406,9 +2406,9 @@ const MENU_GROUPS = [
 //   ISA 2차   내가 검토자이고, 1차가 제출된 것
 //   FSA 최종  내가 담당자이고 ISA 가 끝났으며, FSA 작성 전이거나 반려된 것
 //   FSA 2차   내가 검토자이고, FSA 가 제출된 것
-function countMyTodos(controls, currentUser, isMyReview) {
+function countMyTodos(controls, currentUser, isMyReview, isMyAccess) {
   const me = (currentUser?.email || "").toLowerCase();
-  const mine = (controls || []).filter((c) => (c.accessor || "").toLowerCase() === me);
+  const mine = (controls || []).filter((c) => (isMyAccess ? isMyAccess(c) : (c.accessor || "").toLowerCase() === me));   // 화면과 같은 기준(배정 + 부서 Accessor · 10-19)
   const rev  = (controls || []).filter((c) => isMyReview(c));
   return {
     self:      mine.filter((c) => c.status === "not_started" || c.status === "returned").length,
@@ -5109,7 +5109,7 @@ function AssessmentFilterBar({ f, t, minItems }) {
   );
 }
 
-function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived, showToast, allowedDepts, usingSharePointData }) {
+function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived, showToast, allowedDepts, usingSharePointData, accessorDepts = [] }) {
   // 제출 완료 카드를 누르면 통제 상세를 띄운다(다른 화면과 같은 Modal·ControlDetailBody).
   const { lang, t } = useLang();
   const { departments, users } = useAppData();
@@ -5117,10 +5117,11 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
   const [draft, setDraft] = useState({ risk: null, comment: "", sampleSize: 0, attachments: [] });
 
   const myEmail = (currentUser.email || "").toLowerCase();
-  // 자가평가는 역할과 무관하게 본인이 1차 담당자(Accessor)로 배정된 항목만 대상이다.
-  // Admin 도 예외가 아니며, 부서 접근권한(allowedDepts)도 평가 대상 판단에는 쓰지 않는다.
-  // 전사 현황은 부서별 통제 현황·통제 항목 관리·대시보드에서 확인한다.
-  const myControls = controls.filter((c) => (c.accessor || "").toLowerCase() === myEmail);
+  /* 자가평가 대상 = 내가 1차 담당자(Accessor)로 배정된 항목 + 권한 관리에서 Accessor 로 지정받은 부서의 항목(10-19).
+     ISA 2차 검토의 부서 Reviewer 규칙(09-19)과 같다 — 예전엔 배정된 항목만 보여, 부서 Accessor 로 지정해도 0건이었다.
+     부서 권한으로 들어온 건은 「부서 권한」 표시를 붙이고, 제출하면 실제 제출자를 SelfActor 열에 남긴다. 역할(Admin 등)과는 무관하다. */
+  const isMine = (c) => (c.accessor || "").toLowerCase() === myEmail;
+  const myControls = controls.filter((c) => isMine(c) || (accessorDepts || []).includes(c.dept));
 
   const f = useAssessmentFilter(myControls, lang, users, departments);
 
@@ -5466,6 +5467,8 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
         )
       );
       if (docFilled && !docSaved) showToast(t("self.docSaveFailed"));
+      // 배정된 담당자가 아닌 사람(부서 Accessor 권한)이 제출했으면 실제 제출자를 남긴다(10-19 · 열 SelfActor) — 실패해도 제출은 그대로
+      await icsSaveActor(spId, "SelfActor", currentUser, c.accessor, (m) => alert(m));
       addLog(currentUser.email, "submit_self", c.code, c.name, c.nameEn);
       showToast(lang === "en" ? "Self-assessment submitted." : "자가평가가 제출되었습니다.");
     } catch (e) {
@@ -5921,6 +5924,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
                       </span>
                     ) : null
                   )}
+                  {!isMine(c) && <span className="text-[11px] px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100 whitespace-nowrap" title={lang === "en" ? "Shown through your department Accessor permission — the assigned accessor is " + (c.accessor || "-") : "권한 관리의 부서 Accessor 권한으로 보이는 항목 — 배정된 담당자: " + (c.accessor || "-")}>{lang === "en" ? "Dept. permission" : "부서 권한"}</span>}
                   {c.status === "returned"
                     ? <StageLine stage="isaReview" control={c} compact onOpen={() => setReasonFor(c.id)} />
                     : <StatusBadge status={c.status} kind="isa" />}
@@ -7114,7 +7118,7 @@ function FSAForm({ draft, setDraft, onCancel, onSubmit, control, onSaveDoc, onSa
   );
 }
 
-function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showToast, allowedDepts }) {
+function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showToast, allowedDepts, accessorDepts = [] }) {
   const { lang, t } = useLang();
   const { departments, users } = useAppData();
   const [editing, setEditing] = useState(null);
@@ -7129,7 +7133,9 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
   const myEmail = (currentUser.email || "").toLowerCase();
   // FSA 최종 자가평가도 역할과 무관하게 본인이 1차 담당자(Accessor)로 배정된 항목만 대상이다.
   // Admin 도 예외가 아니며, 전사 현황은 부서별 통제 현황·대시보드에서 확인한다.
-  const myControls = controls.filter((c) => (c.accessor || "").toLowerCase() === myEmail);
+  // 대상 = 배정된 항목 + 부서 Accessor 권한 부서의 항목(10-19 · ISA 1차와 같은 규칙). 부서 권한 제출은 FsaActor 열에 실제 제출자를 남긴다
+  const isMine = (c) => (c.accessor || "").toLowerCase() === myEmail;
+  const myControls = controls.filter((c) => isMine(c) || (accessorDepts || []).includes(c.dept));
 
   const f = useAssessmentFilter(myControls, lang, users, departments);
   const isaDone = myControls.filter((c) => c.status === "completed");
@@ -7276,6 +7282,7 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
         )
       );
       if (docFilled && !docSaved) showToast(t("self.docSaveFailed"));
+      await icsSaveActor(c.requestSpId, "FsaActor", currentUser, c.accessor, (m) => alert(m));   // 부서 Accessor 권한 제출자(10-19 · 열 FsaActor)
       addLog(currentUser.email, "fsa_submit", c.code, c.name, c.nameEn);
       showToast(lang === "en" ? "Final self-assessment submitted." : "최종 자가평가가 제출되었습니다.");
     } catch (e) {
@@ -7340,6 +7347,7 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
                       FSA 판정처럼 읽혔고, FSA 는 아직 판정 전이라 보여 줄 값도 없다(09-21 지적).
                       반려 상태 표시만 남긴다. */}
                   <div className="flex items-center gap-2 min-w-0">
+                    {!isMine(c) && <span className="text-[11px] px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100 whitespace-nowrap" title={lang === "en" ? "Shown through your department Accessor permission — the assigned accessor is " + (c.accessor || "-") : "권한 관리의 부서 Accessor 권한으로 보이는 항목 — 배정된 담당자: " + (c.accessor || "-")}>{lang === "en" ? "Dept. permission" : "부서 권한"}</span>}
                     {c.draft && c.draft.stage === "fsa" && <DraftBadge savedAt={c.draft.savedAt} t={t} />}
                     {c.fsaStatus === "returned" && <StageLine stage="fsaReview" control={c} compact onOpen={() => setReasonFor(c.id)} />}
                     {reasonFor === c.id && <ReturnReasonPopup control={c} phase="FSA" onClose={() => setReasonFor(null)} />}
@@ -12926,9 +12934,11 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
     const me = (currentUser.email || "").toLowerCase();
     // 화면과 같은 기준: 배정된 항목 + Reviewer 권한을 받은 부서의 항목
     const rDepts = permissions[currentUser.email]?.deptsReviewer || [];
+    const aDepts = permissions[currentUser.email]?.deptsAccessor || [];
     return countMyTodos(controlsForYear, currentUser,
-      (c) => (c.reviewer || "").toLowerCase() === me || rDepts.includes(c.dept));
-  }, [controlsForYear, currentUser]);
+      (c) => (c.reviewer || "").toLowerCase() === me || rDepts.includes(c.dept),
+      (c) => (c.accessor || "").toLowerCase() === me || aDepts.includes(c.dept));
+  }, [controlsForYear, currentUser, permissions]);
 
   const isAdmin = isIcsAdmin(currentUser);
   const allowedDepts = getAllowedDepts(currentUser, permissions, departments);
@@ -13355,7 +13365,7 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
             )}
             {page === "self" && (
               hasCategoryAccess(currentUser, "self")
-                ? <SelfAssessment controls={controlsForYear} setControls={setControls} currentUser={currentUser} addLog={addLog} isArchived={isArchived || ro("self")} showToast={showToast} allowedDepts={accessorDepts} usingSharePointData={usingSharePointData} />
+                ? <SelfAssessment controls={controlsForYear} setControls={setControls} currentUser={currentUser} addLog={addLog} isArchived={isArchived || ro("self")} showToast={showToast} allowedDepts={accessorDepts} accessorDepts={accessorDepts} usingSharePointData={usingSharePointData} />
                 : <EmptyState text="Access denied" />
             )}
             {page === "review" && (
@@ -13365,7 +13375,7 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
             )}
             {page === "fsa" && (
               hasCategoryAccess(currentUser, "fsa")
-                ? <FSAPage controls={controlsForYear} setControls={setControls} currentUser={currentUser} addLog={addLog} isArchived={isArchived || ro("fsa")} showToast={showToast} allowedDepts={accessorDepts} />
+                ? <FSAPage controls={controlsForYear} setControls={setControls} currentUser={currentUser} addLog={addLog} isArchived={isArchived || ro("fsa")} showToast={showToast} allowedDepts={accessorDepts} accessorDepts={accessorDepts} />
                 : <EmptyState text="Access denied" />
             )}
             {page === "fsaReview" && (
