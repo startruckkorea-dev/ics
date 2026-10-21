@@ -1413,7 +1413,7 @@ const STR = {
       skipChanged: "다른 사람이 이미 이 항목을 처리했습니다. 화면을 새로고침합니다.",
       needRisk: "리스크 수준 선택", needComment: `평가 근거 ${COMMENT_MIN}자 이상`,
       needSample: "샘플링 건수 입력", needAttach: "샘플링 자료 첨부",
-      reqMcDefault: "기본 결재자 (Default)", reqMcAll: "전체 임직원 (All)",
+      reqMcDefault: "기본 결재자 (Default)", reqMcMine: "내 MC (Default)", reqMcAll: "전체 임직원 (All)",
       reqMcTryAll: "해당하는 결재자가 없습니다. 「전체 임직원」에서 찾아보세요.",
       reqReasonLabel: "요청 사유 (Reason)",
       reqReasonPlaceholder: "무엇을 왜 수정하는지 적어 주세요. 결재자가 판단하는 데 사용됩니다.",
@@ -1940,7 +1940,7 @@ const STR = {
       skipChanged: "Someone else already processed this item. Reloading.",
       needRisk: "a risk level", needComment: `at least ${COMMENT_MIN} characters of rationale`,
       needSample: "a sample count", needAttach: "sampling evidence",
-      reqMcDefault: "Default approvers", reqMcAll: "All employees",
+      reqMcDefault: "Default approvers", reqMcMine: "My MC (Default)", reqMcAll: "All employees",
       reqMcTryAll: "No match here. Try searching in All employees.",
       reqReasonLabel: "Reason for request",
       reqReasonPlaceholder: "Describe what you are changing and why. Approvers use this to decide.",
@@ -5383,6 +5383,12 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
   const [draft, setDraft] = useState({ risk: null, comment: "", sampleSize: 0, attachments: [] });
 
   const myEmail = (currentUser.email || "").toLowerCase();
+  // 요청자 본인의 MC — employee_search.xlsx 의 내 행 H열(Boss of Boss) 이름 → 이메일. MC 후보에 있어야 인정한다.
+  const myMcEmail = (() => {
+    const nm = String((ICS_BOSS_MAP[myEmail] || {}).bossOfBoss || "").trim().toLowerCase();
+    const em = nm ? String(ICS_NAME_TO_EMAIL[nm] || "").toLowerCase() : "";
+    return em && em !== myEmail && ICS_MC_CANDIDATES.some((x) => x.email === em) ? em : "";
+  })();
   /* 자가평가 대상 = 내가 1차 담당자(Accessor)로 배정된 항목만(역할 · 부서 권한과 무관).
      10-19 오후에 부서 Accessor 권한 부서까지 넓혔다가 되돌렸다 — 부서 Accessor 가 여럿인 부서(예: Accounting 86건)는
      모두에게 전 항목이 보여 평가자가 곤란했다. 다른 사람이 평가해야 하면 통제 항목 관리에서 담당자를 바꾼다(결재 · 이력).
@@ -5423,7 +5429,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
       control: c, cat: c.cat,
       name: c.name || "", nameEn: c.nameEn || "",
       desc: c.desc || "", descEn: c.descEn || "",
-      mc: "",       // 1차 MC 는 요청자가 직접 지정한다
+      mc: myMcEmail, // 10-22: 요청자 본인의 MC(employee_search.xlsx H열)를 미리 고른다. 못 찾으면 비워 두고 직접 고른다
       reason: "",   // 요청 사유 — Steps JSON 에 함께 저장하므로 목록 컬럼 추가가 필요 없다
       mode: "edit", // 10-22: 「내용 수정」 · 「항목 삭제」 — 삭제도 같은 결재선(ReqType delete)을 탄다
     });
@@ -5442,7 +5448,12 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
   // 1차 MC 후보 — employee_search.xlsx 의 H열에 등장하는 사람만, 요청자 본인은 제외.
   const _mcQ = mcQuery.trim().toLowerCase();
   // 기본은 H열 기준 MC 후보. MC 가 부재중이면 전 임직원에서 직접 고를 수 있다.
-  const mcPool = mcAll ? ICS_EMPLOYEE_DIR : ICS_MC_CANDIDATES;
+  // 10-22: 기본 목록은 요청자 본인 행의 H열(Boss of Boss) = 내 MC 한 명만 보여 준다.
+  // 예전에는 회사 전체 MC 후보(H열에 한 번이라도 나온 사람 — 다른 본부 MC 포함)를 모두 보여 줘
+  // 관련 없는 본부의 MC 를 1차 결재자로 고를 수 있었다. 내 MC 를 찾지 못하면 예전처럼 전체 후보를 보여 준다.
+  // MC 부재 시에는 「전체 임직원」에서 직접 고른다.
+  const myMcList = myMcEmail ? ICS_MC_CANDIDATES.filter((x) => x.email === myMcEmail) : [];
+  const mcPool = mcAll ? ICS_EMPLOYEE_DIR : (myMcList.length ? myMcList : ICS_MC_CANDIDATES);
   const mcOptions = mcPool
     .filter((x) => x.email !== myEmail)
     .filter((x) => !_mcQ || [x.name, x.email, x.dept, x.team]
@@ -6052,7 +6063,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
                               color: mcAll === v ? "#fff" : "#64748B",
                             }}
                           >
-                            {v ? t("self.reqMcAll") : t("self.reqMcDefault")}
+                            {v ? t("self.reqMcAll") : (myMcList.length ? t("self.reqMcMine") : t("self.reqMcDefault"))}
                           </button>
                         ))}
                       </div>
