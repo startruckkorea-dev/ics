@@ -1317,10 +1317,11 @@ const STR = {
       stepSave: "평가 내용을 저장하는 중…", stepDocPdf: "통제기술서 · 테스트 문서 PDF 를 만드는 중…",
       writeBtn: "자가평가 작성", rejectReasonTitle: "검토자 반려 사유",
       lockedByRequest: "수정 요청이 결재 중입니다. 결재가 완료되거나 요청을 철회하면 자가평가를 작성할 수 있습니다.",
+      lockedByDelete: "삭제 요청이 결재 중입니다. 승인되면 이 항목은 목록에서 삭제되고, 반려되거나 철회하면 다시 자가평가를 작성할 수 있습니다.",
       riskLevel: "리스크 수준 선택", commentPlaceholder: "평가 근거 및 특이사항을 입력하세요.",
       sampleCount: "샘플링 건수", recommendedNote: "권장", attachBtn: "샘플링 자료 첨부",
       submitBtn: "제출", editBtn: "수정", withdrawBtn: "제출 철회",
-      reqBtn: "항목 수정 요청", reqPending: "수정 결재 중",
+      reqBtn: "항목 수정 요청", reqPending: "수정 결재 중", reqPendingDel: "삭제 결재 중",
       reqTitle: "통제 항목 수정 요청", reqSubmit: "결재 상신",
       reqNoChange: "바뀐 내용이 없습니다.\n통제명·통제영역·통제 설명 중 하나 이상을 고친 뒤 상신해 주세요.",
       reqNoChangeHint: "아직 바뀐 내용이 없습니다. 통제명·통제영역·통제 설명 중 하나 이상을 고쳐 주세요.",
@@ -1417,6 +1418,15 @@ const STR = {
       reqReasonLabel: "요청 사유 (Reason)",
       reqReasonPlaceholder: "무엇을 왜 수정하는지 적어 주세요. 결재자가 판단하는 데 사용됩니다.",
       reqCurrent: "현재 등록된 내용",
+      reqModeEdit: "내용 수정", reqModeDelete: "항목 삭제",
+      reqDelTitle: "통제 항목 삭제 요청", reqDelSubmit: "삭제 결재 상신",
+      reqDelWarnTitle: "이 통제 항목을 삭제하도록 요청합니다",
+      reqDelWarn1: "결재(1차 MC · 2차 ICS Admin · 3차 CFO)가 모두 승인되면 통제 항목 목록에서 삭제되며 되돌릴 수 없습니다.",
+      reqDelWarn2: "결재가 끝날 때까지 이 항목은 잠기며(자가평가 작성 불가), 반려되면 그대로 유지됩니다.",
+      reqDelWarnHist: "이미 제출한 평가 기록이 있는 항목입니다. 삭제가 승인되면 이 항목은 이후 평가 대상에서 빠집니다.",
+      reqDelReasonPh: "삭제가 필요한 이유를 적어 주세요(10자 이상) — 예: 업무 폐지, 다른 통제(코드)와 중복, 시스템 교체 등",
+      reqDelReasonShort: "삭제 사유를 10자 이상 적어 주세요.",
+      reqDelConfirm: "을(를) 삭제하도록 결재를 상신합니다.\n승인되면 되돌릴 수 없습니다. 진행할까요?",
       reqSkipped: "생략",
       reqSkipDup: "님은 이미 뒤 단계 결재자로 포함되어 있어, MC 단계에서 제외했습니다. 한 번만 승인하시면 됩니다.",
       reqSkipSelf: "님은 요청자 본인이라 이 단계는 건너뜁니다.",
@@ -1834,10 +1844,11 @@ const STR = {
       stepSave: "Saving the assessment…", stepDocPdf: "Creating the documentation PDF…",
       writeBtn: "Write assessment", rejectReasonTitle: "Reviewer's return reason",
       lockedByRequest: "A change request is under approval. You can write the assessment once it is decided or the request is cancelled.",
+      lockedByDelete: "A deletion request is under approval. If approved the item is removed; if rejected or cancelled you can write the assessment again.",
       riskLevel: "Select risk level", commentPlaceholder: "Enter your rationale and any notable findings.",
       sampleCount: "Sample size", recommendedNote: "recommended", attachBtn: "Attach sampling evidence",
       submitBtn: "Submit", editBtn: "Edit", withdrawBtn: "Withdraw",
-      reqBtn: "Request change", reqPending: "Change in approval",
+      reqBtn: "Request change", reqPending: "Change in approval", reqPendingDel: "Deletion in approval",
       reqTitle: "Control item change request", reqSubmit: "Submit for approval",
       reqNoChange: "Nothing has changed.\nPlease edit the control name, component or description before submitting.",
       reqNoChangeHint: "Nothing has changed yet. Please edit the control name, component or description.",
@@ -1934,6 +1945,15 @@ const STR = {
       reqReasonLabel: "Reason for request",
       reqReasonPlaceholder: "Describe what you are changing and why. Approvers use this to decide.",
       reqCurrent: "Currently registered",
+      reqModeEdit: "Edit content", reqModeDelete: "Delete item",
+      reqDelTitle: "Control item deletion request", reqDelSubmit: "Submit deletion",
+      reqDelWarnTitle: "You are requesting deletion of this control item",
+      reqDelWarn1: "Once every step (MC · ICS Admin · CFO) approves, the item is removed from the control list and cannot be restored.",
+      reqDelWarn2: "The item stays locked until the approval ends (no self-assessment) and remains unchanged if rejected.",
+      reqDelWarnHist: "This item already has a submitted assessment. If deletion is approved it will no longer be assessed.",
+      reqDelReasonPh: "Explain why the item should be deleted (10+ characters) — e.g. process discontinued, duplicate of another control, system replaced",
+      reqDelReasonShort: "Please enter a deletion reason of at least 10 characters.",
+      reqDelConfirm: " will be submitted for deletion approval.\nThis cannot be undone once approved. Continue?",
       reqSkipped: "skipped",
       reqSkipDup: "is already included in a later step, so the MC step was removed. They approve only once.",
       reqSkipSelf: "is the requester, so this step is skipped.",
@@ -5405,6 +5425,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
       desc: c.desc || "", descEn: c.descEn || "",
       mc: "",       // 1차 MC 는 요청자가 직접 지정한다
       reason: "",   // 요청 사유 — Steps JSON 에 함께 저장하므로 목록 컬럼 추가가 필요 없다
+      mode: "edit", // 10-22: 「내용 수정」 · 「항목 삭제」 — 삭제도 같은 결재선(ReqType delete)을 탄다
     });
   }
 
@@ -5442,6 +5463,44 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
       alert(lang === "en"
         ? "Approval line could not be determined. Please contact IT."
         : "결재선을 확인할 수 없습니다. IT로 문의해 주세요.");
+      return;
+    }
+
+    // ── 삭제 요청(10-22) — 관리 화면의 삭제 요청(ReqType delete)과 같은 행 · 같은 결재선 · 같은 승인 처리를 쓴다.
+    //    사유 10자 이상 · 진행 중인 요청이 없을 때만(openRequest 가 이미 막지만 상신 직전에 다시 본다).
+    if (reqForm.mode === "delete") {
+      const delReason = (reqForm.reason || "").trim();
+      if (delReason.length < 10) { alert(t("self.reqDelReasonShort")); return; }
+      const cur = changeReqs[c.code];
+      if (cur && cur.status === "pending") { alert(t("manage.lockedPending")); return; }
+      if (!window.confirm(`${c.code} · ${cName(c, lang)}${t("self.reqDelConfirm")}`)) return;
+      setReqSaving(true);
+      try {
+        const createdReq = await icsCreateItem(ICS_LISTS.changeRequests, {
+          Title: c.code, Year: c.year, ReqType: "delete",
+          RequesterEmail: currentUser.email,
+          Payload: JSON.stringify({
+            reason: delReason,
+            skipped: (steps.skipped || []).map((sk) => ({ role: sk.role, approver: sk.approver, reason: sk.reason })),
+            // 삭제 당시 내용 — 승인 뒤 항목이 사라져도 결재 화면 · 이력에서 무엇을 지웠는지 보이게 남긴다
+            snapshot: { dept: c.dept, cat: c.cat, name: c.name || "", nameEn: c.nameEn || "", desc: c.desc || "", descEn: c.descEn || "",
+                        accessor: c.accessor, reviewer: c.reviewer, frequency: c.frequency, importance: c.importance, status: c.status || "" },
+            from: "self",   // 자가평가 화면에서 올린 요청
+          }),
+          Steps: JSON.stringify(steps), Step: 1, Status: "pending",
+        });
+        await icsApprovalsCreate(createdReq, c.code, c.name, currentUser.email, steps);
+        addLog(currentUser.email, "request_delete_control", c.code, c.name, c.nameEn);
+        setChangeReqs((prev) => ({ ...prev, [c.code]: { code: c.code, status: "pending", reqType: "delete" } }));
+        setReqForm(null);
+        setMcQuery(""); setMcOpen(false); setMcAll(false);
+        showToast(lang === "en" ? "Delete request submitted for approval." : "삭제 요청이 결재로 상신되었습니다.");
+      } catch (e) {
+        console.warn("[ICS] 삭제 요청 생성 실패:", e.message);
+        alert(lang === "en" ? "Failed to submit the delete request." : "삭제 요청 상신에 실패했습니다. 잠시 후 다시 시도해 주세요.");
+      } finally {
+        setReqSaving(false);
+      }
       return;
     }
 
@@ -5485,7 +5544,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
       await icsApprovalsCreate(createdReq,
         c.code, name, currentUser.email, steps);
       addLog(currentUser.email, "request_edit_control", c.code, name, name);
-      setChangeReqs((prev) => ({ ...prev, [c.code]: { code: c.code, status: "pending" } }));
+      setChangeReqs((prev) => ({ ...prev, [c.code]: { code: c.code, status: "pending", reqType: "edit" } }));
       setReqForm(null);
       setMcQuery(""); setMcOpen(false); setMcAll(false);
       showToast(lang === "en"
@@ -5833,7 +5892,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
   return (
     <div>
       {reqForm && (
-        <Modal title={t("self.reqTitle")} size="xl" onClose={() => setReqForm(null)}>
+        <Modal title={reqForm.mode === "delete" ? t("self.reqDelTitle") : t("self.reqTitle")} size="xl" onClose={() => setReqForm(null)}>
           {/* 프레임이 넓어졌으므로 코드와 현재 내용을 한 줄에 둔다. 위아래로 쌓으면
               정작 확인해야 할 입력칸이 화면 아래로 밀린다. */}
           <div className="bg-slate-50 rounded-lg px-4 py-3 mb-4 flex items-baseline gap-3">
@@ -5845,6 +5904,37 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
               </p>
             </div>
           </div>
+          {/* 요청 종류(10-22) — 내용 수정 · 항목 삭제. 바꾸면 사유는 비운다(수정 사유가 삭제 사유로 넘어가지 않게) */}
+          <div className="inline-flex p-1 mb-4 rounded-lg bg-slate-100 gap-1" role="tablist">
+            {[["edit", t("self.reqModeEdit")], ["delete", t("self.reqModeDelete")]].map(([m, lb]) => {
+              const on = (reqForm.mode || "edit") === m;
+              return (
+                <button key={m} type="button" role="tab" aria-selected={on}
+                        onClick={() => { if (!on) setReqForm({ ...reqForm, mode: m, reason: "" }); }}
+                        className={`px-4 py-1.5 text-sm rounded-md transition-colors flex items-center gap-1.5 ${on ? "bg-white shadow-sm font-semibold" : "text-slate-500 hover:text-slate-700"}`}
+                        style={on ? { color: m === "delete" ? "#B91C1C" : BRAND.accent } : undefined}>
+                  {m === "delete" ? <Trash2 size={14} /> : <Pencil size={14} />}{lb}
+                </button>
+              );
+            })}
+          </div>
+          {reqForm.mode === "delete" ? (
+            <div className="rounded-lg border px-4 py-3.5" style={{ borderColor: "#FCA5A5", backgroundColor: "#FEF2F2" }}>
+              <p className="flex items-center gap-1.5 text-sm font-semibold" style={{ color: "#B91C1C" }}>
+                <AlertTriangle size={15} className="flex-shrink-0" />{t("self.reqDelWarnTitle")}
+              </p>
+              <ul className="mt-2 space-y-1 text-xs text-slate-600 list-disc pl-5">
+                <li>{t("self.reqDelWarn1")}</li>
+                <li>{t("self.reqDelWarn2")}</li>
+                {reqForm.control.status && reqForm.control.status !== "not_started" && <li style={{ color: "#B45309" }}>{t("self.reqDelWarnHist")}</li>}
+              </ul>
+              <div className="mt-3 bg-white rounded-md border border-red-100 px-3 py-2.5 text-xs text-slate-600 space-y-1">
+                <p><span className="text-slate-400 font-mono" style={{ marginRight: 10 }}>{reqForm.control.code}</span>{catName(reqForm.control.cat, lang)}</p>
+                <p className="font-semibold text-slate-800">{reqForm.control.name}{reqForm.control.nameEn ? <span className="font-normal text-slate-500"> · {reqForm.control.nameEn}</span> : null}</p>
+                {reqForm.control.desc && <p className="text-slate-500 whitespace-pre-wrap">{reqForm.control.desc}</p>}
+              </div>
+            </div>
+          ) : (
           <div className="space-y-3">
             {/* 한글·영문을 좌우로 나란히 둔다. 위아래로 나열하면
                 어느 칸이 어느 언어인지 헷갈려 반대로 입력하기 쉽다. */}
@@ -5913,6 +6003,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
               </div>
             </div>
           </div>
+          )}
 
           <div className="mt-3">
             <Field label={t("self.reqMcLabel")}>
@@ -6013,7 +6104,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
               <textarea className={inputCls + " resize-y ics-tall"} rows={4} maxLength={REASON_MAX}
                         value={reqForm.reason}
                         onChange={(e) => setReqForm({ ...reqForm, reason: e.target.value })}
-                        placeholder={t("self.reqReasonPlaceholder")} />
+                        placeholder={reqForm.mode === "delete" ? t("self.reqDelReasonPh") : t("self.reqReasonPlaceholder")} />
               <p className="text-xs text-slate-400 mt-1.5 text-right">{(reqForm.reason || "").length} / {REASON_MAX}</p>
             </Field>
           </div>
@@ -6068,25 +6159,41 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
           </div>
           )}
 
+          {reqForm.mode !== "delete" && (
           <div className="bg-slate-50 rounded-lg px-4 py-3 mt-2 text-xs text-slate-500">
             {t("self.reqNotice")}
           </div>
+          )}
           {/* 무엇이 막고 있는지 버튼 옆이 아니라 위에 둔다. 누르기 전에 보여야 한다. */}
-          {!reqChanged && (
+          {reqForm.mode !== "delete" && !reqChanged && (
             <p className="flex items-center gap-1.5 text-xs font-medium mt-3" style={{ color: "#B45309" }}>
               <AlertTriangle size={13} className="flex-shrink-0" />
               {t("self.reqNoChangeHint")}
+            </p>
+          )}
+          {reqForm.mode === "delete" && (reqForm.reason || "").trim().length < 10 && (
+            <p className="flex items-center gap-1.5 text-xs font-medium mt-3" style={{ color: "#B45309" }}>
+              <AlertTriangle size={13} className="flex-shrink-0" />
+              {t("self.reqDelReasonShort")}
             </p>
           )}
           <div className="flex justify-end gap-2 mt-5">
             <button onClick={() => setReqForm(null)} className="px-4 py-2 text-sm text-slate-500 rounded-lg hover:bg-slate-50">
               {t("common.cancel")}
             </button>
+            {reqForm.mode === "delete" ? (
+              <button onClick={submitRequest} disabled={reqSaving || !reqForm.mc || (reqForm.reason || "").trim().length < 10}
+                      className="px-4 py-2 text-sm text-white rounded-lg disabled:opacity-40 flex items-center gap-1.5"
+                      style={{ backgroundColor: "#B91C1C" }}>
+                {reqSaving ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}{t("self.reqDelSubmit")}
+              </button>
+            ) : (
             <button onClick={submitRequest} disabled={reqSaving || !(reqForm.name || "").trim() || !reqForm.mc || !reqChanged}
                     className="px-4 py-2 text-sm text-white rounded-lg disabled:opacity-40 flex items-center gap-1.5"
                     style={{ backgroundColor: BRAND.accent }}>
               {reqSaving && <Loader2 size={14} className="animate-spin" />}{t("self.reqSubmit")}
             </button>
+            )}
           </div>
         </Modal>
       )}
@@ -6141,7 +6248,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
                     ) : changeReqs[c.code]?.status === "pending" ? (
                       <span className="text-[13px] px-2.5 py-1 rounded-full font-medium whitespace-nowrap flex items-center gap-1"
                             style={{ backgroundColor: "#FEF3C7", color: "#B45309" }}>
-                        <Clock size={11} /> {t("self.reqPending")}
+                        <Clock size={11} /> {changeReqs[c.code]?.reqType === "delete" ? t("self.reqPendingDel") : t("self.reqPending")}
                       </span>
                     ) : (!isArchived && (
                       <button
@@ -6228,7 +6335,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
                   <div className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-[13px]"
                        style={{ backgroundColor: "#FFFBEB", border: "1px solid #FDE68A", color: "#92400E" }}>
                     <Lock size={14} className="flex-shrink-0" />
-                    <span>{t("self.lockedByRequest")}</span>
+                    <span>{changeReqs[c.code]?.reqType === "delete" ? t("self.lockedByDelete") : t("self.lockedByRequest")}</span>
                   </div>
                 ) : null /* 작성 단추는 통제 설명 줄 오른쪽으로 옮겼다(09-22) */}
               </div>
@@ -10039,6 +10146,19 @@ function RequestDetailModal({ r, controls, onClose, canAct, canCancel, acting, c
       {r.reqType === "delete" && (
         <div className="bg-red-50 rounded-lg p-3 mt-3 text-xs text-red-700">{t("approval.deleteNotice")}</div>
       )}
+      {/* 삭제 대상 내용(10-22) — 지금 목록의 항목, 이미 지워졌으면 요청 때 남긴 snapshot */}
+      {r.reqType === "delete" && (() => {
+        const live = controls.find((x) => x.code === r.code && x.year === r.year);
+        const sn = live || (r.payload && r.payload.snapshot);
+        if (!sn) return null;
+        return (
+          <div className="rounded-lg border border-red-100 px-3 py-2.5 mt-2 text-xs text-slate-600 space-y-1">
+            <p><span className="text-slate-400 font-mono mr-2">{r.code}</span>{catName(sn.cat, lang)}{!live && <span className="ml-2 text-slate-400">({lang === "en" ? "deleted — content at request time" : "삭제됨 — 요청 당시 내용"})</span>}</p>
+            <p className="font-semibold text-slate-800">{sn.name}{sn.nameEn ? <span className="font-normal text-slate-500"> · {sn.nameEn}</span> : null}</p>
+            {sn.desc && <p className="text-slate-500 whitespace-pre-wrap">{sn.desc}</p>}
+          </div>
+        );
+      })()}
 
       {/* 단계별 처리 내역. ACC Voucher 의 「결재 이력」 과 같은 형식으로 맞춘다.
             n차 역할(굵게)          [상태 배지]
