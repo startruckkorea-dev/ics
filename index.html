@@ -1185,7 +1185,7 @@ const STR = {
       title: "대시보드",
       subtitleAdmin: "전사 내부통제 운영 현황을 한눈에 확인하세요 (권한에 따라 데이터 열람 목록이 제한됩니다)",
       subtitleScoped: "배정된 부서의 통제 현황입니다.",
-      kpiTotal: "전체 통제 항목", kpiCompletion: "평가 완료율",
+      kpiTotal: "전체 통제 항목", kpiCompletion: "평가 완료율", kpiProgress: "평가 진행률", kpiSubmitted: "1차 제출", kpiReviewed: "검토 완료", kpiProgressTip: "진행률 = (1차 제출 + 2차 검토 완료) ÷ 전체. 제출하면 바로 오릅니다. 완료율은 2차 검토까지 끝난 비율입니다.", refreshBtn: "최신 데이터", refreshing: "불러오는 중", refreshedAt: "불러온 시각", liveNote: "내가 제출 · 검토한 내용은 바로 반영됩니다. 다른 사람의 변경은 「최신 데이터」로 불러오세요.", refreshFail: "최신 데이터를 불러오지 못했습니다. 지금 화면은 그대로 둡니다.", refreshOk: "최신 데이터를 불러왔습니다.",
       stageIsaHint: "ISA(1차 자가평가·2차 검토) 결과 기준입니다.",
       stageFsaHint: "FSA(최종 자가평가·FSA 2차검토) 결과 기준입니다. FSA 전 항목은 미평가로 집계됩니다.",
       matrixTitle: "부서 × 통제영역 리스크 매트릭스",
@@ -1711,7 +1711,7 @@ const STR = {
       title: "Dashboard",
       subtitleAdmin: "Get a comprehensive overview of the company's internal control operations at a glance (Data visibility is restricted based on your access permissions)",
       subtitleScoped: "Control status for your assigned department(s).",
-      kpiTotal: "Total control items", kpiCompletion: "Completion rate",
+      kpiTotal: "Total control items", kpiCompletion: "Completion rate", kpiProgress: "Progress", kpiSubmitted: "1st submitted", kpiReviewed: "Reviewed", kpiProgressTip: "Progress = (1st submitted + 2nd review completed) / total. It rises as soon as you submit. Completion is the share reviewed through the 2nd review.", refreshBtn: "Latest data", refreshing: "Loading", refreshedAt: "Loaded at", liveNote: "Your own submissions and reviews appear immediately. Use \"Latest data\" to load changes made by others.", refreshFail: "Could not load the latest data. The current view is kept.", refreshOk: "Latest data loaded.",
       stageIsaHint: "Based on ISA (1st self-assessment · 2nd review) results.",
       stageFsaHint: "Based on FSA (final self-assessment · FSA 2nd review) results. Items before FSA count as not assessed.",
       matrixTitle: "Department × Component risk matrix",
@@ -2601,7 +2601,14 @@ function Sidebar({ page, setPage, currentUser, approvalCount = 0, todoCounts = {
 /* 대시보드                                                             */
 /* ------------------------------------------------------------------ */
 
-function Dashboard({ controls: allControls, goTo, isAdmin, allowedDepts }) {
+function Dashboard({ controls: allControls, goTo, isAdmin, allowedDepts, onRefresh, loadedAt }) {
+  // 다른 사람의 변경을 불러오기(10-26) — 내가 한 저장은 이미 화면 상태에 들어 있어 바로 보인다
+  const [refreshing, setRefreshing] = useState(false);
+  async function doRefresh() {
+    if (refreshing || !onRefresh) return;
+    setRefreshing(true);
+    try { await onRefresh(); } finally { setRefreshing(false); }
+  }
   const { lang, t } = useLang();
   const { departments, users } = useAppData();
   const visibleDepts = isAdmin ? departments : departments.filter((d) => allowedDepts.includes(d.id));
@@ -2614,7 +2621,11 @@ function Dashboard({ controls: allControls, goTo, isAdmin, allowedDepts }) {
     controls.forEach((c) => (counts[stageRisk(c, stage)] += 1));
     const total = controls.length;
     const doneCount = controls.filter((c) => stageDone(c, stage)).length;
-    return { counts, total, completion: total ? Math.round((doneCount / total) * 100) : 0 };
+    // 10-26: 1차 제출(검토 대기)도 진행으로 센다 — 제출 즉시 숫자가 움직이게. 완료율(2차 검토까지)은 따로 보여 준다.
+    const submittedCount = controls.filter((c) => (stage === "fsa" ? c.fsaStatus : c.status) === "submitted_self").length;
+    const pct = (n) => (total ? Math.round((n / total) * 100) : 0);
+    return { counts, total, doneCount, submittedCount, completion: pct(doneCount), progress: pct(doneCount + submittedCount),
+             donePct: total ? (doneCount / total) * 100 : 0, subPct: total ? (submittedCount / total) * 100 : 0 };
   }, [controls, stage]);
 
   // 리스크 매트릭스·분포 차트는 실제 통제 항목이 있는 부서만 보여준다 (25개 부서 중 대부분은 아직 항목이 없어서, 전부 다 보여주면 텅 빈 행/막대만 잔뜩 생겨 알아보기 어려움)
@@ -2655,6 +2666,16 @@ function Dashboard({ controls: allControls, goTo, isAdmin, allowedDepts }) {
           <span className="block text-[12px] mt-0.5" style={{ color: BRAND.accent }}>
             {t(stage === "fsa" ? "dashboard.stageFsaHint" : "dashboard.stageIsaHint")}
           </span>
+          {onRefresh && (
+            <span className="flex items-center gap-2 flex-wrap text-[12px] mt-1 text-slate-500" data-dash-live>
+              <span>{t("dashboard.liveNote")}</span>
+              <button type="button" onClick={doRefresh} disabled={refreshing} data-dash-refresh
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-slate-300 bg-white text-slate-600 hover:border-teal-400 hover:text-teal-700 disabled:opacity-60">
+                <RefreshCw size={12} className={refreshing ? "animate-spin" : ""} /> {refreshing ? t("dashboard.refreshing") : t("dashboard.refreshBtn")}
+              </button>
+              {loadedAt ? <span className="text-slate-400" data-dash-loaded>{t("dashboard.refreshedAt")} {new Date(loadedAt + 9 * 3600000).toISOString().slice(11, 16)}</span> : null}
+            </span>
+          )}
         </>}
       />
 
@@ -2670,10 +2691,19 @@ function Dashboard({ controls: allControls, goTo, isAdmin, allowedDepts }) {
         <div className="relative bg-white rounded-xl border border-slate-200 shadow-sm p-4 overflow-hidden">
           <div className="absolute top-0 left-0 right-0 h-1" style={{ backgroundColor: BRAND.accent }} />
           <div className="flex items-center justify-between mb-1.5">
-            <p className="text-xs text-slate-500">{t("dashboard.kpiCompletion")}</p>
+            <p className="text-xs text-slate-500" title={t("dashboard.kpiProgressTip")}>{t("dashboard.kpiProgress")}</p>
             <CheckCircle2 size={14} className="text-slate-300" />
           </div>
-          <p className="text-2xl font-bold" style={{ color: BRAND.accent }}>{stats.completion}%</p>
+          <p className="text-2xl font-bold" style={{ color: BRAND.accent }} data-kpi-progress title={t("dashboard.kpiProgressTip")}>{stats.progress}%</p>
+          {/* 검토 완료(진한 색) + 1차 제출(옅은 색) 두 칸 막대 */}
+          <div className="mt-2 h-1.5 rounded-full bg-slate-100 overflow-hidden flex" aria-hidden="true">
+            <div style={{ width: stats.donePct + "%", backgroundColor: BRAND.accent, transition: "width .4s ease" }} />
+            <div style={{ width: stats.subPct + "%", backgroundColor: BRAND.accent, opacity: 0.35, transition: "width .4s ease" }} />
+          </div>
+          <p className="mt-1.5 text-[11px] text-slate-500 leading-snug" data-kpi-breakdown>
+            {t("dashboard.kpiSubmitted")} <b className="text-slate-700">{stats.submittedCount}</b> · {t("dashboard.kpiReviewed")} <b className="text-slate-700">{stats.doneCount}</b>
+            <span className="block text-slate-400">{t("dashboard.kpiCompletion")} {stats.completion}%</span>
+          </p>
         </div>
         {["green", "orange", "red"].map((r) => (
           <button
@@ -13339,6 +13369,21 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
   useEffect(() => { setIcsApprovalsNotifier(showToast); }, []);
 
   const controlsForYear = useMemo(() => controls.filter((c) => c.year === selectedYear), [controls, selectedYear]);
+  /* 최신 데이터 다시 읽기(10-26) — 대시보드 「최신 데이터」. 내 저장은 이미 화면 상태에 들어 있고,
+     다른 사람이 제출 · 검토한 내용만 여기서 받아 온다. 읽기에 실패하거나 빈 결과면 지금 화면을 그대로 둔다(빈 목록으로 덮지 않음). */
+  const [controlsLoadedAt, setControlsLoadedAt] = useState(() => Date.now());
+  async function refreshControls() {
+    try {
+      const snapshot = controls;                       // 누른 순간의 화면 상태
+      const fresh = await loadIcsControls();
+      if (!Array.isArray(fresh) || (!fresh.length && snapshot.length)) throw new Error("empty result");
+      setControls((prev) => mergeFreshControls(snapshot, prev, fresh));
+      setControlsLoadedAt(Date.now());           // 성공은 「불러온 시각」이 바뀌는 것으로 알린다(팝업 없음)
+    } catch (e) {
+      console.warn("[ICS] 최신 데이터 불러오기 실패:", e && e.message);
+      showToast(t("dashboard.refreshFail"));
+    }
+  }
 
 
   const logForYear = useMemo(() => log.filter((l) => l.year === selectedYear), [log, selectedYear]);
@@ -13739,7 +13784,8 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
                   : (lang === "en" ? "you can see this screen but not change it. Ask an admin for Edit access if needed." : "이 화면은 볼 수만 있습니다. 제출 · 저장 · 승인이 필요하면 관리자에게 「편집」 권한을 요청해 주세요.")}</span>
               </div>
             )}
-            {page === "dashboard" && <Dashboard controls={controlsForYear} goTo={goTo} isAdmin={isAdmin} allowedDepts={allowedDepts} />}
+            {page === "dashboard" && <Dashboard controls={controlsForYear} goTo={goTo} isAdmin={isAdmin} allowedDepts={allowedDepts}
+                                                onRefresh={usingSharePointData ? refreshControls : null} loadedAt={controlsLoadedAt} />}
             {page === "learn" && (
               <LearnPage
                 currentUser={currentUser}
@@ -14702,6 +14748,35 @@ async function loadIcsDepartmentList() {
       en: String(f.NameEn || "").trim() || String(f.NameKo || "").trim() || code,
       spId: it.id,
     });
+  });
+  return out;
+}
+
+/* 다시 읽은 통제 항목을 화면 상태에 합친다(대시보드 「최신 데이터」, 10-26).
+   - 같은 항목(SharePoint id, 없으면 코드+연도)은 화면의 id 를 그대로 물려준다 — 진행 중인 저장이 id 로 항목을 찾기 때문.
+   - 읽는 동안 이 화면에서 바뀐 항목(제출 · 검토 · 수정)은 화면 쪽을 남긴다 — 방금 저장한 값이 옛 값으로 되돌아가지 않게.
+   - 읽는 동안 이 화면에서 새로 만든 항목은 남기고, 지운 항목은 다시 살리지 않는다. */
+function mergeFreshControls(snapshot, prev, fresh) {
+  const keyOf = (c) => (c.spId ? "sp:" + c.spId : "cy:" + c.code + "|" + c.year);
+  const snapById = new Map(snapshot.map((c) => [c.id, c]));
+  const prevByKey = new Map(prev.map((c) => [keyOf(c), c]));
+  const snapKeys = new Set(snapshot.map(keyOf));
+  const used = new Set();
+  const out = [];
+  fresh.forEach((f) => {
+    const k = keyOf(f);
+    const local = prevByKey.get(k);
+    if (!local) {
+      if (snapKeys.has(k)) return;                   // 읽는 동안 이 화면에서 지운 항목
+      out.push(f); used.add(k); return;              // 다른 사람이 새로 만든 항목
+    }
+    used.add(k);
+    const changedHere = snapById.get(local.id) !== local;   // 읽는 동안 화면에서 바뀜(또는 새로 생김)
+    out.push(changedHere ? local : { ...f, id: local.id });
+  });
+  prev.forEach((c) => {                                // 읽는 동안 화면에서 새로 만든(아직 목록에 없던) 항목
+    const k = keyOf(c);
+    if (!used.has(k) && !snapById.has(c.id)) out.push(c);
   });
   return out;
 }
