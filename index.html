@@ -648,6 +648,8 @@ const ACTION_LABELS = {
   request_edit_control: { ko: "통제 항목 수정 요청", en: "Control item change requested" },
   request_delete_control: { ko: "통제 항목 삭제 요청", en: "Control item deletion requested" },
   request_bulk_accessor: { ko: "담당자 일괄 변경 요청", en: "Bulk accessor change requested" },
+  request_add_control: { ko: "통제 항목 신규 등록 요청", en: "New control requested" },
+  approve_change_conflict: { ko: "변경 결재 동시 처리 충돌", en: "Change approval conflict" },
   approve_change: { ko: "변경 요청 승인", en: "Change request approved" },
   reject_change: { ko: "변경 요청 반려", en: "Change request rejected" },
   cancel_change: { ko: "변경 요청 철회", en: "Change request withdrawn" },
@@ -1049,7 +1051,28 @@ const STAGES = [
   { id: "fsa", ko: "FSA (최종)", en: "FSA (final)" },
 ];
 function stageRisk(control, stage) {
-  return stage === "fsa" ? fsaFinalRisk(control) : finalRisk(control);
+  return stage === "final" ? icsOverallRisk(control) : stage === "fsa" ? fsaFinalRisk(control) : finalRisk(control);
+}
+/* 최종 결과 보고 기준 신호등(10-26 정책) — FSA 2차 검토까지 끝난 항목은 FSA 판정(최종), 그 밖에는 ISA 결과.
+   예전에는 ISA 결과만 봐서 ISA 양호 → FSA 위험인 항목이 CFO/RD 확정 화면의 위험 목록에서 빠졌다. */
+function icsOverallRisk(c) {
+  if (c && c.fsaStatus === "completed") return c.fsaReviewRisk || "none";
+  return finalRisk(c);
+}
+/* 직무 분리(10-26 정책) — 검토자는 본인이 평가(제출)한 항목을 검토할 수 없다.
+   본인 = 1차 담당자로 배정된 사람 또는 실제 제출자(SelfActor · FsaActor, 「이름 <메일>」). */
+function icsActorEmail(v) { const m = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/.exec(String(v || "")); return m ? m[0].toLowerCase() : ""; }
+function icsIsOwnAssessment(c, email, stage) {
+  const me = String(email || "").trim().toLowerCase();
+  if (!me || !c) return false;
+  if (String(c.accessor || "").trim().toLowerCase() === me) return true;
+  // 처리자 열은 화면용으로 서식(<…>)을 걷어 내면 메일이 빠지므로, 읽을 때 원문에서 뽑아 둔 메일(selfActorEmail · fsaActorEmail)을 먼저 본다
+  return (stage === "fsa" ? (c.fsaActorEmail || icsActorEmail(c.fsaActor)) : (c.selfActorEmail || icsActorEmail(c.selfActor))) === me;
+}
+function icsSodMsg(lang) {
+  return lang === "en"
+    ? "You cannot review an assessment you prepared yourself (segregation of duties). Please ask another reviewer."
+    : "본인이 평가한 항목은 직접 검토할 수 없습니다(직무 분리). 다른 검토자에게 요청해 주세요.";
 }
 function stageDone(control, stage) {
   return stage === "fsa" ? control.fsaStatus === "completed" : control.status === "completed";
@@ -1416,10 +1439,10 @@ const STR = {
       skipPoint3: "FSA 를 시작하기 전까지는 되돌릴 수 있습니다.",
       skipGo: "생략하기",
       skipBlockedTitle: "이 항목은 ISA 를 생략할 수 없습니다",
-      skipBlockedLead: "ISA 생략은 점검 빈도가 「연 1회」 인 통제에만 쓸 수 있습니다.",
+      skipBlockedLead: "ISA 생략은 통제 항목에 점검 빈도가 「연 1회」 로 등록된 통제에만 쓸 수 있습니다.",
       skipBlockedWhy: "연 1회 통제 중에는 JAN-DEC 전체를 대상으로 해서, ISA 시점에는 점검할 기간이 아직 끝나지 않는 것이 있습니다. 그런 항목만 FSA 로 미룹니다.",
-      skipBlockedNow: "현재 점검 빈도",
-      skipBlockedHow: "이 통제가 실제로 연 1회 수행되는 것이라면, 위 「점검 빈도」 를 연 1회로 바꾼 뒤 다시 눌러 주세요.",
+      skipBlockedNow: "등록된 점검 빈도",
+      skipBlockedHow: "이 통제가 실제로 연 1회 수행되는 것이라면, 관리자에게 「통제 항목 관리」 에서 점검 빈도 변경(결재)을 요청해 주세요. 결재가 끝나면 생략할 수 있습니다. (이 폼에서 빈도를 바꾸는 것으로는 생략할 수 없습니다)",
       skipClose: "닫기",
       skipBadge: "ISA 생략",
       skipBadgeTitle: "연 1회 통제로 ISA 를 생략했습니다. 평가는 FSA 에서 수행합니다.",
@@ -1574,6 +1597,7 @@ const STR = {
       subtitle: "회계연도 최종 결과 요약 및 CFO/RD 컨펌",
       isaRate: "ISA 완료율", fsaRate: "FSA 완료율",
       redListTitle: "중대 리스크(빨강) 통제 항목",
+      basisNote: "신호등은 FSA 2차 검토가 끝난 항목은 FSA 결과, 그 밖에는 ISA 결과 기준입니다.",
       noRedItems: "중대 리스크로 분류된 통제 항목이 없습니다.",
       confirmTitle: "컨펌", confirmed: "컨펌 완료", notConfirmed: "미컨펌",
       confirmBtn: "최종 결과 컨펌",
@@ -1942,10 +1966,10 @@ const STR = {
       skipPoint3: "You can undo it until FSA begins.",
       skipGo: "Skip ISA",
       skipBlockedTitle: "This control cannot skip ISA",
-      skipBlockedLead: "Skipping ISA is only available for controls with an \"Annually\" frequency.",
+      skipBlockedLead: "Skipping ISA is only available for controls registered with an \"Annually\" frequency.",
       skipBlockedWhy: "Some annual controls cover the whole JAN-DEC period, so at ISA time the period has not ended yet. Only those are deferred to FSA.",
-      skipBlockedNow: "Current frequency",
-      skipBlockedHow: "If this control really runs once a year, change the frequency above to \"Annually\" and try again.",
+      skipBlockedNow: "Registered frequency",
+      skipBlockedHow: "If this control really runs once a year, ask an admin to change its frequency in Control Management (approval required). You can skip once that is approved — changing the frequency in this form does not allow a skip.",
       skipClose: "Close",
       skipBadge: "ISA skipped",
       skipBadgeTitle: "ISA was skipped for this annual control. It is assessed at FSA.",
@@ -2092,6 +2116,7 @@ const STR = {
       title: "Final Report",
       subtitle: "Fiscal-year final results summary and CFO/RD confirmation",
       isaRate: "ISA completion rate", fsaRate: "FSA completion rate",
+      basisNote: "Signals use the FSA result once the FSA 2nd review is complete, otherwise the ISA result.",
       redListTitle: "High-risk (red) control items",
       noRedItems: "No control items are classified as high risk.",
       confirmTitle: "confirmation", confirmed: "Confirmed", notConfirmed: "Not confirmed",
@@ -2451,10 +2476,10 @@ function countMyTodos(controls, currentUser, isMyReview, isMyAccess) {
   const rev  = (controls || []).filter((c) => isMyReview(c));
   return {
     self:      mine.filter((c) => c.status === "not_started" || c.status === "returned").length,
-    review:    rev.filter((c) => c.status === "submitted_self").length,
+    review:    rev.filter((c) => c.status === "submitted_self" && !icsIsOwnAssessment(c, me, "isa")).length,   // 10-26 본인 평가는 검토 할 일에서 뺀다(직무 분리)
     fsa:       mine.filter((c) => c.status === "completed"
                               && (c.fsaStatus === "not_started" || c.fsaStatus === "returned" || !c.fsaStatus)).length,
-    fsaReview: rev.filter((c) => c.fsaStatus === "submitted_self").length,
+    fsaReview: rev.filter((c) => c.fsaStatus === "submitted_self" && !icsIsOwnAssessment(c, me, "fsa")).length,
   };
 }
 
@@ -4257,16 +4282,24 @@ function pickMcApprover(users, requesterEmail, lang) {
     return null;
   }
   // 후보가 소수(J · H열 기준)라 번호로 고르게 한다.
-  const menu = cands.map((x, i) => `${i + 1}. ${x.name} (${x.email})`).join("\n");
+  // 10-26 정책 — 요청자 본인의 MC(employee_search J열 → H열)를 기본값으로 미리 넣는다(자가평가 화면과 같은 기준).
+  //       다른 사람을 고르면 한 번 더 확인한다.
+  const mine = icsMyMcEmail(me);
+  const mineIdx = cands.findIndex((x) => x.email === mine);
+  const menu = cands.map((x, i) => `${i + 1}. ${x.name} (${x.email})${i === mineIdx ? (lang === "en" ? "  ← your MC (default)" : "  ← 본인 MC(기본)") : ""}`).join("\n");
   const raw = window.prompt(
     (lang === "en" ? "Select the 1st approver (MC) — enter a number:\n\n"
-                   : "1차 결재자(MC)를 선택해 주세요 — 번호를 입력하세요:\n\n") + menu);
+                   : "1차 결재자(MC)를 선택해 주세요 — 번호를 입력하세요:\n\n") + menu,
+    mineIdx >= 0 ? String(mineIdx + 1) : "");
   if (raw === null) return null;
   const n = parseInt(String(raw).trim(), 10);
   if (!(n >= 1 && n <= cands.length)) {
     alert(lang === "en" ? "Please enter a valid number." : "목록에 있는 번호를 입력해 주세요.");
     return null;
   }
+  if (mineIdx >= 0 && n - 1 !== mineIdx && !window.confirm(lang === "en"
+      ? `${cands[n - 1].name} is not your MC (${cands[mineIdx].name}). Continue with ${cands[n - 1].name}?`
+      : `${cands[n - 1].name} 님은 본인 MC(${cands[mineIdx].name})가 아닙니다. ${cands[n - 1].name} 님으로 진행할까요?`)) return null;
   return cands[n - 1].email;
 }
 
@@ -4381,6 +4414,7 @@ const ICS_BULK_TITLE = "BULK-ACCESSOR";
 function icsIsBulk(r) { return !!r && r.reqType === ICS_BULK_ACC; }
 function icsReqChip(r, t, lang) {
   if (icsIsBulk(r)) return { label: lang === "en" ? "Bulk accessor change" : "담당자 일괄 변경", bg: "#E0E7FF", fg: "#4338CA" };
+  if (icsIsAdd(r)) return { label: lang === "en" ? "New control" : "신규 등록", bg: "#DCFCE7", fg: "#15803D" };
   return r.reqType === "delete" ? { label: t("approval.typeDelete"), bg: "#FEE2E2", fg: "#B91C1C" } : { label: t("approval.typeEdit"), bg: "#E4F1F0", fg: BRAND.accent };
 }
 function icsBulkLabel(r, lang) {
@@ -4391,10 +4425,10 @@ function icsBulkLabel(r, lang) {
 function icsChangeReqMap(list) {
   const map = {};
   const newer = (a, b) => String(a.created || "") > String(b.created || "");
-  list.forEach((r) => { if (icsIsBulk(r)) return; const prev = map[r.code];
+  list.forEach((r) => { if (icsIsBulk(r) || icsIsAdd(r)) return; const prev = map[r.code];
     if (!prev || (r.status === "pending" && prev.status !== "pending") || ((r.status === "pending") === (prev.status === "pending") && newer(r, prev))) map[r.code] = r; });
   list.forEach((r) => {
-    if (!icsIsBulk(r) || r.status !== "pending") return;
+    if (!(icsIsBulk(r) || icsIsAdd(r)) || r.status !== "pending") return;
     ((r.payload || {}).items || []).forEach((it) => { const prev = map[it.code]; if (!prev || prev.status !== "pending") map[it.code] = r; });
   });
   return map;
@@ -4419,6 +4453,120 @@ async function icsApplyBulkAccessor(r, controls) {
     done.push({ code: c.code, id: c.id });
   }
   return { to, done, skipped, at: new Date().toISOString() };
+}
+
+/* ── 신규 등록 결재(10-26 정책) ─────────────────────────────────────────────────
+   통제 항목을 새로 만드는 것도 수정 · 삭제와 같은 3단계 결재(MC → ICS Admin → 최종)를 거친다(ReqType "add").
+   관리 화면의 「새 통제 항목」(1건)과 엑셀 일괄 업로드(여러 건)가 같은 요청을 쓴다. Payload.items = 만들 항목들.
+   최종 승인 때 서버에서 같은 코드 · 연도가 이미 있으면 건너뛰고(「이미 있음」), 결과는 Payload.result 에 남긴다 —
+   요청 저장이 실패해 다시 승인해도 두 번 만들어지지 않는다. */
+const ICS_ADD = "add";
+const ICS_ADD_TITLE = "BULK-ADD";
+const ICS_ADD_CHUNK = 80;   // 한 요청에 담는 최대 건수(Payload 열 길이 여유)
+function icsIsAdd(r) { return !!r && r.reqType === ICS_ADD; }
+function icsAddLabel(r, lang) {
+  const its = ((r && r.payload) || {}).items || [], f = its[0] || {};
+  const head = lang === "en" ? "New control · " : "신규 등록 · ";
+  if (its.length > 1) return head + f.code + (lang === "en" ? ` +${its.length - 1}` : ` 외 ${its.length - 1}건`);
+  return head + (f.code || "") + (f.name ? " " + f.name : "");
+}
+function icsAddItemFields(it, year) {
+  return { Title: it.code, Dept: it.dept, Category: it.cat, NameKo: it.name, NameEn: it.nameEn || it.name,
+           DescKo: it.desc || "", DescEn: it.descEn || it.desc || "", AccessorEmail: it.accessor, ReviewerEmail: it.reviewer,
+           Year: String(year), Frequency: it.frequency, Importance: it.importance };
+}
+function icsNewControlObj(it, spId, year) {
+  return {
+    id: uid(), spId, requestSpId: null, code: it.code, dept: it.dept, cat: it.cat, name: it.name, nameEn: it.nameEn || it.name,
+    desc: it.desc || "", descEn: it.descEn || it.desc || "", accessor: it.accessor, reviewer: it.reviewer, year: String(year),
+    frequency: it.frequency, importance: it.importance, sampleSize: recommendedSample(it.importance, it.frequency), status: "not_started",
+    selfRisk: null, selfComment: "", selfCommentEn: "", selfDate: null, reviewRisk: null, reviewComment: "", reviewCommentEn: "", reviewDate: null,
+    history: [], actualSample: null, attachments: [], fsaAttachments: [],
+    fsaStatus: "not_started", fsaRisk: null, fsaComment: "", fsaCommentEn: "", fsaDate: null, fsaReviewRisk: null, fsaReviewComment: "", fsaReviewCommentEn: "", fsaReviewDate: null,
+    pendingEdit: null, draft: null,
+  };
+}
+async function icsApplyAddRequest(r) {
+  const its = ((r.payload || {}).items) || [], year = String(r.year || "");
+  const all = await icsListAll(ICS_LISTS.controls);
+  const have = new Set(all.filter((x) => String((x.fields || {}).Year) === year).map((x) => String((x.fields || {}).Title || "").trim().toLowerCase()));
+  const done = [], skipped = [];
+  for (const it of its) {
+    const k = String(it.code || "").trim().toLowerCase();
+    if (!k) continue;
+    if (have.has(k)) { skipped.push({ code: it.code, why: "exists" }); continue; }
+    const created = await icsCreateItem(ICS_LISTS.controls, icsAddItemFields(it, year));
+    have.add(k); done.push({ code: it.code, spId: created.id });
+  }
+  return { done, skipped, at: new Date().toISOString() };
+}
+/* 신규 등록 요청을 올린다(1건 · 여러 건 공통) — 상신 직전 서버 확인(같은 코드의 진행 중 요청 · 이미 있는 코드)은 호출부가 한다 */
+function icsAssessmentInProgress(c) {
+  return !!c && ((c.status && c.status !== "not_started") || (c.fsaStatus && c.fsaStatus !== "not_started"));
+}
+function icsDeleteInProgressMsg(c, lang) {
+  return lang === "en"
+    ? `${c.code} has an assessment in progress (ISA ${c.status || "-"} · FSA ${c.fsaStatus || "-"}).\nIf the deletion is approved, its assessment record is kept for audit but no longer shown on screens.\n\nContinue?`
+    : `${c.code} 은(는) 평가가 진행 중입니다(ISA ${c.status || "-"} · FSA ${c.fsaStatus || "-"}).\n삭제가 승인되면 평가 기록은 감사용으로 남지만 화면에서는 더 이상 보이지 않습니다.\n\n계속할까요?`;
+}
+/* 삭제 승인 뒤 평가 행(ICS_Requests)을 보관 처리 — ControlId 뒤에 삭제 표시를 붙여, 같은 코드를 나중에 다시 만들어도 옛 평가가 붙지 않게 한다(행 자체는 감사용으로 남김) */
+async function icsArchiveRequestRows(code, year) {
+  let rows;
+  try { rows = await icsListAll(ICS_LISTS.requests, `&$filter=fields/ControlId eq '${String(code).replace(/'/g, "''")}'`); }
+  catch (e) { rows = await icsListAll(ICS_LISTS.requests); }
+  const tag = `${code}#DELETED-${new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10)}`;
+  for (const it of rows.filter((x) => (x.fields || {}).ControlId === code && String((x.fields || {}).Year) === String(year))) {
+    await icsUpdateItem(ICS_LISTS.requests, it.id, { ControlId: tag });
+  }
+}
+async function icsSubmitAddRequest({ items, year, requester, steps, reason }) {
+  const reqs = [];
+  for (let i = 0; i < items.length; i += ICS_ADD_CHUNK) {
+    const part = items.slice(i, i + ICS_ADD_CHUNK);
+    const payload = { items: part, reason: reason || "", skipped: (steps.skipped || []).map((sk) => ({ role: sk.role, approver: sk.approver, reason: sk.reason })) };
+    const title = part.length === 1 ? part[0].code : ICS_ADD_TITLE;
+    const created = await icsCreateItem(ICS_LISTS.changeRequests, { Title: title, Year: String(year), ReqType: ICS_ADD, RequesterEmail: requester,
+      Payload: JSON.stringify(payload), Steps: JSON.stringify(steps), Step: 1, Status: "pending" });
+    await icsApprovalsCreate(created, title, icsAddLabel({ payload }, "ko"), requester, steps);
+    reqs.push(created);
+  }
+  return reqs;
+}
+// 결재 상세 — 신규 등록 대상 표(코드 · 통제명 · 부서 · 담당 · 빈도 · 결과)
+function AddItemsTable({ r }) {
+  const { lang } = useLang();
+  const { departments, users } = useAppData();
+  const pl = r.payload || {}, res = pl.result || null, its = pl.items || [];
+  const why = (code) => { const sk = res && (res.skipped || []).find((x) => x.code === code); return sk ? (lang === "en" ? "Skipped — already exists" : "건너뜀 — 이미 있는 코드") : null; };
+  return (
+    <div className="mt-3" data-add-table>
+      <div className="rounded-lg px-4 py-2.5 text-sm flex items-center gap-2" style={{ background: "#F0FDF4", color: "#166534" }}>
+        <Plus size={14} /><span className="font-semibold">{lang === "en" ? "New control items" : "새로 만들 통제 항목"}</span>
+        <span className="ml-auto text-xs">{lang === "en" ? `${its.length} item(s) · FY${r.year}` : `${its.length}건 · ${r.year} 회계연도`}</span>
+      </div>
+      <div className="mt-2 border border-slate-200 rounded-lg overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead className="bg-slate-50 text-slate-500"><tr>
+            <th className="text-left font-medium px-3 py-2 w-24">{lang === "en" ? "Code" : "코드"}</th>
+            <th className="text-left font-medium px-3 py-2">{lang === "en" ? "Control" : "통제명"}</th>
+            <th className="text-left font-medium px-3 py-2 w-28">{lang === "en" ? "Dept." : "부서"}</th>
+            <th className="text-left font-medium px-3 py-2 w-40">{lang === "en" ? "Accessor / Reviewer" : "1차 담당 / 2차 검토"}</th>
+            <th className="text-left font-medium px-3 py-2 w-28">{lang === "en" ? "Freq. · Imp." : "빈도 · 중요도"}</th>
+            {res && <th className="text-left font-medium px-3 py-2 w-36">{lang === "en" ? "Result" : "결과"}</th>}
+          </tr></thead>
+          <tbody>{its.map((it) => { const w = why(it.code); return (
+            <tr key={it.code} className="border-t border-slate-100 align-top">
+              <td className="px-3 py-1.5 font-mono text-slate-500">{it.code}</td>
+              <td className="px-3 py-1.5 text-slate-700">{lang === "en" ? (it.nameEn || it.name) : it.name}{it.desc ? <span className="block text-slate-400 whitespace-pre-wrap">{lang === "en" ? (it.descEn || it.desc) : it.desc}</span> : null}</td>
+              <td className="px-3 py-1.5 text-slate-600">{deptName(it.dept, lang, departments)} · {catName(it.cat, lang)}</td>
+              <td className="px-3 py-1.5 text-slate-600">{personByEmail(it.accessor, lang, users)} / {personByEmail(it.reviewer, lang, users)}</td>
+              <td className="px-3 py-1.5 text-slate-600">{freqLabel(it.frequency, lang)} · {importanceLabel(it.importance, lang)}</td>
+              {res && <td className={"px-3 py-1.5 " + (w ? "text-amber-700" : "text-emerald-700")}>{w || (lang === "en" ? "Created" : "생성됨")}</td>}
+            </tr>); })}</tbody>
+        </table>
+      </div>
+    </div>
+  );
 }
 
 // 결재 상세 · PDF — 일괄 변경 대상 표(코드 · 통제명 · 부서 · 결과)
@@ -4841,35 +4989,45 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
         else creates.push({ payload, fields });
       });
 
-      // SharePoint 스로틀링 방지를 위해 순차적으로 반영 (동시 다발 요청 지양)
-      let added = 0, updated = 0;
+      /* 10-26 정책 — 엑셀 업로드도 결재를 거친다.
+         · 이미 있는 코드는 반영하지 않는다(예전에는 결재 없이 바로 수정돼, 화면 수정의 3단계 결재를 건너뛰었다) — 수정은 항목별 수정 요청으로.
+         · 새 코드는 「신규 등록」 결재 요청으로 올린다(80건씩 한 요청). 최종 승인되면 만들어진다.
+         · 같은 코드의 등록 요청이 이미 진행 중이면 뺀다.
+         SharePoint 를 쓰지 않는 로컬 모드는 예전처럼 바로 만든다. */
+      let added = 0, requested = 0, pendingSkipped = 0, reqCount = 0;
+      const existingSkipped = updates.length;
       const createdResults = [];
-      for (const item of creates) {
-        try {
-          const created = await icsCreateItem(ICS_LISTS.controls, item.fields);
-          createdResults.push({ ...item, spId: created.id });
-          added++;
-        } catch (err) {
-          skipped++;
+      if (usingSharePointData) {
+        let toReq = creates;
+        if (toReq.length) {
+          const busy = await icsPendingChangeMap(year);
+          const free = toReq.filter((x) => !busy[x.payload.code]);
+          pendingSkipped = toReq.length - free.length;
+          toReq = free;
         }
-      }
-      const updatedResults = [];
-      for (const item of updates) {
-        try {
-          if (item.spId) await icsUpdateItem(ICS_LISTS.controls, item.spId, item.fields);
-          updatedResults.push(item);
-          updated++;
-        } catch (err) {
-          skipped++;
+        if (toReq.length) {
+          const mcEmail = pickMcApprover(users, currentUser.email, lang);
+          if (mcEmail === null) { setUploadResult({ cancelled: true }); return; }
+          const steps = buildApprovalSteps(currentUser.email, mcEmail);
+          if (!steps.length) { alert(lang === "en" ? "Approval line could not be determined. Please contact IT." : "결재선을 확인할 수 없습니다. IT로 문의해 주세요."); return; }
+          const items = toReq.map(({ payload }) => { const { sampleSize, ...it } = payload; return it; });
+          const reqs = await icsSubmitAddRequest({ items, year, requester: currentUser.email, steps, reason: lang === "en" ? `Excel upload (${file.name})` : `엑셀 일괄 업로드(${file.name})` });
+          requested = items.length; reqCount = reqs.length;
+        }
+      } else {
+        for (const item of creates) {
+          try {
+            const created = await icsCreateItem(ICS_LISTS.controls, item.fields);
+            createdResults.push({ ...item, spId: created.id });
+            added++;
+          } catch (err) {
+            skipped++;
+          }
         }
       }
 
       setControls((prev) => {
         let next = [...prev];
-        updatedResults.forEach(({ localId, payload }) => {
-          const idx = next.findIndex((c) => c.id === localId);
-          if (idx >= 0) next[idx] = { ...next[idx], ...payload };
-        });
         createdResults.forEach(({ payload, spId }) => {
           next = [
             {
@@ -4889,10 +5047,10 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
         currentUser.email,
         "bulk_upload",
         "-",
-        `신규 ${added}건 · 수정 ${updated}건 · 오류 ${skipped}건`,
-        `${added} added · ${updated} updated · ${skipped} skipped`
+        `등록 요청 ${requested}건(결재 ${reqCount}건) · 신규 ${added}건 · 기존 코드 제외 ${existingSkipped}건 · 진행 중 제외 ${pendingSkipped}건 · 오류 ${skipped}건`,
+        `${requested} requested (${reqCount} approvals) · ${added} added · ${existingSkipped} existing excluded · ${pendingSkipped} pending excluded · ${skipped} skipped`
       );
-      setUploadResult({ added, updated, skipped });
+      setUploadResult({ added, requested, reqCount, existingSkipped, pendingSkipped, skipped });
     } catch (err) {
       setUploadResult({ error: true });
     }
@@ -5022,6 +5180,24 @@ Continue?`
         setControls((prev) => prev.map((c) => (c.id === editingId ? { ...c, ...form, sampleSize: recommendedSample(form.importance, form.frequency), pendingEdit: null } : c)));
         addLog(currentUser.email, "edit_control", form.code, form.name, form.name);
         showToast(lang === "en" ? "Control item updated." : "통제 항목이 수정되었습니다.");
+      } else if (usingSharePointData) {
+        // 10-26 정책 — 신규 등록도 결재(MC → ICS Admin → 최종)를 거친다. 최종 승인 때 통제 항목이 만들어진다.
+        const code = form.code.trim();
+        const busyReq = await icsPendingChangeFor(code, year);   // 같은 코드의 진행 중 등록 요청
+        if (busyReq) { alert(lang === "en" ? `A request for ${code} is already in approval.` : `${code} 에 대한 결재가 이미 진행 중입니다.`); return; }
+        const srv = await icsListAll(ICS_LISTS.controls);        // 그사이 다른 사람이 같은 코드를 만들었는지(서버)
+        if (srv.some((x) => String((x.fields || {}).Year) === String(year) && String((x.fields || {}).Title || "").trim().toLowerCase() === code.toLowerCase())) {
+          alert(lang === "en" ? `Control code "${code}" already exists.` : `이미 등록된 통제 코드입니다 — ${code}`); return;
+        }
+        const mcEmail = pickMcApprover(users, currentUser.email, lang);
+        if (mcEmail === null) return;   // 취소
+        const steps = buildApprovalSteps(currentUser.email, mcEmail);
+        if (!steps.length) { alert(lang === "en" ? "Approval line could not be determined. Please contact IT." : "결재선을 확인할 수 없습니다. IT로 문의해 주세요."); return; }
+        const item = { code, dept: form.dept, cat: form.cat, name: form.name, nameEn: form.name, desc: form.desc, descEn: form.desc,
+                       accessor: form.accessor, reviewer: form.reviewer, frequency: form.frequency, importance: form.importance };
+        await icsSubmitAddRequest({ items: [item], year, requester: currentUser.email, steps });
+        addLog(currentUser.email, "request_add_control", code, form.name, form.name);
+        showToast(lang === "en" ? "New control submitted for approval. It will be created when approved." : "신규 등록이 결재로 상신되었습니다. 최종 승인되면 통제 항목이 만들어집니다.");
       } else {
         const created = await icsCreateItem(ICS_LISTS.controls, fields);
         const newControl = {
@@ -5053,6 +5229,8 @@ Continue?`
       if (usingSharePointData) {
         const busyReq = await icsPendingChangeFor(c.code, c.year);   // 10-26 상신 직전 서버 확인
         if (busyReq) { alert(t("manage.lockedPending")); setChangeReqs((prev) => ({ ...prev, [c.code]: busyReq })); return; }
+        // 10-26 정책 — 평가가 진행 중(제출 · 검토 완료 · 반려 · FSA 진행)인 통제는 한 번 더 확인한다
+        if (icsAssessmentInProgress(c) && !window.confirm(icsDeleteInProgressMsg(c, lang))) return;
         const mcEmail = pickMcApprover(users, currentUser.email, lang);
         if (mcEmail === null) return;   // 취소
         const steps = buildApprovalSteps(currentUser.email, mcEmail);
@@ -5177,10 +5355,15 @@ Continue?`
         >
           {uploadResult.error ? (
             <span>{t("manage.uploadError")}</span>
+          ) : uploadResult.cancelled ? (
+            <span>{lang === "en" ? "Upload cancelled — nothing was submitted." : "업로드를 취소했습니다 — 상신한 것이 없습니다."}</span>
           ) : (
-            <span>
-              {t("manage.uploadSummaryTitle")}: {t("manage.uploadSummaryNew")} {uploadResult.added}{t("common.items")} · {t("manage.uploadSummaryUpdated")} {uploadResult.updated}
-              {t("common.items")}
+            <span data-upload-result>
+              {t("manage.uploadSummaryTitle")}: {uploadResult.requested
+                ? (lang === "en" ? `${uploadResult.requested} new item(s) submitted for approval (${uploadResult.reqCount} request${uploadResult.reqCount > 1 ? "s" : ""}) — created when approved` : `신규 ${uploadResult.requested}건 등록 결재 상신(${uploadResult.reqCount}건) — 최종 승인되면 만들어집니다`)
+                : `${t("manage.uploadSummaryNew")} ${uploadResult.added || 0}${t("common.items")}`}
+              {uploadResult.existingSkipped > 0 && (lang === "en" ? ` · ${uploadResult.existingSkipped} existing code(s) not changed — use a change request per item` : ` · 기존 코드 ${uploadResult.existingSkipped}건은 반영하지 않음(수정은 항목별 수정 요청)`)}
+              {uploadResult.pendingSkipped > 0 && (lang === "en" ? ` · ${uploadResult.pendingSkipped} already in approval` : ` · 결재 진행 중 ${uploadResult.pendingSkipped}건 제외`)}
               {uploadResult.skipped > 0 && ` · ${t("manage.uploadSummarySkipped")} ${uploadResult.skipped}${t("common.items")}`}
             </span>
           )}
@@ -5971,7 +6154,9 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
      함께 반영한다. 첨부·샘플링은 FSA 에서 받으므로 여기서는 비운다. */
   async function skipIsa(c) {
     if (rowRO(c)) return;   // 10-26 보기 전용(부서 항목 · 보기 권한 · 보관 연도) — 화면 단추가 없어도 한 번 더 막는다
-    const freq = draft.frequency ?? c.frequency;
+    // 10-26 정책 — 생략 조건은 통제 항목에 등록된(결재를 거친) 점검 빈도로만 본다. 예전에는 이 폼에서 빈도를 「연 1회」 로 바꾸면
+    //       곧바로 생략할 수 있었고, 그 빈도 변경이 결재 없이 통제 항목에 저장됐다.
+    const freq = c.frequency;
     // 확인은 폼의 팝업에서 받는다. 여기서는 조건만 다시 본다(화면을 열어 둔 사이에
     // 다른 곳에서 바뀌었을 수 있다).
     if (freq !== ISA_SKIP_FREQ) return;
@@ -5984,8 +6169,8 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
       const spId = await ensureRequestItem(c);
 
       const newImp = draft.importance ?? c.importance;
-      if (c.spId && (freq !== c.frequency || newImp !== c.importance)) {
-        await icsUpdateItem(ICS_LISTS.controls, c.spId, { Frequency: freq, Importance: newImp });
+      if (c.spId && newImp !== c.importance) {   // 빈도는 등록값 그대로(위 조건) — 중요도만 폼 값을 반영
+        await icsUpdateItem(ICS_LISTS.controls, c.spId, { Importance: newImp });
         addLog(currentUser.email, "edit_control", c.code, c.name, c.nameEn);
       }
 
@@ -7406,7 +7591,7 @@ function SelfAssessForm({ control, draft, setDraft, onCancel, onSubmit, onSkip, 
           {onSkip && (
             <button
               type="button"
-              onClick={() => setSkipModal(curFreq === ISA_SKIP_FREQ ? "confirm" : "blocked")}
+              onClick={() => setSkipModal(control.frequency === ISA_SKIP_FREQ ? "confirm" : "blocked")}
               title={t("self.skipHint")}
               className="px-3.5 py-2 text-sm font-medium rounded-lg border transition-colors"
               style={{ borderColor: "#CBD3DD", color: "#64748B", backgroundColor: "#fff" }}
@@ -7457,7 +7642,7 @@ function SelfAssessForm({ control, draft, setDraft, onCancel, onSubmit, onSkip, 
               되어 있는지 몰라 다시 확인하러 올라가야 한다. */}
           <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 mb-3">
             <span className="text-[12px] text-slate-500">{t("self.skipBlockedNow")}</span>
-            <span className="text-[13px] font-bold text-slate-800">{freqLabel(curFreq, lang)}</span>
+            <span className="text-[13px] font-bold text-slate-800">{freqLabel(control.frequency, lang)}</span>
             <span className="text-slate-300">→</span>
             <span className="text-[13px] font-bold" style={{ color: BRAND.accent }}>{freqLabel(ISA_SKIP_FREQ, lang)}</span>
           </div>
@@ -8028,6 +8213,7 @@ function FSAReviewPage({ controls, setControls, currentUser, addLog, isArchived,
     setDraft({ risk: c.fsaRisk, comment: "" });
   }
   async function approve(c) {
+    if (icsIsOwnAssessment(c, myEmail, "fsa")) { alert(icsSodMsg(lang)); return; }   // 10-26 직무 분리 — 화면 단추가 없어도 한 번 더 막는다
     if (!draft.risk) return;
     const today = new Date().toISOString();  // SharePoint 저장값과 동일한 ISO — 표시 시점에 formatDateTime 이 KST 로 변환
     setEditing(null);
@@ -8060,6 +8246,7 @@ function FSAReviewPage({ controls, setControls, currentUser, addLog, isArchived,
     }
   }
   async function reject(c) {
+    if (icsIsOwnAssessment(c, myEmail, "fsa")) { alert(icsSodMsg(lang)); return; }   // 10-26 직무 분리 — 화면 단추가 없어도 한 번 더 막는다
     const today = new Date().toISOString();  // SharePoint 저장값과 동일한 ISO — 표시 시점에 formatDateTime 이 KST 로 변환
     setReturning(null);
     try {
@@ -8166,7 +8353,11 @@ function FSAReviewPage({ controls, setControls, currentUser, addLog, isArchived,
                     </div>
                   </div>
                 ) : (
-                  !isArchived && (
+                  !isArchived && (icsIsOwnAssessment(c, myEmail, "fsa") ? (
+                    <span className="text-[11px] px-2.5 py-1 rounded-lg bg-slate-100 text-slate-500 whitespace-nowrap" data-sod-note title={icsSodMsg(lang)}>
+                      {lang === "en" ? "Your own assessment — another reviewer must review" : "본인 평가 — 다른 검토자가 검토"}
+                    </span>
+                  ) :
                     <div className="flex gap-2">
                       <button onClick={() => startEdit(c)} className="text-sm font-medium px-4 py-2 rounded-lg text-white" style={{ backgroundColor: BRAND.accent }}>{t("review.reviewBtn")}</button>
                       <button onClick={() => setReturning(c.id)} className="text-sm font-medium px-4 py-2 rounded-lg text-red-600 border border-red-200 hover:bg-red-50">{t("review.rejectBtn")}</button>
@@ -8239,6 +8430,7 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, sh
     setDraft({ risk: c.selfRisk, comment: "" });
   }
   async function approve(c) {
+    if (icsIsOwnAssessment(c, myEmail, "isa")) { alert(icsSodMsg(lang)); return; }   // 10-26 직무 분리 — 화면 단추가 없어도 한 번 더 막는다
     if (!draft.risk) return;
     const today = new Date().toISOString();  // SharePoint 저장값과 동일한 ISO — 표시 시점에 formatDateTime 이 KST 로 변환
     setEditing(null);
@@ -8267,6 +8459,7 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, sh
     }
   }
   async function reject(c) {
+    if (icsIsOwnAssessment(c, myEmail, "isa")) { alert(icsSodMsg(lang)); return; }   // 10-26 직무 분리 — 화면 단추가 없어도 한 번 더 막는다
     const today = new Date().toISOString();  // SharePoint 저장값과 동일한 ISO — 표시 시점에 formatDateTime 이 KST 로 변환
     setReturning(null);
     try {
@@ -8329,7 +8522,12 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, sh
                       )}
                       <StatusBadge status={c.status} kind="isa" />
                     </div>
-                    {!isArchived && editing !== c.id && returning !== c.id && (
+                    {!isArchived && icsIsOwnAssessment(c, myEmail, "isa") && (
+                      <span className="text-[11px] px-2.5 py-1 rounded-lg bg-slate-100 text-slate-500 whitespace-nowrap" data-sod-note title={icsSodMsg(lang)}>
+                        {lang === "en" ? "Your own assessment — another reviewer must review" : "본인 평가 — 다른 검토자가 검토"}
+                      </span>
+                    )}
+                    {!isArchived && !icsIsOwnAssessment(c, myEmail, "isa") && editing !== c.id && returning !== c.id && (
                       <div className="flex gap-2" data-review-actions onClick={(e) => e.stopPropagation()}>
                         <button onClick={() => startEdit(c)} className="text-sm font-medium px-4 py-2 rounded-lg text-white whitespace-nowrap" style={{ backgroundColor: BRAND.accent }}>{t("review.reviewBtn")}</button>
                         <button onClick={() => setReturning(c.id)} className="text-sm font-medium px-4 py-2 rounded-lg text-red-600 border border-red-200 bg-white hover:bg-red-50 whitespace-nowrap">{t("review.rejectBtn")}</button>
@@ -8617,7 +8815,8 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
     .sort(byNewest);
 
   function labelOf(r) {
-    if (icsIsBulk(r)) return icsBulkLabel(r, lang);   // 담당자 일괄 변경(10-20)
+    if (icsIsBulk(r)) return icsBulkLabel(r, lang);
+    if (icsIsAdd(r)) return icsAddLabel(r, lang);   // 신규 등록(10-26)   // 담당자 일괄 변경(10-20)
     const c = controls.find((x) => x.code === r.code && x.year === r.year);
     return c ? cName(c, lang) : r.code;
   }
@@ -8710,7 +8909,10 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
       // PATCH 가 실패하면 같은 건이 한 번 더 보이지만, 같은 값을 다시 쓰는 것이라
       // 결과가 달라지지 않는다(삭제는 이미 사라진 항목이라 아래 「없음」 안내로 빠진다).
       let applied = null;
-      if (nextStatus === "approved" && icsIsBulk(r)) {
+      if (nextStatus === "approved" && icsIsAdd(r)) {
+        // 신규 등록(10-26) — 서버에 같은 코드 · 연도가 없을 때만 만든다(다시 승인해도 두 번 만들지 않음)
+        applied = { kind: "add", result: await icsApplyAddRequest(r) };
+      } else if (nextStatus === "approved" && icsIsBulk(r)) {
         // 담당자 일괄 변경(10-20) — 항목마다 반영하고 결과는 아래 요청 저장 때 Payload.result 로 함께 남긴다
         applied = { kind: "bulk", result: await icsApplyBulkAccessor(r, controls) };
       } else if (nextStatus === "approved") {
@@ -8726,8 +8928,16 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
             : `대상 통제 항목(${r.code}, ${r.year})이 없어 변경 내용을 반영할 수 없습니다. 이 요청은 반려해 주세요.`);
           return;
         } else if (r.reqType === "delete") {
+          // 10-26 정책 — 평가가 진행 중이면(서버의 평가 행 기준) 최종 승인자에게 한 번 더 확인한다
+          const row = await icsFindRequestItem(target.code, target.year);
+          const rf = (row && row.fields) || {};
+          const live = { code: target.code, status: rf.Status || "not_started", fsaStatus: rf.FsaStatus || "not_started" };
+          if (icsAssessmentInProgress(live) && !window.confirm(icsDeleteInProgressMsg(live, lang))) return;
           try { await icsDeleteItem(ICS_LISTS.controls, target.spId); }
           catch (e) { if (e.status !== 404) throw e; }   // 이미 지워짐 — 끝난 것으로 본다
+          // 평가 행은 지우지 않고 보관 처리(같은 코드를 다시 만들어도 옛 평가가 붙지 않게). 실패해도 삭제 결재는 계속한다.
+          try { await icsArchiveRequestRows(target.code, target.year); }
+          catch (e) { console.warn("[ICS] 평가 행 보관 처리 실패:", e.message); }
           applied = { kind: "delete", target };
         } else {
           const pl = r.payload || {};
@@ -8759,7 +8969,7 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
 
       const gReq = await icsGuardedUpdate(ICS_LISTS.changeRequests, r.spId, turnOk, {
         Steps: JSON.stringify(steps), Step: nextStep, Status: nextStatus,
-        ...(applied && applied.kind === "bulk" ? { Payload: JSON.stringify({ ...(r.payload || {}), result: applied.result }) } : {}),
+        ...(applied && (applied.kind === "bulk" || applied.kind === "add") ? { Payload: JSON.stringify({ ...(r.payload || {}), result: applied.result }) } : {}),
       }, { pre: preReq });
       if (!gReq.ok) {
         // 확인한 뒤 · 저장하기 전에 요청자가 철회했거나 다른 결재자가 처리한 경우(드묾). 통제 반영까지 끝난 뒤라면 IT 가 확인해야 한다.
@@ -8781,7 +8991,14 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
 
       // 화면 반영은 두 저장이 모두 끝난 뒤에 한다. 먼저 지워 버리면 요청 PATCH 가
       // 실패했을 때 화면과 서버가 어긋난다.
-      if (applied && applied.kind === "bulk") {
+      if (applied && applied.kind === "add") {
+        const its = (r.payload || {}).items || [];
+        const made = applied.result.done.map((d) => icsNewControlObj(its.find((x) => x.code === d.code) || { code: d.code }, d.spId, r.year));
+        if (made.length) setControls((prev) => [...made, ...prev]);
+        if (applied.result.skipped.length) alert(lang === "en"
+          ? `${applied.result.done.length} item(s) created. ${applied.result.skipped.length} skipped because the code already exists:\n${applied.result.skipped.map((x) => x.code).join(", ")}`
+          : `${applied.result.done.length}건을 만들었습니다. ${applied.result.skipped.length}건은 이미 있는 코드라 건너뛰었습니다:\n${applied.result.skipped.map((x) => x.code).join(", ")}`);
+      } else if (applied && applied.kind === "bulk") {
         const ids = new Set(applied.result.done.map((d) => d.id)), to = applied.result.to;
         setControls((prev) => prev.map((x) => (ids.has(x.id) ? { ...x, accessor: to } : x)));
         if (applied.result.skipped.length) alert(lang === "en"
@@ -8924,7 +9141,8 @@ function RequestTable({ rows, controls, kind, onPick }) {
   const ell = { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
 
   const labelOf = (r) => {
-    if (icsIsBulk(r)) return icsBulkLabel(r, lang);   // 담당자 일괄 변경(10-20)
+    if (icsIsBulk(r)) return icsBulkLabel(r, lang);
+    if (icsIsAdd(r)) return icsAddLabel(r, lang);   // 신규 등록(10-26)   // 담당자 일괄 변경(10-20)
     const c = controls.find((x) => x.code === r.code && x.year === r.year);
     return c ? cName(c, lang) : r.code;
   };
@@ -9132,12 +9350,12 @@ async function _icsExportFinalReportPdfRaw(lang, ctx, onProgress) {
 
   // ── 집계 ──
   const total = controls.length;
-  const risk = { green: 0, orange: 0, red: 0, none: 0 }; controls.forEach((c) => { risk[finalRisk(c)] += 1; });
+  const risk = { green: 0, orange: 0, red: 0, none: 0 }; controls.forEach((c) => { risk[icsOverallRisk(c)] += 1; });   // 10-26 FSA 결과까지(최종 기준)
   const isaBy = { not_started: 0, submitted_self: 0, returned: 0, completed: 0 }, fsaBy = { ...isaBy };
   controls.forEach((c) => { isaBy[c.status in isaBy ? c.status : "not_started"] += 1; fsaBy[c.fsaStatus in fsaBy ? c.fsaStatus : "not_started"] += 1; });
   const deptsInScope = departments.filter((d) => controls.some((c) => c.dept === d.id));
   const reviewers = [...new Set(controls.map((c) => String(c.reviewer || "").toLowerCase()).filter(Boolean))];
-  const flagged = controls.filter((c) => ["red", "orange"].includes(finalRisk(c))).sort((a, b) => (finalRisk(a) === "red" ? 0 : 1) - (finalRisk(b) === "red" ? 0 : 1) || String(a.code).localeCompare(String(b.code)));
+  const flagged = controls.filter((c) => ["red", "orange"].includes(icsOverallRisk(c))).sort((a, b) => (icsOverallRisk(a) === "red" ? 0 : 1) - (icsOverallRisk(b) === "red" ? 0 : 1) || String(a.code).localeCompare(String(b.code)));
   const reqBy = { pending: 0, approved: 0, rejected: 0 }; requests.forEach((r) => { reqBy[r.status in reqBy ? r.status : "pending"] += 1; });
   const conf = yearConfirmation || {};
   const confText = conf.cfo && conf.rd ? T.confirmedBoth : (conf.cfo || conf.rd) ? T.confirmedPartial(conf.cfo ? "CFO" : "RD") : T.notConfirmed;
@@ -9198,7 +9416,7 @@ async function _icsExportFinalReportPdfRaw(lang, ctx, onProgress) {
   seg(`<div>${H2(T.s4)}${H3(T.s4a)}${TBL(progCols, progRows("status"))}</div>`);
   seg(`<div>${H3(T.s4b)}${TBL(progCols, progRows("fsaStatus"))}</div>`);
   // 5 리스크 매트릭스
-  const mrows = deptsInScope.map((d) => [esc(dn(d.id)), ...CATEGORIES.map((cat) => { const its = controls.filter((c) => c.dept === d.id && c.cat === cat.id); if (!its.length) return `<span style="color:#CBD5E1">–</span>`; const by = { green: 0, orange: 0, red: 0, none: 0 }; its.forEach((c) => { by[finalRisk(c)] += 1; }); const top = matrixCellRisk(its);
+  const mrows = deptsInScope.map((d) => [esc(dn(d.id)), ...CATEGORIES.map((cat) => { const its = controls.filter((c) => c.dept === d.id && c.cat === cat.id); if (!its.length) return `<span style="color:#CBD5E1">–</span>`; const by = { green: 0, orange: 0, red: 0, none: 0 }; its.forEach((c) => { by[icsOverallRisk(c)] += 1; }); const top = matrixCellRisk(its, "final");
     return `<div style="text-align:center"><span style="font-weight:700;color:${rl(top).text}">${dot(top)} ${its.length}</span><div style="font-size:8.5px;color:${MUTE};margin-top:1px">${[["green", "G"], ["orange", "C"], ["red", "R"], ["none", "N"]].filter(([k]) => by[k]).map(([k, s]) => `<span style="color:${rl(k).color}">${L === "en" ? s : rlab(k).slice(0, 1)}</span>${by[k]}`).join(" · ")}</div></div>`; })]);
   const distRows = ["green", "orange", "red", "none"].map((r) => [riskCell(r), String(risk[r]), `${pct(risk[r], total)}%`]); distRows.push(totRow([T.total, String(total), "100%"]));
   seg(`<div>${H2(T.s5)}${NOTE(T.s5Note)}${TBL([{ t: T.colDept, w: "26%" }, ...CATEGORIES.map((c) => ({ t: catTitle(c), w: "14.8%", c: true }))], mrows)}
@@ -9213,7 +9431,7 @@ async function _icsExportFinalReportPdfRaw(lang, ctx, onProgress) {
   const stepName = (st) => !st ? "–" : (st.role === "LM1" || st.role === "MC") ? (L === "en" ? "1st MC" : "1차 MC") : st.role === "LM2" ? (L === "en" ? "1st MC" : "1차 MC") : st.role === "ICS_CONTACT" ? (L === "en" ? "2nd ICS Admin" : "2차 ICS Admin") : (L === "en" ? "3rd CFO" : "3차 CFO");
   const reqRows = requests.sort((a, b) => String(b.created || "").localeCompare(String(a.created || ""))).map((r) => { const steps = Array.isArray(r.steps) ? r.steps : []; const last = [...steps].reverse().find((st) => st.status && st.status !== "pending"); const cur = r.status === "pending" ? steps[(r.step || 1) - 1] : null;
     const stTxt = r.status === "approved" ? `<span style="color:#166A43;font-weight:600">${T.stApproved}</span>` : r.status === "rejected" ? `<span style="color:#8F2822;font-weight:600">${T.stRejected}</span>` : `<span style="color:#A6631E;font-weight:600">${T.stPending}</span>`;
-    return [`<span style="font-family:Consolas,monospace;font-size:9px">${esc(r.code)}</span>`, (icsIsBulk(r) ? (L === "en" ? "Bulk accessor" : "담당자 일괄") : r.reqType === "delete" ? T.typeDelete : T.typeEdit), esc(who(r.requester)), r.created ? esc(fmtD(r.created).slice(0, 10)) : "–", cur ? `(${r.step}/${steps.length}) ${stepName(cur)} · ${esc(who(cur.approver))}` : T.stageDone, stTxt, last ? `${esc(who(last.approver))} · ${esc(fmtD(last.date).slice(0, 16))}` : "–"]; });
+    return [`<span style="font-family:Consolas,monospace;font-size:9px">${esc(r.code)}</span>`, (icsIsBulk(r) ? (L === "en" ? "Bulk accessor" : "담당자 일괄") : icsIsAdd(r) ? (L === "en" ? "New" : "신규 등록") : r.reqType === "delete" ? T.typeDelete : T.typeEdit), esc(who(r.requester)), r.created ? esc(fmtD(r.created).slice(0, 10)) : "–", cur ? `(${r.step}/${steps.length}) ${stepName(cur)} · ${esc(who(cur.approver))}` : T.stageDone, stTxt, last ? `${esc(who(last.approver))} · ${esc(fmtD(last.date).slice(0, 16))}` : "–"]; });
   seg(`<div>${H2(`${T.s8} (${requests.length})`)}${requests.length ? TBL([{ t: T.colCode, w: "11%" }, { t: T.colType, w: "7%" }, { t: T.colRequester, w: "15%" }, { t: T.colRequested, w: "11%" }, { t: T.colStage, w: "24%" }, { t: T.colStatus, w: "9%" }, { t: T.colDecided, w: "23%" }], reqRows) : P(T.s8None)}</div>`);
   // 9 결론·확인
   const sign = (title, info) => `<td style="width:50%;vertical-align:top;padding:0 8px 0 0"><div style="border:1px solid ${RULE};padding:12px 14px;min-height:112px"><div style="font-size:11px;font-weight:700;color:${NAVY};margin-bottom:8px">${esc(title)}</div>
@@ -10417,6 +10635,7 @@ function RequestDetailModal({ r, controls, onClose, canAct, canCancel, acting, c
       {/* 무엇을 어떻게 바꾸려 했는지. 삭제 요청은 비교할 대상이 없다. */}
       {r.reqType === "edit" && <DiffTable r={r} controls={controls} />}
       {icsIsBulk(r) && <BulkAccessorTable r={r} controls={controls} />}
+      {icsIsAdd(r) && <AddItemsTable r={r} />}
       {r.reqType === "delete" && (
         <div className="bg-red-50 rounded-lg p-3 mt-3 text-xs text-red-700">{t("approval.deleteNotice")}</div>
       )}
@@ -10567,7 +10786,8 @@ function MyApprovalsPage({ controls, currentUser }) {
   useEffect(() => { reload(); }, []);
 
   function labelOf(r) {
-    if (icsIsBulk(r)) return icsBulkLabel(r, lang);   // 담당자 일괄 변경(10-20)
+    if (icsIsBulk(r)) return icsBulkLabel(r, lang);
+    if (icsIsAdd(r)) return icsAddLabel(r, lang);   // 신규 등록(10-26)   // 담당자 일괄 변경(10-20)
     const c = controls.find((x) => x.code === r.code && x.year === r.year);
     return c ? cName(c, lang) : r.code;
   }
@@ -10716,7 +10936,8 @@ function ApprovalHistoryPage({ controls }) {
   useEffect(() => { reload(); }, []);
 
   function labelOf(r) {
-    if (icsIsBulk(r)) return icsBulkLabel(r, lang);   // 담당자 일괄 변경(10-20)
+    if (icsIsBulk(r)) return icsBulkLabel(r, lang);
+    if (icsIsAdd(r)) return icsAddLabel(r, lang);   // 신규 등록(10-26)   // 담당자 일괄 변경(10-20)
     const c = controls.find((x) => x.code === r.code && x.year === r.year);
     return c ? cName(c, lang) : r.code;
   }
@@ -10886,7 +11107,8 @@ function ChangeHistoryPage({ controls, currentUser }) {
   useEffect(() => { reload(); }, []);
 
   function labelOf(r) {
-    if (icsIsBulk(r)) return icsBulkLabel(r, lang);   // 담당자 일괄 변경(10-20)
+    if (icsIsBulk(r)) return icsBulkLabel(r, lang);
+    if (icsIsAdd(r)) return icsAddLabel(r, lang);   // 신규 등록(10-26)   // 담당자 일괄 변경(10-20)
     const c = controls.find((x) => x.code === r.code && x.year === r.year);
     return c ? cName(c, lang) : r.code;
   }
@@ -11285,7 +11507,7 @@ function FinalReportPage({ controls, currentUser, activeYear, yearConfirmation, 
 
   const stats = useMemo(() => {
     const counts = { green: 0, orange: 0, red: 0, none: 0 };
-    controls.forEach((c) => (counts[finalRisk(c)] += 1));
+    controls.forEach((c) => (counts[icsOverallRisk(c)] += 1));   // 10-26 FSA 결과까지(최종 기준)
     const total = controls.length;
     const isaDone = controls.filter((c) => c.status === "completed").length;
     const fsaDone = controls.filter((c) => c.fsaStatus === "completed").length;
@@ -11305,20 +11527,21 @@ function FinalReportPage({ controls, currentUser, activeYear, yearConfirmation, 
         const items = controls.filter((c) => c.dept === d.id && c.cat === cat.id);
         if (items.length === 0) return { cat, risk: null, count: 0, assessed: 0, by: null };
         const by = { green: 0, orange: 0, red: 0, none: 0 };
-        items.forEach((c) => { by[finalRisk(c)] = (by[finalRisk(c)] || 0) + 1; });
-        return { cat, risk: matrixCellRisk(items), count: items.length, assessed: matrixAssessedCount(items), by };
+        items.forEach((c) => { by[icsOverallRisk(c)] = (by[icsOverallRisk(c)] || 0) + 1; });
+        return { cat, risk: matrixCellRisk(items, "final"), count: items.length, assessed: matrixAssessedCount(items, "final"), by };
       }),
     }));
 
-  const redItems = controls.filter((c) => finalRisk(c) === "red");
+  const redItems = controls.filter((c) => icsOverallRisk(c) === "red");
 
-  const isCfo = currentUser.role === "cfo" || currentUser.role === "admin";
-  const isRd = currentUser.role === "rd" || currentUser.role === "admin";
+  // 10-26 정책 — 컨펌은 그 역할(CFO · RD) 계정만. 예전에는 Admin 이 두 컨펌을 모두 할 수 있었다(직무 분리 위반).
+  const isCfo = currentUser.role === "cfo";
+  const isRd = currentUser.role === "rd";
   const bothConfirmed = !!(yearConfirmation.cfo && yearConfirmation.rd);
 
   return (
     <div>
-      <SectionHeader icon={FileCheck2} title={t("finalReport.title")} subtitle={`${activeYear} ${t("finalReport.subtitle")}`}
+      <SectionHeader icon={FileCheck2} title={t("finalReport.title")} subtitle={<>{`${activeYear} ${t("finalReport.subtitle")}`}<span className="block text-[12px] mt-0.5" style={{ color: BRAND.accent }} data-final-basis>{t("finalReport.basisNote")}</span></>}
         action={(
           <div className="pdf-log-col">
           <div className="flex items-center justify-end gap-2 flex-wrap">
@@ -13784,6 +14007,7 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
   }
   async function confirmYear(role) {
     if (confirmBusy) return false;
+    if (currentUser.role !== role) { alert(t("finalReport.notYourRole")); return false; }   // 10-26 정책 — 그 역할 계정만(Admin 대리 불가)
     if (initialLogFailed) { alert(icsLogFailedMsg(lang)); return false; }
     setConfirmBusy(true);
     try {
@@ -13802,6 +14026,7 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
   // 컨펌 취소. RD는 언제든 취소 가능하지만, CFO는 RD가 먼저 취소한 뒤(=RD 미컨펌 상태)에만 취소할 수 있다.
   async function cancelYearConfirm(role) {
     if (confirmBusy) return false;
+    if (currentUser.role !== role) { alert(t("finalReport.notYourRole")); return false; }
     if (initialLogFailed) { alert(icsLogFailedMsg(lang)); return false; }
     setConfirmBusy(true);
     try {
@@ -15069,7 +15294,7 @@ async function icsPendingChangeMap(year) {
   const y = String(year || ""), map = {};
   list.forEach((r) => {
     if (r.status !== "pending" || (r.year && y && String(r.year) !== y)) return;
-    if (icsIsBulk(r)) ((r.payload || {}).items || []).forEach((it) => { map[it.code] = map[it.code] || r; });
+    if (icsIsBulk(r) || icsIsAdd(r)) ((r.payload || {}).items || []).forEach((it) => { map[it.code] = map[it.code] || r; });
     else map[r.code] = map[r.code] || r;
   });
   return map;
@@ -15312,6 +15537,8 @@ async function loadIcsControls() {
     }
     match.selfActor = stripSpRichText(f.SelfActor) || "";            // 배정 담당자와 다른 실제 제출자(부서 Accessor 권한 · 10-19)
     match.fsaActor = stripSpRichText(f.FsaActor) || "";
+    match.selfActorEmail = icsActorEmail(f.SelfActor);               // 10-26 직무 분리 판정용(원문에서 메일만)
+    match.fsaActorEmail = icsActorEmail(f.FsaActor);
     match.reviewRisk = f.ReviewRisk || null;
     match.reviewComment = stripSpRichText(f.ReviewCommentKo) || "";
     match.reviewCommentEn = stripSpRichText(f.ReviewCommentEn) || "";
