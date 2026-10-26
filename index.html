@@ -228,14 +228,15 @@ let ICS_CONTACT_EMAIL = "";
 let ICS_CONTACT_EMAILS = [];
 // IT 문의 메일(10-17) — 코드에 메일을 두지 않는다. system_config_final.xlsx 의 ICS_IT_CONTACT → 없으면 CONTACT_EMAIL. 못 읽으면 「IT팀」
 let ICS_IT_MAIL = "";
-// 결재 요청의 1차 MC 후보. employee_search.xlsx 의 H열(Boss of Boss)에 등장하는
+// 결재 요청의 1차 MC 후보. employee_search.xlsx 의 J열(Department Head) · H열(Boss of Boss)에 등장하는
 // 사람만 모아 중복을 제거한 목록이다. 전 직원을 고르게 하면 목록이 길어 실수하기 쉽다.
-let ICS_MC_CANDIDATES = [];   // [{ name, email, dept, team }] — H열 기준 기본 후보
+// 10-26: 내 MC 기본값은 J열(Department Head) — 부서장 바로 아래 팀장(예: Controlling 팀장)은 H열이 RD 라 MC 가 RD 로 잡히던 문제.
+let ICS_MC_CANDIDATES = [];   // [{ name, email, dept, team }] — J · H열 기준 기본 후보
 // 전 임직원 명부. MC 가 휴가 등으로 부재일 때 다른 결재자를 직접 고를 수 있게 한다.
 let ICS_EMPLOYEE_DIR = [];    // [{ name, email, dept, team }]
 // 통제 항목 변경 3차(최종) 승인자. system_config_final.xlsx 의 ICS_APPROVER_FINAL 에서 채운다.
 let ICS_APPROVER_FINAL = "";
-// employee_search.xlsx 의 상사 관계 (이메일 → { boss, bossOfBoss } · 영문 이름 기준)
+// employee_search.xlsx 의 상사 관계 (이메일 → { boss, bossOfBoss, deptHead } · 영문 이름 기준)
 let ICS_BOSS_MAP = {};
 // 영문 이름 → 이메일 (상사 이름을 이메일로 바꾸는 데 사용)
 let ICS_NAME_TO_EMAIL = {};
@@ -4174,7 +4175,7 @@ function pickMcApprover(users, requesterEmail, lang) {
                         : "선택 가능한 결재자가 없습니다. IT로 문의해 주세요.");
     return null;
   }
-  // 후보가 소수(H열 기준)라 번호로 고르게 한다.
+  // 후보가 소수(J · H열 기준)라 번호로 고르게 한다.
   const menu = cands.map((x, i) => `${i + 1}. ${x.name} (${x.email})`).join("\n");
   const raw = window.prompt(
     (lang === "en" ? "Select the 1st approver (MC) — enter a number:\n\n"
@@ -4186,6 +4187,19 @@ function pickMcApprover(users, requesterEmail, lang) {
     return null;
   }
   return cands[n - 1].email;
+}
+
+// 요청자의 기본 MC(10-26) — employee_search.xlsx 의 J열(Department Head) → 비었거나(「-」) 본인이면 H열(Boss of Boss) → 없으면 ""(직접 고름).
+// 이름을 이메일로 바꿔 MC 후보에 있는 사람만 인정한다.
+function icsMyMcEmail(email) {
+  const me = String(email || "").toLowerCase();
+  const b = ICS_BOSS_MAP[me] || {};
+  for (const raw of [b.deptHead, b.bossOfBoss]) {
+    const nm = String(raw || "").trim().toLowerCase();
+    const em = nm ? String(ICS_NAME_TO_EMAIL[nm] || "").toLowerCase() : "";
+    if (em && em !== me && ICS_MC_CANDIDATES.some((x) => x.email === em)) return em;
+  }
+  return "";
 }
 
 function buildApprovalSteps(requesterEmail, mcEmail) {
@@ -5383,12 +5397,9 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
   const [draft, setDraft] = useState({ risk: null, comment: "", sampleSize: 0, attachments: [] });
 
   const myEmail = (currentUser.email || "").toLowerCase();
-  // 요청자 본인의 MC — employee_search.xlsx 의 내 행 H열(Boss of Boss) 이름 → 이메일. MC 후보에 있어야 인정한다.
-  const myMcEmail = (() => {
-    const nm = String((ICS_BOSS_MAP[myEmail] || {}).bossOfBoss || "").trim().toLowerCase();
-    const em = nm ? String(ICS_NAME_TO_EMAIL[nm] || "").toLowerCase() : "";
-    return em && em !== myEmail && ICS_MC_CANDIDATES.some((x) => x.email === em) ? em : "";
-  })();
+  // 요청자 본인의 MC — employee_search.xlsx 의 내 행 J열(Department Head) 이름 → 이메일.
+  // J열이 비었거나(「-」) 본인이면(부서장 본인이 요청) H열(Boss of Boss)로, 그것도 없으면 비워 두고 직접 고른다. MC 후보에 있어야 인정한다.
+  const myMcEmail = icsMyMcEmail(myEmail);
   /* 자가평가 대상 = 내가 1차 담당자(Accessor)로 배정된 항목만(역할 · 부서 권한과 무관).
      10-19 오후에 부서 Accessor 권한 부서까지 넓혔다가 되돌렸다 — 부서 Accessor 가 여럿인 부서(예: Accounting 86건)는
      모두에게 전 항목이 보여 평가자가 곤란했다. 다른 사람이 평가해야 하면 통제 항목 관리에서 담당자를 바꾼다(결재 · 이력).
@@ -5429,7 +5440,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
       control: c, cat: c.cat,
       name: c.name || "", nameEn: c.nameEn || "",
       desc: c.desc || "", descEn: c.descEn || "",
-      mc: myMcEmail, // 10-22: 요청자 본인의 MC(employee_search.xlsx H열)를 미리 고른다. 못 찾으면 비워 두고 직접 고른다
+      mc: myMcEmail, // 10-22 · 10-26: 요청자 본인의 MC(employee_search.xlsx J열 Department Head → 없으면 H열)를 미리 고른다. 못 찾으면 비워 두고 직접 고른다
       reason: "",   // 요청 사유 — Steps JSON 에 함께 저장하므로 목록 컬럼 추가가 필요 없다
       mode: "edit", // 10-22: 「내용 수정」 · 「항목 삭제」 — 삭제도 같은 결재선(ReqType delete)을 탄다
     });
@@ -5445,10 +5456,10 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
     reqForm.cat !== reqForm.control.cat
   );
 
-  // 1차 MC 후보 — employee_search.xlsx 의 H열에 등장하는 사람만, 요청자 본인은 제외.
+  // 1차 MC 후보 — employee_search.xlsx 의 J열(Department Head) · H열에 등장하는 사람만, 요청자 본인은 제외.
   const _mcQ = mcQuery.trim().toLowerCase();
-  // 기본은 H열 기준 MC 후보. MC 가 부재중이면 전 임직원에서 직접 고를 수 있다.
-  // 10-22: 기본 목록은 요청자 본인 행의 H열(Boss of Boss) = 내 MC 한 명만 보여 준다.
+  // 기본은 J · H열 기준 MC 후보. MC 가 부재중이면 전 임직원에서 직접 고를 수 있다.
+  // 10-22: 기본 목록은 요청자 본인의 MC 한 명만 보여 준다(10-26: J열 Department Head → 없거나 본인이면 H열).
   // 예전에는 회사 전체 MC 후보(H열에 한 번이라도 나온 사람 — 다른 본부 MC 포함)를 모두 보여 줘
   // 관련 없는 본부의 MC 를 1차 결재자로 고를 수 있었다. 내 MC 를 찾지 못하면 예전처럼 전체 후보를 보여 준다.
   // MC 부재 시에는 「전체 임직원」에서 직접 고른다.
@@ -15018,7 +15029,7 @@ async function loadIcsMasterConfig(token) {
   }
 
   // --- 사용자 마스터: employee_search.xlsx (APS 전 시스템 공용) ---
-  // 열: Company | Department | Team | EngName | EMail | WMC | Boss | Boss of Boss
+  // 열: Company | Department | Team | EngName | EMail | WMC | Boss | Boss of Boss | Team Manager | Department Head | RD
   // ICS 역할(Accessor/Reviewer/Admin/CFO/RD)은 이 파일에 없으므로 전원 guest 로 시작하고,
   // 실제 역할은 ICS_CategoryAccess 목록의 RoleOverride 에서 덮어쓴다(기존과 동일한 흐름).
   const ROLE_PRIORITY = { admin: 0, rd: 1, cfo: 2, reviewer: 3, accessor: 4, guest: 5 };
@@ -15033,6 +15044,7 @@ async function loadIcsMasterConfig(token) {
     const eTeamIdx = colIdx(eHeader, "Team");
     const eBossIdx = colIdx(eHeader, "Boss");
     const eBoss2Idx = colIdx(eHeader, "Boss of Boss");
+    const eDeptHeadIdx = colIdx(eHeader, "Department Head");   // J열(10-26) — MC 기본값
     const _mcNames = new Set();
     const _empInfo = {};
     const _dir = [];
@@ -15056,8 +15068,10 @@ async function loadIcsMasterConfig(token) {
       const clean = (v) => { const t = String(v || "").trim(); return t && t !== "-" ? t : ""; };
       const _b1 = eBossIdx >= 0 ? clean(row[eBossIdx]) : "";
       const _b2 = eBoss2Idx >= 0 ? clean(row[eBoss2Idx]) : "";
-      ICS_BOSS_MAP[email] = { boss: _b1, bossOfBoss: _b2 };
-      // H열에 이름이 있으면 MC 후보로 모은다 (이메일 변환은 명부를 다 읽은 뒤에 한다)
+      const _dh = eDeptHeadIdx >= 0 ? clean(row[eDeptHeadIdx]) : "";
+      ICS_BOSS_MAP[email] = { boss: _b1, bossOfBoss: _b2, deptHead: _dh };
+      // J열 · H열에 이름이 있으면 MC 후보로 모은다 (이메일 변환은 명부를 다 읽은 뒤에 한다)
+      if (_dh) _mcNames.add(_dh);
       if (_b2) _mcNames.add(_b2);
     });
     // 이름 → 이메일 변환은 명부를 모두 읽은 뒤에 해야 누락이 없다.
