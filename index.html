@@ -278,7 +278,7 @@ function icsViewOnlyOf(user) {
 function icsIsViewOnly(user, key) { const vo = icsViewOnlyOf(user); return vo.includes("*") || vo.includes(key); }
 
 // 사용자가 특정 카테고리에 접근 가능한지 판단.
-// 1) ics_category_access.xlsx에 명시적으로 Y로 등록되어 있으면 항상 허용(역할과 무관하게 추가 부여).
+// 1) 카테고리 접근 권한(SharePoint 목록 ICS_CategoryAccess — 예전 ics_category_access.xlsx 시트에서 옮김)에 Y로 등록되어 있으면 항상 허용(역할과 무관하게 추가 부여).
 // 2) 등록이 없으면 역할 기반 기본값을 따른다 (ICS Overview/통제 관리/평가는 전체 공개, 관리자 전용은 Admin, 경영진 전용은 Admin/CFO/RD).
 /* 「관리자 전용」 권한을 가진 사람은 Admin 역할과 같게 본다.
    관리자 전용 메뉴(설정·통제 항목 관리·권한 관리·카테고리 접근 권한·변경 이력)는 이미 카테고리 접근 권한
@@ -339,6 +339,12 @@ const ICS_PAGE_EDIT_KEY = { self: "self", review: "review", fsa: "fsa", fsaRevie
   approvalHistory: "executive", changeHistory: "executive", finalReport: "executive", list: "controlMgmt", learn: "learn" };
 // 쓰기 잠금 — 버튼을 숨기는 것과 별개로 마지막 안전장치. App 이 그릴 때마다 지금 화면 기준으로 바꾼다(활동 로그 기록은 예외).
 let _icsWriteBlock = false;
+/* 10-26 쓰기 잠금 유예 — 편집 화면에서 시작한 저장이 끝나기 전에 조회 전용 화면(평가 이력 · 접속 기록 등)으로 옮기면
+   남은 저장(권한 일괄 반영의 나머지 사람 · 큰 영상의 다음 조각 · 결재 반영 뒤 요청 저장)이 「보기 권한만」 으로 끊겼다.
+   잠금이 켜진 직후 2분 동안은, 그 전에 편집 화면에 있었다면 진행 중인 저장을 마저 보낸다. 화면 단추 · 함수 안 권한 확인은 그대로다. */
+let _icsWriteBlockSince = 0;
+let _icsWasEditable = false;
+const ICS_WRITE_GRACE_MS = 2 * 60 * 1000;
 
 // ics_category_access.xlsx의 Departments 시트가 로드되면 부팅 시 아래 배열은 통째로 덮어써진다(옛 6개 부서 체계는 실제로 안 쓰임).
 // 혹시 그 시트가 없거나 로드에 실패했을 때만 쓰이는 최소한의 대체값이라, 실제 25개 팀 체계와 맞춰 둔다.
@@ -777,9 +783,10 @@ function icsApprovalsFailed(where, e) {
   const msg = (e && e.message) || String(e || "");
   console.warn(`[ICS] ${where} 실패:`, msg);
   _icsApprLastFail = where;
-  // 토스트가 준비되기 전(부팅 중)이면 콘솔로만 남긴다.
+  // 10-26 알림 창으로 띄운다 — 예전에는 토스트라, 바로 뒤에 뜨는 「상신되었습니다」 토스트에 덮여 아무도 몰랐다(메일이 안 가는 상태).
+  //       토스트가 준비되기 전(부팅 중)이면 콘솔로만 남긴다.
   if (typeof _icsApprNotify === "function") {
-    _icsApprNotify(`메일 알림 기록에 실패했습니다 (${where}). 결재는 정상 처리되었습니다. IT로 알려 주세요.`);
+    alert(`메일 알림 기록에 실패했습니다 (${where}). 결재 요청 · 처리 자체는 저장되었지만 다음 결재자에게 메일이 가지 않을 수 있습니다. IT로 알려 주세요.\n\n${msg.slice(0, 200)}`);
   }
 }
 // 직전 호출이 실패했는지 확인하고 표시를 지운다.
@@ -792,12 +799,11 @@ function icsApprovalsTakeFailure() {
 // 상신 직후 결재자 수만큼 행을 만든다. 1차는 「대기」, 나머지는 「대기(잠김)」.
 async function icsApprovalsCreate(createdReq, code, name, requester, steps) {
   try {
-    // 요청 번호는 화면(reqNo)과 같은 규칙으로 만든다.
-    // 날짜는 SharePoint 가 돌려준 생성 시각을 쓴다 — new Date() 를 쓰면
-    // 자정 전후에 상신했을 때 화면의 번호와 하루가 어긋난다.
+    // 요청 번호는 화면(reqNo)과 같은 규칙(icsReqNoDate · KST)으로 만든다.
+    // 날짜는 SharePoint 가 돌려준 생성 시각을 쓴다 — 화면은 같은 값(Created)으로 번호를 그리므로 두 곳이 늘 같다.
     const reqSpId = createdReq && createdReq.id;
     const created = (createdReq && createdReq.createdDateTime) || new Date().toISOString();
-    const reqNoStr = `ICS-${String(created).slice(0, 10)}_ID-${reqSpId}`;
+    const reqNoStr = `ICS-${icsReqNoDate(created)}_ID-${reqSpId}`;
     for (let i = 0; i < steps.length; i++) {
       const st = steps[i];
       await icsCreateItem(ICS_LISTS.approvals, {
@@ -834,10 +840,11 @@ async function icsApprovalsOf(reqSpId) {
 //   승인 → 그 차수를 「승인」 으로, 다음 차수를 「대기」 로 (Flow 가 다음 결재자에게 메일)
 //   반려 → 그 차수를 「반려」 로, 남은 차수는 「대기(잠김)」 유지
 async function icsApprovalsDecide(reqSpId, order, approved, comment) {
+  _icsApprLastFail = null;   // 10-26 앞선 다른 호출의 실패 표시가 이번 결과로 잘못 읽히지 않게
   try {
     const rows = await icsApprovalsOf(reqSpId);
     const cur = rows.find((it) => Number((it.fields || {}).ApprovalOrder || 0) === order);
-    if (!cur) return;
+    if (!cur) { icsApprovalsFailed("결재행 없음", new Error(`요청 ${reqSpId} 의 ${order}차 결재행을 찾지 못했습니다`)); return; }   // 10-26 예전엔 조용히 끝났다
     await icsUpdateItem(ICS_LISTS.approvals, cur.id, {
       Status: approved ? ICS_APPR_STATUS.approved : ICS_APPR_STATUS.rejected,
       Comment: comment || "",
@@ -875,8 +882,17 @@ async function icsApprovalsWithdraw(reqSpId) {
 // (ACC Voucher 도 같은 방식 — 'ACC-Voucher-'+dateStr+'_ID-'+requestId)
 function reqNo(r) {
   if (!r) return "-";
-  const d = String(r.created || "").slice(0, 10) || "0000-00-00";
-  return `ICS-${d}_ID-${r.spId}`;
+  return `ICS-${icsReqNoDate(r.created)}_ID-${r.spId}`;
+}
+/* 요청 번호의 날짜(10-26) — 한국 날짜(KST). 예전에는 SharePoint 생성 시각(UTC)의 앞 10자리라 오전 9시 전에 올린 요청에 전날 날짜가 붙었다.
+   이미 만들어진 요청은 번호가 메일(ICS_Approvals 의 ReqNo · Title)에 그대로 남아 있으므로 바꾸지 않는다 — 이 시각 이후 생성분부터 KST. */
+const ICS_REQNO_KST_FROM = Date.parse("2026-10-26T12:00:00Z");   // 2026-10-26 21:00 KST
+function icsReqNoDate(created) {
+  const raw = String(created || "");
+  const ms = Date.parse(raw);
+  if (isNaN(ms)) return raw.slice(0, 10) || "0000-00-00";
+  if (ms < ICS_REQNO_KST_FROM) return raw.slice(0, 10);
+  return new Date(ms + 9 * 3600 * 1000).toISOString().slice(0, 10);
 }
 
 // 이메일에 해당하는 이름. employee_search.xlsx 로 채운 명부에서 찾는다.
@@ -1009,7 +1025,8 @@ async function icsReadField(listName, itemId, fieldName) {
    모양이 달라 같은 내용을 두 가지 방식으로 읽어야 했다. 모두 옮기고 지웠다. */
 
 function finalRisk(control) {
-  if (control.status === "completed") return control.reviewRisk;
+  // 10-26 ISA 생략(검토 판정 없음)은 「미평가」 — 예전에는 null 이 그대로 나가 신호등 합계가 어긋나고 매트릭스에 양호 테두리로 보였다
+  if (control.status === "completed") return control.reviewRisk || "none";
   // 제출 철회/반려로 status가 다시 not_started·returned로 돌아간 경우, 예전에 입력했던 selfRisk 값이
   // 남아있어도 대시보드 등에는 "미평가"로 보여야 한다 (재제출 전까지는 유효한 평가로 취급하지 않음).
   if (control.status === "submitted_self" && control.selfRisk) return control.selfRisk;
@@ -3086,10 +3103,11 @@ function LearnPage({ currentUser, learnContent, setLearnContent, learnVideos, se
     const newTitle = renameDraft.trim();
     setRenamingId(null);
     if (!id || !newTitle) return;
-    const updated = { ...mediaTitles, [id]: newTitle };
-    setMediaTitles(updated);
     try {
-      await saveIcsMediaTitles(updated);
+      // 10-26 서버의 최신 파일에 이 제목 하나만 고쳐 넣는다(If-Match) — 예전에는 화면이 가진 목록 전체를 덮어써,
+      //       처음 읽기가 실패했거나 다른 관리자가 그사이 고친 제목이 지워졌다.
+      const merged = await icsJsonFileUpdate("ICS_Media-Files/media_titles.json", (cur) => ({ ...(cur && typeof cur === "object" && !Array.isArray(cur) ? cur : {}), [id]: newTitle }), {});
+      setMediaTitles(merged);
       if (addLog) addLog(currentUser.email, "edit_learn_content", "-", newTitle, newTitle);
     } catch (e) {
       alert("제목 저장에 실패했습니다: " + e.message);
@@ -3161,8 +3179,8 @@ function LearnPage({ currentUser, learnContent, setLearnContent, learnVideos, se
   async function removeVideo(videoId) {
     if (!requireAdmin()) return;
     try {
-      const hidden = await loadIcsHiddenMedia().catch(() => []);
-      await saveIcsHiddenMedia(Array.from(new Set([...hidden, videoId])));
+      // 10-26 서버의 최신 숨김 목록에 하나만 더한다(If-Match). 예전에는 읽기에 실패하면 빈 목록에 이 하나만 담아 덮어써, 숨겼던 항목이 다시 보였다.
+      await icsJsonFileUpdate("ICS_Media-Files/hidden_media.json", (cur) => Array.from(new Set([...(Array.isArray(cur) ? cur : []), videoId])), []);
       setLearnVideos((prev) => prev.filter((v) => v.id !== videoId));
     } catch (e) {
       alert("숨김 처리에 실패했습니다: " + e.message);
@@ -3178,8 +3196,8 @@ function LearnPage({ currentUser, learnContent, setLearnContent, learnVideos, se
   async function removeImage(imageId) {
     if (!requireAdmin()) return;
     try {
-      const hidden = await loadIcsHiddenMedia().catch(() => []);
-      await saveIcsHiddenMedia(Array.from(new Set([...hidden, imageId])));
+      // 10-26 서버의 최신 숨김 목록에 하나만 더한다(If-Match). 예전에는 읽기에 실패하면 빈 목록에 이 하나만 담아 덮어써, 숨겼던 항목이 다시 보였다.
+      await icsJsonFileUpdate("ICS_Media-Files/hidden_media.json", (cur) => Array.from(new Set([...(Array.isArray(cur) ? cur : []), imageId])), []);
       setLearnImages((prev) => prev.filter((v) => v.id !== imageId));
     } catch (e) {
       alert("숨김 처리에 실패했습니다: " + e.message);
@@ -3716,8 +3734,10 @@ function StageLine({ stage, control: c, hideRisk, compact, onOpen }) {
   const body = String(text || "").trim();
   let short = "";
   if (when) {
-    const k = new Date(new Date(when).getTime() + 9 * 3600 * 1000).toISOString();
-    short = `${k.slice(5, 7)}.${k.slice(8, 10)} ${k.slice(11, 16)}`;
+    // 10-26 날짜만 있는 옛 값은 시각 없이(없던 09:00 을 붙이지 않게 — formatDateTime 과 같은 규칙), 알 수 없는 값은 비워 둔다(목록 전체가 안 그려지던 RangeError 방지)
+    const w = String(when).trim(), ms = Date.parse(w);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(w)) short = `${w.slice(5, 7)}.${w.slice(8, 10)}`;
+    else if (!isNaN(ms)) { const k = new Date(ms + 9 * 3600 * 1000).toISOString(); short = `${k.slice(5, 7)}.${k.slice(8, 10)} ${k.slice(11, 16)}`; }
   }
   // 앞에 이미 「ISA」 표시가 있으므로 「생략」 만 적는다. 결과 칸 폭(78px)에 맞게 짧게.
   const step = skipped ? (lang === "en" ? "Skipped" : "생략") : STAGE_STEP[stage][lang];
@@ -4182,20 +4202,14 @@ function injectDataValidations(arrayBuffer, colMap) {
   return fflate.zipSync(files);
 }
 
-// 통제 항목 변경 요청의 결재선을 만든다.
-//   1차 Line Manager : employee_search.xlsx 의 Boss (G열)
-//   2차 ICS 검토     : system_config_final.xlsx 의 ICS_CONTACT
-//   3차 최종 승인    : system_config_final.xlsx 의 ICS_APPROVER_FINAL
-//
-// G열이 "-" 이면 최상위 임원(RD 대표)이라 Line Manager 단계를 생략한다.
-// 통제 항목 변경 요청의 결재선을 만든다.
-//   1차 MC        : 요청자가 직접 지정 (employee_search.xlsx 의 임직원 중 선택)
+// 통제 항목 변경 요청의 결재선을 만든다. (10-26 주석 정리 — 예전 G열 Line Manager 결재선 설명은 지금 쓰지 않아 지웠다)
+//   1차 MC        : 자가평가 화면은 요청자 본인의 MC(employee_search J열 → H열, icsMyMcEmail)가 기본, 관리 화면은 MC 후보 목록에서 번호로 고른다(pickMcApprover)
 //   2차 ICS Admin : system_config_final.xlsx 의 ICS_CONTACT
 //   3차 CFO       : system_config_final.xlsx 의 ICS_APPROVER_FINAL
 //
 // 지정한 MC 가 ICS Admin 이나 CFO 와 같으면 그 단계를 생략하고, 뒤 단계에서 한 번만 승인한다.
 // 요청자 본인도 승인자가 될 수 없다.
-// 관리자 화면에서 1차 MC 를 지정받는다. 이름 또는 이메일로 입력하면 사용자 목록에서 찾는다.
+// 관리자 화면에서 1차 MC 를 지정받는다 — MC 후보(J · H열) 목록을 번호로 보여 주고 번호를 입력받는다.
 // 취소하면 null 을 돌려주어 호출부가 요청 생성을 중단한다.
 function pickMcApprover(users, requesterEmail, lang) {
   const me = String(requesterEmail || "").toLowerCase();
@@ -4356,10 +4370,15 @@ async function icsApplyBulkAccessor(r, controls) {
   for (const it of pl.items || []) {
     const c = controls.find((x) => x.code === it.code && x.year === r.year);
     if (!c) { skipped.push({ code: it.code, why: "missing" }); continue; }
-    const cur = lo(c.accessor);
+    if (!c.spId) { skipped.push({ code: it.code, why: "missing" }); continue; }
+    // 10-26 지금 담당자는 서버에서 읽어 비교하고, 읽은 그 버전일 때만 바꾼다(If-Match) — 예전엔 로그인 때 읽은 값으로 판단했다
+    const sv = await icsReadItemForWrite(ICS_LISTS.controls, c.spId);
+    if (sv.missing) { skipped.push({ code: it.code, why: "missing" }); continue; }
+    const cur = lo(sv.fields.AccessorEmail);
     if (cur === lo(to)) { done.push({ code: c.code, id: c.id }); continue; }
-    if (cur !== from) { skipped.push({ code: it.code, why: "changed", now: c.accessor || "" }); continue; }
-    if (c.spId) await icsUpdateItem(ICS_LISTS.controls, c.spId, { AccessorEmail: to });
+    if (cur !== from) { skipped.push({ code: it.code, why: "changed", now: sv.fields.AccessorEmail || "" }); continue; }
+    const g = await icsGuardedUpdate(ICS_LISTS.controls, c.spId, (f) => lo(f.AccessorEmail) === from, { AccessorEmail: to }, { pre: sv });
+    if (!g.ok) { skipped.push({ code: it.code, why: "changed", now: (g.fields && g.fields.AccessorEmail) || "" }); continue; }
     done.push({ code: c.code, id: c.id });
   }
   return { to, done, skipped, at: new Date().toISOString() };
@@ -4442,6 +4461,10 @@ function BulkAccessorModal({ controls, year, currentUser, changeReqs, addLog, sh
     if (!steps.length) { alert(L("결재선을 확인할 수 없습니다. IT로 문의해 주세요.", "Approval line could not be determined. Please contact IT.")); return; }
     setBusy(true);
     try {
+      // 10-26 상신 직전 서버 확인 — 고른 항목 중 그사이 다른 요청이 올라간 것이 있으면 멈춘다
+      const busyMap = await icsPendingChangeMap(year);
+      const busyCodes = picked.filter((c) => busyMap[c.code]).map((c) => c.code);
+      if (busyCodes.length) { alert(L(`진행 중인 변경 요청이 있는 항목이 있습니다: ${busyCodes.join(", ")}\n선택에서 빼고 다시 시도해 주세요.`, `Some items already have a pending change request: ${busyCodes.join(", ")}\nDeselect them and try again.`)); return; }
       const payload = { from, to: toE, reason: reason.trim(),
         items: picked.map((c) => ({ code: c.code, name: c.name || "", dept: c.dept || "" })),
         skipped: (steps.skipped || []).map((sk) => ({ role: sk.role, approver: sk.approver, reason: sk.reason })) };
@@ -4918,6 +4941,9 @@ Continue?`
         // 기존 항목 수정은 곧바로 반영하지 않고 3단계 결재 요청을 생성한다.
         // (신규 등록은 결재 없이 바로 생성된다)
         if (usingSharePointData && target) {
+          // 10-26 상신 직전에 서버에서 진행 중인 요청을 다시 본다(화면을 연 뒤 다른 사람 · 같은 화면에서 먼저 올린 요청)
+          const busyReq = await icsPendingChangeFor(target.code, target.year);
+          if (busyReq) { alert(t("manage.lockedPending")); setChangeReqs((prev) => ({ ...prev, [target.code]: busyReq })); return; }
           const mcEmail = pickMcApprover(users, currentUser.email, lang);
           if (mcEmail === null) return;   // 취소
           const steps = buildApprovalSteps(currentUser.email, mcEmail);
@@ -4932,8 +4958,11 @@ Continue?`
             RequesterEmail: currentUser.email,
             Payload: JSON.stringify({
               dept: form.dept, cat: form.cat, name: form.name, desc: form.desc,
+              // 10-26 영문 통제명 · 설명은 이 폼에 칸이 없다 — 지금 값을 그대로 담는다. 예전에는 빠져 있어 최종 승인 때 한글로 덮어써졌다.
+              nameEn: target.nameEn || "", descEn: target.descEn || "",
               accessor: form.accessor, reviewer: form.reviewer,
               frequency: form.frequency, importance: form.importance,
+              before: icsControlSnapshot(target),   // 10-26 요청 당시 값 — 승인 때 바뀐 칸만 반영 · As-Is 보존
               // 생략된 결재 단계. 세 상신 경로 모두에서 같은 기준으로 담는다.
               skipped: (steps.skipped || []).map((sk) => ({ role: sk.role, approver: sk.approver, reason: sk.reason })),
             }),
@@ -4942,6 +4971,8 @@ Continue?`
           // Power Automate 메일용 결재행을 함께 남긴다(화면 로직과 무관).
           await icsApprovalsCreate(createdReq,
             target.code, target.name, currentUser.email, steps);
+          // 10-26 이 화면에서도 바로 잠근다(같은 항목에 이어서 삭제 · 수정을 올리지 못하게)
+          setChangeReqs((prev) => ({ ...prev, [target.code]: { code: target.code, year: target.year, status: "pending", reqType: "edit" } }));
           addLog(currentUser.email, "request_edit_control", target.code, form.name, form.name);
           setForm(null);
           setEditingId(null);
@@ -4983,6 +5014,8 @@ Continue?`
     try {
       // 삭제도 3단계 결재를 거친다.
       if (usingSharePointData) {
+        const busyReq = await icsPendingChangeFor(c.code, c.year);   // 10-26 상신 직전 서버 확인
+        if (busyReq) { alert(t("manage.lockedPending")); setChangeReqs((prev) => ({ ...prev, [c.code]: busyReq })); return; }
         const mcEmail = pickMcApprover(users, currentUser.email, lang);
         if (mcEmail === null) return;   // 취소
         const steps = buildApprovalSteps(currentUser.email, mcEmail);
@@ -4999,11 +5032,14 @@ Continue?`
           Payload: JSON.stringify({
             reason: delReason,   // 삭제 사유(10-19) — 수정 요청의 「요청 사유」 와 같은 자리(Payload.reason) · 열 추가 없음
             skipped: (steps.skipped || []).map((sk) => ({ role: sk.role, approver: sk.approver, reason: sk.reason })),
+            // 10-26 삭제 당시 내용(자가평가 화면의 삭제 요청과 같게) — 승인 뒤 항목이 사라져도 무엇을 지웠는지 남는다
+            snapshot: { ...icsControlSnapshot(c), status: c.status || "" },
           }),
           Steps: JSON.stringify(steps), Step: 1, Status: "pending",
         });
         await icsApprovalsCreate(createdReq,
           c.code, c.name, currentUser.email, steps);
+        setChangeReqs((prev) => ({ ...prev, [c.code]: { code: c.code, year: c.year, status: "pending", reqType: "delete" } }));   // 10-26 바로 잠금
         addLog(currentUser.email, "request_delete_control", c.code, c.name, c.nameEn);
         showToast(lang === "en"
           ? "Delete request submitted for approval."
@@ -5537,6 +5573,8 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
       if (!window.confirm(`${c.code} · ${cName(c, lang)}${t("self.reqDelConfirm")}`)) return;
       setReqSaving(true);
       try {
+        const busyReq = await icsPendingChangeFor(c.code, c.year);   // 10-26 상신 직전 서버 확인
+        if (busyReq) { alert(t("manage.lockedPending")); setChangeReqs((prev) => ({ ...prev, [c.code]: busyReq })); return; }
         const createdReq = await icsCreateItem(ICS_LISTS.changeRequests, {
           Title: c.code, Year: c.year, ReqType: "delete",
           RequesterEmail: currentUser.email,
@@ -5582,6 +5620,8 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
     }
     setReqSaving(true);
     try {
+      const busyReq = await icsPendingChangeFor(c.code, c.year);   // 10-26 상신 직전 서버 확인
+      if (busyReq) { alert(t("manage.lockedPending")); setChangeReqs((prev) => ({ ...prev, [c.code]: busyReq })); return; }
       // 변경하지 않은 필드도 함께 담아야 최종 승인 시 원래 값이 유지된다.
       // 요청 사유는 결재선 JSON 첫머리에 담는다 (SharePoint 컬럼 추가 불필요)
       const createdReq = await icsCreateItem(ICS_LISTS.changeRequests, {
@@ -5595,6 +5635,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
           frequency: c.frequency, importance: c.importance,
           // 요청 사유. Payload 에 함께 담아 SharePoint 컬럼을 새로 만들지 않는다.
           reason: (reqForm.reason || "").trim(),
+          before: icsControlSnapshot(c),   // 10-26 요청 당시 값 — 승인 때 바뀐 칸만 반영 · As-Is 보존
           // 생략된 결재 단계와 사유. steps 에는 실제 단계만 남기므로 여기에 담는다.
           // 담아 두지 않으면 상신 화면을 떠난 뒤에는 왜 2단계뿐인지 알 수 없다.
           // (ACC Voucher 가 「중복 회계 검토 제외」 를 전표에 남기는 것과 같은 취지)
@@ -5664,6 +5705,12 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
      이후 단계(업로드 · 저장)가 실패해도 재시도 때 중복 생성되지 않도록 ID 를 바로 반영한다. */
   async function ensureRequestItem(c) {
     if (c.requestSpId) return c.requestSpId;
+    // 10-26 서버에 이미 있으면 그 행을 쓴다 — 다른 탭 · 두 번 누름으로 먼저 만들어진 경우(예전엔 행이 두 개 생겼다)
+    const existing = await icsFindRequestItem(c.code, c.year);
+    if (existing) {
+      setControls((prev) => prev.map((x) => (x.id === c.id ? { ...x, requestSpId: existing.id } : x)));
+      return existing.id;
+    }
     const created = await icsCreateItem(ICS_LISTS.requests, {
       Title: `ICS-${c.year}-${c.code}`,
       ControlId: c.code,
@@ -5674,6 +5721,21 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
     });
     setControls((prev) => prev.map((x) => (x.id === c.id ? { ...x, requestSpId: created.id } : x)));
     return created.id;
+  }
+
+  /* 10-26 서버 상태 확인 — 화면을 오래 열어 둔 사이 다른 탭 · 다른 사람이 제출 · 검토했을 수 있다.
+     ISA 를 쓸 수 있는 상태 = 아직 제출 · 완료 전(not_started · returned). 그 밖이면 저장하지 않고 새로 불러온다. */
+  const isaOpen = (f) => !["submitted_self", "completed"].includes(String((f && f.Status) || "not_started"));
+  const staleMsg = () => (lang === "en"
+    ? "This item was already submitted or processed in another window. The list will be refreshed."
+    : "다른 창에서 이미 제출 · 처리된 항목입니다. 목록을 새로 불러옵니다.");
+  const accessorMovedMsg = () => (lang === "en"
+    ? "The accessor of this control has been changed, so you can no longer submit it. The list will be refreshed."
+    : "이 통제의 1차 담당자가 바뀌어 더 이상 제출할 수 없습니다. 목록을 새로 불러옵니다.");
+  async function stillMineOnServer(c) {
+    if (!c.spId) return true;
+    const ctl = await icsReadItemForWrite(ICS_LISTS.controls, c.spId);
+    return !ctl.missing && String((ctl.fields || {}).AccessorEmail || "").trim().toLowerCase() === myEmail;
   }
 
   /* 임시 저장(09-28 요청) — 서식(IsaDocJson) + 평가 입력값 · 첨부(DraftJson)를 제출 전에 SharePoint 에 남긴다.
@@ -5687,6 +5749,9 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
     setDraftSaving({ busy: true, step: t("self.stepPrepare") });
     try {
       const spId = await ensureRequestItem(c);
+      // 10-26 이미 제출 · 처리된 건이면 올리기 전에 멈춘다(제출된 서식을 임시 저장이 덮어쓰지 않게)
+      const pre = await icsReadItemForWrite(ICS_LISTS.requests, spId);
+      if (pre.missing || !isaOpen(pre.fields)) throw new Error(staleMsg());
       // 아직 안 올린 첨부만 올린다(이미 올린 것은 그대로).
       const finalAttachments = [];
       const toUpload = (draft.attachments || []).filter((a) => !a.webUrl && a.file).length;
@@ -5697,12 +5762,13 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
           uploaded += 1;
           setDraftSaving({ busy: true, step: `${t("self.stepUpload")} (${uploaded} / ${toUpload}) · ${att.file.name}` });
           const up = await icsUploadAttachment(spId, att.file);
-          finalAttachments.push({ name: att.file.name, webUrl: up.webUrl, size: att.size });
+          finalAttachments.push({ name: up.name || att.file.name, webUrl: up.webUrl, size: att.size });   // 같은 이름이 있으면 바뀐 이름(10-26)
         }
       }
       setDraftSaving({ busy: true, step: t("self.stepSave") });
       const docObj = normalizeIsaDoc(draft.doc);
-      await icsUpdateItem(ICS_LISTS.requests, spId, { IsaDocJson: isaDocSerialize(docObj) });
+      const gDoc = await icsGuardedUpdate(ICS_LISTS.requests, spId, isaOpen, { IsaDocJson: isaDocSerialize(docObj) });
+      if (!gDoc.ok) throw new Error(staleMsg());
       const draftObj = {
         ver: 1, stage: "isa", risk: draft.risk || null, comment: draft.comment || "",
         frequency: draft.frequency ?? c.frequency, importance: draft.importance ?? c.importance,
@@ -5723,8 +5789,15 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
     try { await saveDraft(c); } catch (e) { alert(t("self.draftSaveFailed") + e.message); }
   }
 
+  /* 제출 두 번 누름 방지(10-26) — 예전에는 수정 요청 확인(서버 조회)을 기다리는 동안 단추가 살아 있어
+     두 번 누르면 평가 행이 둘 생길 수 있었다. 같은 렌더 안의 두 번째 클릭까지 막도록 state 대신 ref 를 쓴다. */
+  const submitBusyRef = useRef(false);
   async function submit(c) {
-    if (rowRO(c)) return;   // 10-26 보기 전용(부서 항목 · 보기 권한 · 보관 연도) — 화면 단추가 없어도 한 번 더 막는다
+    if (rowRO(c) || submitBusyRef.current) return;
+    submitBusyRef.current = true;
+    try { await submitOnce(c); } finally { submitBusyRef.current = false; }
+  }
+  async function submitOnce(c) {
     // 화면에서 버튼을 막아 두었지만 여기서도 서버에 다시 묻는다.
     //   · 화면을 열어 둔 사이에 다른 사람이 수정 요청을 올렸을 수 있다
     //   · 목록 조회가 끝나기 전에 작성 화면을 연 경우 changeReqs 가 비어 있다
@@ -5757,9 +5830,14 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
     setSaving(c.id);
     setSavingStep(t("self.stepPrepare"));
     setEditing(null);
+    const upMap = new Map();   // 10-26 이번에 올린 첨부(폼 항목 → 올린 결과) — 실패해 폼을 다시 열 때 「올린 것」 으로 바꿔 두 번 올리지 않게
     try {
       // 1) 요청 항목이 아직 없으면 먼저 만들어서 SharePoint 아이템 ID를 확보 (첨부파일 업로드 폴더명으로 사용)
       const spId = await ensureRequestItem(c);
+      // 1-1) 10-26 서버 상태 · 담당자 확인 — 다른 창에서 이미 제출 · 검토됐거나 담당자가 바뀌었으면 올리기 전에 멈춘다
+      const pre = await icsReadItemForWrite(ICS_LISTS.requests, spId);
+      if (pre.missing || !isaOpen(pre.fields)) { alert(staleMsg()); window.location.reload(); return; }
+      if (!(await stillMineOnServer(c))) { alert(accessorMovedMsg()); window.location.reload(); return; }
 
       // 2) 아직 업로드 안 된(webUrl 없는) 첨부만 실제 업로드, 이미 업로드된 것은 그대로 재사용
       const finalAttachments = [];
@@ -5772,7 +5850,9 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
           _uploaded += 1;
           setSavingStep(`${t("self.stepUpload")} (${_uploaded} / ${_toUpload}) · ${att.file.name}`);
           const uploaded = await icsUploadAttachment(spId, att.file);
-          finalAttachments.push({ name: att.file.name, webUrl: uploaded.webUrl });
+          const done = { name: uploaded.name || att.file.name, webUrl: uploaded.webUrl, size: att.size };   // 같은 이름이 있으면 바뀐 이름(10-26)
+          upMap.set(att, done);
+          finalAttachments.push({ name: done.name, webUrl: done.webUrl });
         }
       }
       setSavingStep(t("self.stepSave"));
@@ -5787,16 +5867,17 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
         addLog(currentUser.email, "edit_control", c.code, c.name, c.nameEn);
       }
 
-      // 3) 평가 내용 + 첨부파일 목록을 함께 저장
-      await icsUpdateItem(ICS_LISTS.requests, spId, {
+      // 3) 평가 내용 + 첨부파일 목록을 함께 저장 — 읽은 그 버전일 때만(10-26 If-Match). 그사이 처리됐으면 저장하지 않는다.
+      const gSub = await icsGuardedUpdate(ICS_LISTS.requests, spId, isaOpen, {
         Status: "submitted_self",
         SelfRisk: draft.risk,
         SelfCommentKo: draft.comment,
         SelfCommentEn: draft.comment,
         SelfDate: new Date().toISOString(),
-        SampleCount: draft.sampleSize,
+        SampleCount: Number(draft.sampleSize) || 0,
         AttachedFiles: attachedFilesField,
       });
+      if (!gSub.ok) { alert(staleMsg()); window.location.reload(); return; }
 
       /* 서식은 따로 저장한다. IsaDocJson 열이 아직 없는 환경에서도
          평가 제출 자체는 끝나야 하기 때문이다 — 실패하면 알리기만 하고 넘어간다. */
@@ -5810,7 +5891,7 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
           docSaved = false;
           console.warn("[ICS] 서식 저장 실패(평가는 저장됨):", e.message);
         }
-        /* 같은 내용을 회사 서식 Word 두 개로 만들어 첨부 폴더(Documentation)에 둔다(09-21 요청).
+        /* 같은 내용을 서식 PDF(통제기술서 · 테스트 수행)로 만들어 첨부 폴더(Documentation)에 둔다(09-21 요청 · 이후 Word → PDF 로 바뀜, icsSaveDocPdf).
            실패해도 평가 제출은 끝난다 — 서식 값은 위에서 이미 저장했고, 세부 내용에서 언제든 다시 내려받을 수 있다. */
         try {
           await icsSaveDocPdf(c, spId, docObj, lang, users, departments, "ISA");
@@ -5839,6 +5920,9 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
       showToast(lang === "en" ? "Self-assessment submitted." : "자가평가가 제출되었습니다.");
     } catch (e) {
       alert("SharePoint 저장에 실패했습니다: " + e.message);
+      // 10-26 실패하면 쓰던 폼을 그대로 다시 연다(예전엔 닫혀 입력이 사라졌다). 이미 올린 첨부는 「올린 것」 으로 바꿔 둔다.
+      setDraft((prev) => ({ ...prev, attachments: (prev.attachments || []).map((a) => upMap.get(a) || a) }));
+      setEditing(c.id);
     } finally {
       setSaving(null);
       setSavingStep("");
@@ -5871,7 +5955,9 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
       const noteKo = isaSkipText("ko");
       const noteEn = isaSkipText("en");
       const now = new Date().toISOString();
-      await icsUpdateItem(ICS_LISTS.requests, spId, {
+      // 10-26 그사이 다른 창에서 제출 · 처리됐으면 저장하지 않는다(If-Match). 반려 뒤 생략하면 남아 있던 반려 판정(ReviewRisk red)도 지운다 —
+      // 남겨 두면 생략한 항목이 대시보드 · 리포트에 「위험」 으로 잡혔다.
+      const gSkip = await icsGuardedUpdate(ICS_LISTS.requests, spId, isaOpen, {
         Status: "completed",
         SelfRisk: "",
         SelfCommentKo: noteKo,
@@ -5879,14 +5965,16 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
         SelfDate: now,
         SampleCount: 0,
         AttachedFiles: "",
+        ReviewRisk: null,
       });
+      if (!gSkip.ok) { alert(staleMsg()); window.location.reload(); return; }
       if (c.draft) { try { await icsUpdateItem(ICS_LISTS.requests, spId, { [DRAFT_FIELD]: "" }); } catch (e) { console.warn("[ICS] 임시 저장본 정리 실패:", e.message); } }
       setControls((prev) =>
         prev.map((x) =>
           x.id === c.id
             ? { ...x, requestSpId: spId, frequency: freq, importance: newImp, status: "completed",
                 selfRisk: "", selfComment: noteKo, selfCommentEn: noteEn, selfDate: now,
-                actualSample: 0, attachments: [], draft: null }
+                actualSample: 0, attachments: [], draft: null, reviewRisk: null }
             : x
         )
       );
@@ -5909,15 +5997,16 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
     if (!window.confirm(t("self.unskipConfirm"))) return;
     setSaving(c.id);
     try {
-      const stillSkipped = await icsCheckStillPending(ICS_LISTS.requests, c.requestSpId, "Status", "completed");
-      if (!stillSkipped) {
+      // 10-26 서버에서도 「생략한 완료」(검토 판정 없음) · FSA 시작 전일 때만, 읽은 그 버전에 쓴다(If-Match).
+      //      예전에는 Status=completed 만 봐서, 의견이 우연히 생략 문구로 시작하는 검토 완료 건도 되돌릴 수 있었다.
+      const gUn = await icsGuardedUpdate(ICS_LISTS.requests, c.requestSpId,
+        (f) => f.Status === "completed" && !f.ReviewRisk && (!f.FsaStatus || f.FsaStatus === "not_started"),
+        { Status: "not_started", SelfRisk: "", SelfCommentKo: "", SelfCommentEn: "", SampleCount: 0 });
+      if (!gUn.ok) {
         alert(t("self.skipChanged"));
         window.location.reload();
         return;
       }
-      await icsUpdateItem(ICS_LISTS.requests, c.requestSpId, {
-        Status: "not_started", SelfRisk: "", SelfCommentKo: "", SelfCommentEn: "", SampleCount: 0,
-      });
       setControls((prev) => prev.map((x) => (x.id === c.id
         ? { ...x, status: "not_started", selfRisk: "", selfComment: "", selfCommentEn: "", actualSample: 0 }
         : x)));
@@ -5939,13 +6028,13 @@ function SelfAssessment({ controls, setControls, currentUser, addLog, isArchived
     if (!ok) return;
     setSaving(c.id);
     try {
-      const stillPending = await icsCheckStillPending(ICS_LISTS.requests, c.requestSpId, "Status", "submitted_self");
-      if (!stillPending) {
+      // 10-26 확인과 저장을 한 번에(If-Match) — 검토자가 그 사이 처리하면 412 로 막힌다
+      const gWd = await icsGuardedUpdate(ICS_LISTS.requests, c.requestSpId, (f) => f.Status === "submitted_self", { Status: "not_started" });
+      if (!gWd.ok) {
         alert(lang === "en" ? "The reviewer already processed this item, so it can no longer be withdrawn." : "검토자가 이미 처리한 항목이라 철회할 수 없습니다.");
         window.location.reload();
         return;
       }
-      await icsUpdateItem(ICS_LISTS.requests, c.requestSpId, { Status: "not_started" });
       setControls((prev) => prev.map((x) => (x.id === c.id ? { ...x, status: "not_started" } : x)));
       addLog(currentUser.email, "withdraw_self", c.code, c.name, c.nameEn);
       showToast(lang === "en" ? "Submission withdrawn." : "제출이 철회되었습니다.");
@@ -7558,6 +7647,11 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
   const [savingStep, setSavingStep] = useState("");
 
   const myEmail = (currentUser.email || "").toLowerCase();
+  /* 10-26 서버 상태 확인 — ISA 가 끝났고 FSA 가 아직 제출 · 완료 전일 때만 쓴다(ISA 1차와 같은 이유) */
+  const fsaOpen = (f) => !!f && f.Status === "completed" && !["submitted_self", "completed"].includes(String(f.FsaStatus || "not_started"));
+  const staleMsg = () => (lang === "en"
+    ? "This item was already submitted or processed in another window. The list will be refreshed."
+    : "다른 창에서 이미 제출 · 처리된 항목입니다. 목록을 새로 불러옵니다.");
   // FSA 최종 자가평가도 역할과 무관하게 본인이 1차 담당자(Accessor)로 배정된 항목만 대상이다.
   // Admin 도 예외가 아니며, 전사 현황은 부서별 통제 현황·대시보드에서 확인한다.
   // 대상 = 내가 1차 담당자로 배정된 항목만(ISA 1차와 같은 규칙 · 10-19 부서 범위 확장은 되돌림)
@@ -7596,6 +7690,8 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
     if (!c.requestSpId) throw new Error(lang === "en" ? "Request item not found." : "요청 항목을 찾지 못했습니다.");
     setDraftSaving({ busy: true, step: t("self.stepPrepare") });
     try {
+      const pre = await icsReadItemForWrite(ICS_LISTS.requests, c.requestSpId);   // 10-26 이미 제출 · 처리된 건이면 멈춘다
+      if (pre.missing || !fsaOpen(pre.fields)) throw new Error(staleMsg());
       const finalAttachments = [];
       const toUpload = (draft.attachments || []).filter((a) => !a.webUrl && a.file).length;
       let uploaded = 0;
@@ -7605,7 +7701,7 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
           uploaded += 1;
           setDraftSaving({ busy: true, step: `${t("self.stepUpload")} (${uploaded} / ${toUpload}) · ${att.file.name}` });
           const up = await icsUploadAttachment(c.requestSpId, att.file, "FSA");
-          finalAttachments.push({ name: att.file.name, webUrl: up.webUrl, size: att.size });
+          finalAttachments.push({ name: up.name || att.file.name, webUrl: up.webUrl, size: att.size });   // 같은 이름이 있으면 바뀐 이름(10-26)
         }
       }
       setDraftSaving({ busy: true, step: t("self.stepSave") });
@@ -7619,8 +7715,10 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
         attachments: finalAttachments.map((a) => ({ name: a.name, webUrl: a.webUrl, size: a.size || "" })),
         savedAt: new Date().toISOString(), savedBy: currentUser.email,
       };
-      try { await icsUpdateItem(ICS_LISTS.requests, c.requestSpId, { [DRAFT_FIELD]: draftSerialize(draftObj) }); }
+      let gDraft;
+      try { gDraft = await icsGuardedUpdate(ICS_LISTS.requests, c.requestSpId, fsaOpen, { [DRAFT_FIELD]: draftSerialize(draftObj) }); }
       catch (e) { throw draftColumnError(e, t); }
+      if (!gDraft.ok) throw new Error(staleMsg());
       setDraft((prev) => ({ ...prev, attachments: finalAttachments }));
       setControls((prev) => prev.map((x) => (x.id === c.id ? { ...x, isaDoc: docWrite ? docObj : x.isaDoc, draft: draftObj } : x)));
       addLog(currentUser.email, "save_draft", c.code, c.name, c.nameEn);
@@ -7638,7 +7736,18 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
     setSavingFsa(c.id);
     setSavingStep(t("self.stepPrepare"));
     setEditing(null);
+    const upMap = new Map();   // 10-26 실패해 폼을 다시 열 때 이미 올린 첨부를 「올린 것」 으로 바꿔 둔다
     try {
+      // 10-26 서버 상태 · 담당자 확인 — 다른 창에서 이미 제출 · 검토됐거나 담당자가 바뀌었으면 올리기 전에 멈춘다
+      const pre = await icsReadItemForWrite(ICS_LISTS.requests, c.requestSpId);
+      if (pre.missing || !fsaOpen(pre.fields)) { alert(staleMsg()); window.location.reload(); return; }
+      if (c.spId) {
+        const ctl = await icsReadItemForWrite(ICS_LISTS.controls, c.spId);
+        if (ctl.missing || String((ctl.fields || {}).AccessorEmail || "").trim().toLowerCase() !== myEmail) {
+          alert(lang === "en" ? "The accessor of this control has been changed, so you can no longer submit it. The list will be refreshed." : "이 통제의 1차 담당자가 바뀌어 더 이상 제출할 수 없습니다. 목록을 새로 불러옵니다.");
+          window.location.reload(); return;
+        }
+      }
       // ISA 자가평가 첨부와 겹치지 않도록 별도 하위 폴더(FSA)에 업로드해서 SharePoint에 구분되게 쌓이게 한다.
       const finalAttachments = [];
       const _toUpload = (draft.attachments || []).filter((a) => !a.webUrl && a.file).length;
@@ -7650,13 +7759,16 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
           _uploaded += 1;
           setSavingStep(`${t("self.stepUpload")} (${_uploaded} / ${_toUpload}) · ${att.file.name}`);
           const uploaded = await icsUploadAttachment(c.requestSpId, att.file, "FSA");
-          finalAttachments.push({ name: att.file.name, webUrl: uploaded.webUrl });
+          const done = { name: uploaded.name || att.file.name, webUrl: uploaded.webUrl, size: att.size };   // 같은 이름이 있으면 바뀐 이름(10-26)
+          upMap.set(att, done);
+          finalAttachments.push({ name: done.name, webUrl: done.webUrl });
         }
       }
       const fsaAttachedFilesField = finalAttachments.map((a) => `${a.name}|${a.webUrl}`).join(";");
       setSavingStep(t("self.stepSave"));
 
-      await icsUpdateItem(ICS_LISTS.requests, c.requestSpId, {
+      // 읽은 그 버전일 때만 저장(10-26 If-Match) — 그사이 처리됐으면 저장하지 않는다
+      const gFsa = await icsGuardedUpdate(ICS_LISTS.requests, c.requestSpId, fsaOpen, {
         FsaStatus: "submitted_self",
         FsaRisk: draft.risk,
         FsaCommentKo: draft.comment,
@@ -7666,6 +7778,7 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
         /* SampleCount(ISA 샘플링 건수)는 건드리지 않는다. 예전에는 FSA 제출이 그 값을 덮어
            ISA 가 몇 건을 봤는지 사라졌다(09-21). FSA 건수는 아래에서 FsaSampleCount 에 따로 둔다. */
       });
+      if (!gFsa.ok) { alert(staleMsg()); window.location.reload(); return; }
       /* FSA 기준(샘플링 건수 · 점검 빈도 · 중요도)은 새 열이라 없는 환경에서도 최종 제출이 끝나야 한다 —
          열마다 따로 저장해, 한 열이 없어도 나머지는 남는다. 통제 항목(ISA 값)은 건드리지 않는다. */
       const fsaFreq = draft.frequency || c.fsaFrequency || c.frequency;
@@ -7716,6 +7829,9 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
       showToast(lang === "en" ? "Final self-assessment submitted." : "최종 자가평가가 제출되었습니다.");
     } catch (e) {
       alert("SharePoint 저장에 실패했습니다: " + e.message);
+      // 10-26 실패하면 쓰던 폼을 그대로 다시 연다(입력 유지) — 이미 올린 첨부는 「올린 것」 으로
+      setDraft((prev) => ({ ...prev, attachments: (prev.attachments || []).map((a) => upMap.get(a) || a) }));
+      setEditing(c.id);
     } finally {
       // 성공 · 실패 어느 쪽이든 팝업을 닫는다 — 오류 창 뒤에 팝업이 남아 화면이 잠기지 않게.
       setSavingFsa(null);
@@ -7728,13 +7844,12 @@ function FSAPage({ controls, setControls, currentUser, addLog, isArchived, showT
     const ok = window.confirm(lang === "en" ? "Withdraw this submission? It will move back to 'needs final assessment'." : "제출을 철회하시겠습니까? '최종평가 필요' 상태로 되돌아갑니다.");
     if (!ok) return;
     try {
-      const stillPending = await icsCheckStillPending(ICS_LISTS.requests, c.requestSpId, "FsaStatus", "submitted_self");
-      if (!stillPending) {
+      const gWd = await icsGuardedUpdate(ICS_LISTS.requests, c.requestSpId, (f) => f.FsaStatus === "submitted_self", { FsaStatus: "not_started" });   // 10-26 If-Match
+      if (!gWd.ok) {
         alert(lang === "en" ? "The reviewer already processed this item, so it can no longer be withdrawn." : "검토자가 이미 처리한 항목이라 철회할 수 없습니다.");
         window.location.reload();
         return;
       }
-      await icsUpdateItem(ICS_LISTS.requests, c.requestSpId, { FsaStatus: "not_started" });
       setControls((prev) => prev.map((x) => (x.id === c.id ? { ...x, fsaStatus: "not_started" } : x)));
       addLog(currentUser.email, "withdraw_fsa", c.code, c.name, c.nameEn);
       showToast(lang === "en" ? "Submission withdrawn." : "제출이 철회되었습니다.");
@@ -7880,20 +7995,22 @@ function FSAReviewPage({ controls, setControls, currentUser, addLog, isArchived,
     const today = new Date().toISOString();  // SharePoint 저장값과 동일한 ISO — 표시 시점에 formatDateTime 이 KST 로 변환
     setEditing(null);
     try {
-      const stillPending = await icsCheckStillPending(ICS_LISTS.requests, c.requestSpId, "FsaStatus", "submitted_self");
-      if (!stillPending) {
-        alert(lang === "en" ? "This item was already processed by someone else. Refreshing the list." : "이미 다른 사람이 처리한 항목입니다. 목록을 새로고침합니다.");
-        window.location.reload();
-        return;
-      }
-      await icsUpdateItem(ICS_LISTS.requests, c.requestSpId, {
+      // 10-26 확인과 저장을 한 번에(If-Match) — 담당자 철회 · 다른 검토자 처리와 겹치면 저장하지 않는다
+      const gRv = await icsGuardedUpdate(ICS_LISTS.requests, c.requestSpId, (f) => f.FsaStatus === "submitted_self", {
         FsaStatus: "completed",
         FsaReviewRisk: draft.risk,
         FsaReviewCommentKo: draft.comment,
         FsaReviewCommentEn: draft.comment,
         FsaReviewDate: new Date().toISOString(),
       });
+      if (!gRv.ok) {
+        alert(lang === "en" ? "This item was already processed by someone else. Refreshing the list." : "이미 다른 사람이 처리한 항목입니다. 목록을 새로고침합니다.");
+        window.location.reload();
+        return;
+      }
       const actor = await icsSaveActor(c.requestSpId, "FsaReviewActor", currentUser, c.reviewer, (m) => alert(m));
+      // 10-26 배정 검토자 본인이 처리했으면 예전 부서 권한 처리자 표시를 지운다(남아 있으면 이력에 엉뚱한 처리자가 보였다)
+      if (!actor && c.fsaReviewActor) icsUpdateItem(ICS_LISTS.requests, c.requestSpId, { FsaReviewActor: "" }).catch((e) => console.warn("[ICS] FsaReviewActor 정리 실패:", e.message));
       setControls((prev) =>
         prev.map((x) =>
           x.id === c.id ? { ...x, fsaStatus: "completed", fsaReviewRisk: draft.risk, fsaReviewComment: draft.comment, fsaReviewCommentEn: draft.comment, fsaReviewDate: today, fsaReviewActor: actor } : x
@@ -7909,20 +8026,22 @@ function FSAReviewPage({ controls, setControls, currentUser, addLog, isArchived,
     const today = new Date().toISOString();  // SharePoint 저장값과 동일한 ISO — 표시 시점에 formatDateTime 이 KST 로 변환
     setReturning(null);
     try {
-      const stillPending = await icsCheckStillPending(ICS_LISTS.requests, c.requestSpId, "FsaStatus", "submitted_self");
-      if (!stillPending) {
-        alert(lang === "en" ? "This item was already processed by someone else. Refreshing the list." : "이미 다른 사람이 처리한 항목입니다. 목록을 새로고침합니다.");
-        window.location.reload();
-        return;
-      }
-      await icsUpdateItem(ICS_LISTS.requests, c.requestSpId, {
+      // 10-26 확인과 저장을 한 번에(If-Match) — 담당자 철회 · 다른 검토자 처리와 겹치면 저장하지 않는다
+      const gRv = await icsGuardedUpdate(ICS_LISTS.requests, c.requestSpId, (f) => f.FsaStatus === "submitted_self", {
         FsaStatus: "returned",
         FsaReviewRisk: "red",
         FsaReviewCommentKo: returnComment,
         FsaReviewCommentEn: returnComment,
         FsaReviewDate: new Date().toISOString(),
       });
+      if (!gRv.ok) {
+        alert(lang === "en" ? "This item was already processed by someone else. Refreshing the list." : "이미 다른 사람이 처리한 항목입니다. 목록을 새로고침합니다.");
+        window.location.reload();
+        return;
+      }
       const actor = await icsSaveActor(c.requestSpId, "FsaReviewActor", currentUser, c.reviewer, (m) => alert(m));
+      // 10-26 배정 검토자 본인이 처리했으면 예전 부서 권한 처리자 표시를 지운다(남아 있으면 이력에 엉뚱한 처리자가 보였다)
+      if (!actor && c.fsaReviewActor) icsUpdateItem(ICS_LISTS.requests, c.requestSpId, { FsaReviewActor: "" }).catch((e) => console.warn("[ICS] FsaReviewActor 정리 실패:", e.message));
       setControls((prev) =>
         prev.map((x) =>
           x.id === c.id ? { ...x, fsaStatus: "returned", fsaReviewRisk: "red", fsaReviewComment: returnComment, fsaReviewCommentEn: returnComment, fsaReviewDate: today, fsaReviewActor: actor } : x
@@ -8087,20 +8206,22 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, sh
     const today = new Date().toISOString();  // SharePoint 저장값과 동일한 ISO — 표시 시점에 formatDateTime 이 KST 로 변환
     setEditing(null);
     try {
-      const stillPending = await icsCheckStillPending(ICS_LISTS.requests, c.requestSpId, "Status", "submitted_self");
-      if (!stillPending) {
-        alert(lang === "en" ? "This item was already processed by someone else. Refreshing the list." : "이미 다른 사람이 처리한 항목입니다. 목록을 새로고침합니다.");
-        window.location.reload();
-        return;
-      }
-      await icsUpdateItem(ICS_LISTS.requests, c.requestSpId, {
+      // 10-26 확인과 저장을 한 번에(If-Match) — 담당자 철회 · 다른 검토자 처리와 겹치면 저장하지 않는다
+      const gRv = await icsGuardedUpdate(ICS_LISTS.requests, c.requestSpId, (f) => f.Status === "submitted_self", {
         Status: "completed",
         ReviewRisk: draft.risk,
         ReviewCommentKo: draft.comment,
         ReviewCommentEn: draft.comment,
         ReviewDate: new Date().toISOString(),
       });
+      if (!gRv.ok) {
+        alert(lang === "en" ? "This item was already processed by someone else. Refreshing the list." : "이미 다른 사람이 처리한 항목입니다. 목록을 새로고침합니다.");
+        window.location.reload();
+        return;
+      }
       const actor = await icsSaveActor(c.requestSpId, "ReviewActor", currentUser, c.reviewer, (m) => alert(m));
+      // 10-26 배정 검토자 본인이 처리했으면 예전 부서 권한 처리자 표시를 지운다(남아 있으면 이력에 엉뚱한 처리자가 보였다)
+      if (!actor && c.reviewActor) icsUpdateItem(ICS_LISTS.requests, c.requestSpId, { ReviewActor: "" }).catch((e) => console.warn("[ICS] ReviewActor 정리 실패:", e.message));
       setControls((prev) => prev.map((x) => (x.id === c.id ? { ...x, status: "completed", reviewRisk: draft.risk, reviewComment: draft.comment, reviewCommentEn: draft.comment, reviewDate: today, reviewActor: actor } : x)));
       addLog(currentUser.email, "review_complete", c.code, c.name, c.nameEn);
       showToast(lang === "en" ? "Review confirmed." : "검토가 완료되었습니다.");
@@ -8112,20 +8233,22 @@ function ReviewPage({ controls, setControls, currentUser, addLog, isArchived, sh
     const today = new Date().toISOString();  // SharePoint 저장값과 동일한 ISO — 표시 시점에 formatDateTime 이 KST 로 변환
     setReturning(null);
     try {
-      const stillPending = await icsCheckStillPending(ICS_LISTS.requests, c.requestSpId, "Status", "submitted_self");
-      if (!stillPending) {
-        alert(lang === "en" ? "This item was already processed by someone else. Refreshing the list." : "이미 다른 사람이 처리한 항목입니다. 목록을 새로고침합니다.");
-        window.location.reload();
-        return;
-      }
-      await icsUpdateItem(ICS_LISTS.requests, c.requestSpId, {
+      // 10-26 확인과 저장을 한 번에(If-Match) — 담당자 철회 · 다른 검토자 처리와 겹치면 저장하지 않는다
+      const gRv = await icsGuardedUpdate(ICS_LISTS.requests, c.requestSpId, (f) => f.Status === "submitted_self", {
         Status: "returned",
         ReviewRisk: "red",
         ReviewCommentKo: returnComment,
         ReviewCommentEn: returnComment,
         ReviewDate: new Date().toISOString(),
       });
+      if (!gRv.ok) {
+        alert(lang === "en" ? "This item was already processed by someone else. Refreshing the list." : "이미 다른 사람이 처리한 항목입니다. 목록을 새로고침합니다.");
+        window.location.reload();
+        return;
+      }
       const actor = await icsSaveActor(c.requestSpId, "ReviewActor", currentUser, c.reviewer, (m) => alert(m));
+      // 10-26 배정 검토자 본인이 처리했으면 예전 부서 권한 처리자 표시를 지운다(남아 있으면 이력에 엉뚱한 처리자가 보였다)
+      if (!actor && c.reviewActor) icsUpdateItem(ICS_LISTS.requests, c.requestSpId, { ReviewActor: "" }).catch((e) => console.warn("[ICS] ReviewActor 정리 실패:", e.message));
       setControls((prev) => prev.map((x) => (x.id === c.id ? { ...x, status: "returned", reviewRisk: "red", reviewComment: returnComment, reviewCommentEn: returnComment, reviewDate: today, reviewActor: actor } : x)));
       addLog(currentUser.email, "review_reject", c.code, c.name, c.nameEn);
       showToast(lang === "en" ? "Returned to the accessor." : "담당자에게 반려되었습니다.");
@@ -8342,8 +8465,13 @@ function _icsExportControlsToExcelRaw(controls, lang, departments = INITIAL_DEPA
 function DiffTable({ r, controls }) {
   const { lang, t } = useLang();
   const { departments, users } = useAppData();
-  const before = controls.find((x) => x.code === r.code && x.year === r.year) || {};
-  const p = r.payload || {};
+  // 10-26 변경 전(As-Is)은 요청 당시 값(Payload.before)을 쓴다 — 승인 뒤에도 무엇이 바뀌었는지 남는다. 예전 요청은 지금 값.
+  //      요청에 없는 칸(예전 관리 화면 요청의 영문 이름 · 설명)은 바꾸지 않으므로 변경 후에도 그 값을 그대로 보여 준다.
+  const cur = controls.find((x) => x.code === r.code && x.year === r.year) || {};
+  const before = (r.payload && r.payload.before) || cur;
+  const p0 = r.payload || {};
+  const p = { ...p0 };
+  ["name", "nameEn", "desc", "descEn", "dept", "cat", "accessor", "reviewer", "frequency", "importance"].forEach((k) => { if (p[k] === undefined) p[k] = before[k]; });
 
   const rows = [
     [`${t("list.colName")} (${t("common.ko")})`, before.name || "-",                    p.name || "-"],
@@ -8467,7 +8595,17 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
     if (!ok) return;
     setActing(r.spId);
     try {
-      await icsUpdateItem(ICS_LISTS.changeRequests, r.spId, { Status: "cancelled" });
+      // 10-26 서버에서 아직 진행 중이고 같은 단계일 때만, 읽은 그 버전에 쓴다(If-Match).
+      //      예전에는 확인 없이 덮어써, 이미 승인 · 반영된 건이 「취소」 로 남거나 결재자와 동시에 누르면 철회가 되살아났다.
+      const gCancel = await icsGuardedUpdate(ICS_LISTS.changeRequests, r.spId,
+        (f) => String(f.Status || "pending") === "pending" && Number(f.Step || 1) === Number(r.step), { Status: "cancelled" });
+      if (!gCancel.ok) {
+        alert(lang === "en"
+          ? "This request has already been processed by an approver, so it can no longer be withdrawn. The list will be refreshed."
+          : "결재자가 이미 처리한 요청이라 철회할 수 없습니다. 목록을 새로 불러옵니다.");
+        await reload();
+        return;
+      }
       // 남은 결재행을 닫아 결재자에게 메일이 더 가지 않게 한다.
       await icsApprovalsWithdraw(r.spId);
       addLog(currentUser.email, "cancel_change", r.code, labelOf(r), labelOf(r));
@@ -8508,7 +8646,10 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
       // Step 만 보면 안 된다 — 반려·취소는 Step 을 그대로 두고 Status 만 바꾸기 때문에,
       // 목록을 열어둔 다른 결재자가 이미 반려된 건을 승인으로 뒤집고 통제 항목까지
       // 실제로 반영해 버릴 수 있었다. Status 와 Step 을 함께 확인한다.
-      const stillMyTurn = await icsCheckChangeRequestTurn(r.spId, r.step);
+      // 10-26 서버 상태를 버전(etag)과 함께 읽는다 — 아래 요청 저장을 이 버전일 때만 하도록(If-Match). 읽기에 실패하면 진행하지 않는다.
+      const turnOk = (f) => String(f.Status || "pending") === "pending" && Number(f.Step || 1) === Number(r.step);
+      const preReq = await icsReadItemForWrite(ICS_LISTS.changeRequests, r.spId);
+      const stillMyTurn = !preReq.missing && turnOk(preReq.fields);
       if (!stillMyTurn) {
         alert(lang === "en"
           ? "This request has already been processed by someone else. The list will be refreshed."
@@ -8536,38 +8677,62 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
         // 담당자 일괄 변경(10-20) — 항목마다 반영하고 결과는 아래 요청 저장 때 Payload.result 로 함께 남긴다
         applied = { kind: "bulk", result: await icsApplyBulkAccessor(r, controls) };
       } else if (nextStatus === "approved") {
+        // 10-26 대상은 요청의 연도에서 찾는다(이 화면은 모든 연도의 통제를 받는다). 예전에는 고른 조회 연도의 통제만 받아,
+        //      다른 연도 요청을 승인하면 대상을 못 찾고도 요청이 「승인」 으로 닫혔다. 이제 못 찾으면 승인하지 않는다.
         const target = controls.find((x) => x.code === r.code && x.year === r.year);
-        if (!target) {
-          // 결재 진행 중에 대상 통제 항목이 사라진 경우(다른 삭제 요청이 먼저 승인되는 등).
-          // 예전에는 조용히 넘어가 승인자가 반영된 것으로 오해할 수 있었다.
+        const cur = target && target.spId ? await icsReadItemForWrite(ICS_LISTS.controls, target.spId) : { missing: !target, fields: null, etag: "" };
+        if (r.reqType === "delete" && (!target || cur.missing)) {
+          applied = { kind: "delete", target: target || { id: null } };   // 이미 지워진 항목 — 지우기는 끝난 것으로 본다(다시 시도해도 404 로 막히지 않게)
+        } else if (!target || cur.missing) {
           alert(lang === "en"
-            ? `The control item (${r.code}) no longer exists, so the change could not be applied. The request has been closed as approved — please contact IT.`
-            : `대상 통제 항목(${r.code})이 존재하지 않아 변경 내용을 반영하지 못했습니다. 요청은 승인 상태로 종료되었습니다. IT로 문의해 주세요.`);
-        }
-        if (target) {
-          if (r.reqType === "delete") {
-            if (target.spId) await icsDeleteItem(ICS_LISTS.controls, target.spId);
-            applied = { kind: "delete", target };
+            ? `The control item (${r.code}, ${r.year}) no longer exists, so this change cannot be applied. Please reject the request instead.`
+            : `대상 통제 항목(${r.code}, ${r.year})이 없어 변경 내용을 반영할 수 없습니다. 이 요청은 반려해 주세요.`);
+          return;
+        } else if (r.reqType === "delete") {
+          try { await icsDeleteItem(ICS_LISTS.controls, target.spId); }
+          catch (e) { if (e.status !== 404) throw e; }   // 이미 지워짐 — 끝난 것으로 본다
+          applied = { kind: "delete", target };
+        } else {
+          const pl = r.payload || {};
+          const sf = cur.fields || {};
+          const norm = (v) => String(v == null ? "" : v).trim();
+          let colFields, changedKeys, src = pl;
+          if (pl.before) {
+            // 요청에서 실제로 바꾼 칸만 쓴다. 그사이 다른 경로(다른 결재 · 일괄 변경 · 평가 제출의 빈도 변경)로 바뀐 칸은 그대로 둔다.
+            changedKeys = Object.keys(ICS_CTRL_COL).filter((k) => pl[k] !== undefined && norm(pl[k]) !== norm(pl.before[k]));
+            const drift = changedKeys.filter((k) => norm(sf[ICS_CTRL_COL[k]]) !== norm(pl.before[k]) && norm(sf[ICS_CTRL_COL[k]]) !== norm(pl[k]));
+            if (drift.length && !window.confirm(lang === "en"
+              ? `Since this request was filed, these fields were changed elsewhere:\n${drift.map((k) => `· ${ICS_CTRL_COL[k]}: requested ${norm(pl.before[k]) || "-"} → ${norm(pl[k]) || "-"}, now ${norm(sf[ICS_CTRL_COL[k]]) || "-"}`).join("\n")}\n\nApply the requested values anyway?`
+              : `이 요청을 올린 뒤 다른 경로로 바뀐 칸이 있습니다:\n${drift.map((k) => `· ${ICS_CTRL_COL[k]}: 요청 ${norm(pl.before[k]) || "-"} → ${norm(pl[k]) || "-"}, 현재 ${norm(sf[ICS_CTRL_COL[k]]) || "-"}`).join("\n")}\n\n그래도 요청한 값으로 바꿀까요? (취소하면 아무것도 바꾸지 않습니다)`)) return;
           } else {
-            const pl = r.payload || {};
-            if (target.spId) {
-              await icsUpdateItem(ICS_LISTS.controls, target.spId, {
-                Dept: pl.dept, Category: pl.cat,
-                NameKo: pl.name, NameEn: pl.nameEn || pl.name,
-                DescKo: pl.desc, DescEn: pl.descEn || pl.desc,
-                AccessorEmail: pl.accessor, ReviewerEmail: pl.reviewer,
-                Frequency: pl.frequency, Importance: pl.importance,
-              });
-            }
-            applied = { kind: "edit", target, pl };
+            // 예전 요청(요청 당시 값 없음) — 칸마다 지금 값과 다를 때만 쓴다. 영문 이름 · 설명이 빠진 요청은 지금 값을 그대로 둔다.
+            const want = { ...pl, nameEn: pl.nameEn !== undefined ? (pl.nameEn || pl.name) : target.nameEn, descEn: pl.descEn !== undefined ? (pl.descEn || pl.desc) : target.descEn };
+            changedKeys = Object.keys(ICS_CTRL_COL).filter((k) => want[k] !== undefined && norm(want[k]) !== norm(sf[ICS_CTRL_COL[k]]));
+            src = want;
           }
+          colFields = {};
+          changedKeys.forEach((k) => { colFields[ICS_CTRL_COL[k]] = src[k]; });
+          if (Object.keys(colFields).length) {
+            const g = await icsGuardedUpdate(ICS_LISTS.controls, target.spId, () => true, colFields, { pre: cur });
+            if (!g.ok) throw new Error("통제 항목이 그사이 바뀌어 반영하지 못했습니다. 다시 시도해 주세요.");
+          }
+          applied = { kind: "edit", target, pl, keys: changedKeys, src };
         }
       }
 
-      await icsUpdateItem(ICS_LISTS.changeRequests, r.spId, {
+      const gReq = await icsGuardedUpdate(ICS_LISTS.changeRequests, r.spId, turnOk, {
         Steps: JSON.stringify(steps), Step: nextStep, Status: nextStatus,
         ...(applied && applied.kind === "bulk" ? { Payload: JSON.stringify({ ...(r.payload || {}), result: applied.result }) } : {}),
-      });
+      }, { pre: preReq });
+      if (!gReq.ok) {
+        // 확인한 뒤 · 저장하기 전에 요청자가 철회했거나 다른 결재자가 처리한 경우(드묾). 통제 반영까지 끝난 뒤라면 IT 가 확인해야 한다.
+        alert(applied
+          ? (lang === "en" ? "The request was changed by someone else at the same moment (e.g. withdrawn). The control item was already updated — please contact IT to check." : "같은 순간 다른 사람이 이 요청을 처리했습니다(철회 등). 통제 항목은 이미 반영되었으니 IT 로 확인을 요청해 주세요.")
+          : (lang === "en" ? "This request has already been processed by someone else. The list will be refreshed." : "이미 다른 결재자가 처리한 요청입니다. 목록을 새로 불러옵니다."));
+        addLog(currentUser.email, "approve_change_conflict", r.code, labelOf(r), labelOf(r));
+        await reload();
+        return;
+      }
 
       // Power Automate 메일용 결재행에도 같은 결과를 남긴다.
       // 승인이면 그 차수를 「승인」 으로, 다음 차수를 「대기」 로 바꾼다 —
@@ -8588,14 +8753,9 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
       } else if (applied && applied.kind === "delete") {
         setControls((prev) => prev.filter((x) => x.id !== applied.target.id));
       } else if (applied && applied.kind === "edit") {
-        const pl = applied.pl;
-        setControls((prev) => prev.map((x) => (x.id === applied.target.id
-          ? { ...x, dept: pl.dept, cat: pl.cat,
-              name: pl.name, nameEn: pl.nameEn || pl.name,
-              desc: pl.desc, descEn: pl.descEn || pl.desc,
-              accessor: pl.accessor, reviewer: pl.reviewer,
-              frequency: pl.frequency, importance: pl.importance }
-          : x)));
+        const patch = {};
+        (applied.keys || []).forEach((k) => { patch[k] = applied.src[k]; });   // 10-26 실제로 쓴 칸만
+        setControls((prev) => prev.map((x) => (x.id === applied.target.id ? { ...x, ...patch } : x)));
       }
 
       addLog(currentUser.email, approved ? "approve_change" : "reject_change", r.code, labelOf(r), labelOf(r));
@@ -9904,7 +10064,7 @@ async function icsBuildDocPdf(c, doc, lang, users, departments, stage, opts = {}
 /* 제출 때 첨부 폴더(Documentation)에 PDF 로 남긴다. */
 async function icsSaveDocPdf(c, spId, doc, lang, users, departments, stage) {
   const f = await icsBuildDocPdf(c, doc, lang, users, departments, stage);
-  await icsUploadAttachment(spId, new File([f.bytes], f.name, { type: "application/pdf" }), "Documentation");
+  await icsUploadAttachment(spId, new File([f.bytes], f.name, { type: "application/pdf" }), "Documentation", { replace: true });
   return f.name;
 }
 /* 세부 내용에서 바로 내려받기. */
@@ -9947,7 +10107,7 @@ async function icsBuildDocx(c, doc, lang, users, departments, stage) {
 async function icsSaveDocx(c, spId, doc, lang, users, departments, stage) {
   const files = await icsBuildDocx(c, doc, lang, users, departments, stage);
   for (const f of files) {
-    await icsUploadAttachment(spId, new File([f.bytes], f.name, { type: DOCX_MIME }), "Documentation");
+    await icsUploadAttachment(spId, new File([f.bytes], f.name, { type: DOCX_MIME }), "Documentation", { replace: true });
   }
   return files.map((f) => f.name);
 }
@@ -11309,14 +11469,14 @@ function FinalReportPage({ controls, currentUser, activeYear, yearConfirmation, 
                 <p className="text-sm text-slate-500 mb-0.5">{lang === "en" ? "Approver: " : "결재자: "}{personByEmail(info.by, lang, users)}</p>
                 <p className="text-sm text-slate-500 mb-2">{lang === "en" ? "Approved at: " : "결재 시간: "}{formatDateTime(info.at, lang)}</p>
                 {!readOnly && <button
-                  onClick={() => {
+                  onClick={async () => {
                     if (!allowed) {
                       alert(lang === "en" ? "You must be signed in with the CFO/RD account for this role to cancel." : "이 역할(CFO/RD)의 계정으로 로그인해야 취소할 수 있습니다.");
                       return;
                     }
                     if (cancelBlocked) return;
-                    cancelYearConfirm(role);
-                    showToast(lang === "en" ? "Confirmation cancelled." : "컨펌이 취소되었습니다.");
+                    // 10-26 기록이 저장된 뒤에만 「취소됨」 을 알린다
+                    if (await cancelYearConfirm(role)) showToast(lang === "en" ? "Confirmation cancelled." : "컨펌이 취소되었습니다.");
                   }}
                   disabled={allowed && cancelBlocked}
                   className="w-full py-2 rounded-lg text-xs font-medium border transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
@@ -11398,10 +11558,11 @@ function FinalReportPage({ controls, currentUser, activeYear, yearConfirmation, 
           <div className="flex justify-end gap-2">
             <button onClick={() => setConfirmingRole(null)} className="px-4 py-2 text-sm text-slate-500 rounded-lg hover:bg-slate-50">{t("common.cancel")}</button>
             <button
-              onClick={() => {
-                confirmYear(confirmingRole);
+              onClick={async () => {
+                const role = confirmingRole;
                 setConfirmingRole(null);
-                showToast(lang === "en" ? "Final results confirmed." : "최종 결과가 컨펌되었습니다.");
+                // 10-26 기록이 저장된 뒤에만 「컨펌 완료」 를 알린다(실패하면 화면도 바뀌지 않는다)
+                if (await confirmYear(role)) showToast(lang === "en" ? "Final results confirmed." : "최종 결과가 컨펌되었습니다.");
               }}
               className="px-4 py-2 text-sm font-medium text-white rounded-lg"
               style={{ backgroundColor: BRAND.accent }}
@@ -12152,8 +12313,10 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
     const tKo2 = makeT("ko"), tEn2 = makeT("en");
 
     let successCount = 0;
+    const failed = [], conflicts = [];             // 10-26 실패 · 충돌한 사람은 반영된 것으로 표시하지 않는다
+    const nextSaved = { ...saved }, nextDraft = { ...draft };
     for (const email of changedEmails) {
-      const entry = draft[email] || {};
+      const entry = { ...(draft[email] || {}) };
       const yn = (v) => (v ? "Y" : "");
       const fields = {
         ICS_Overview: yn(entry.icsOverview),
@@ -12169,12 +12332,24 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
       const voKeep = ((saved[email] && saved[email].vo) || []).filter((k) => k !== "*" && !categoryKeys.includes(k));
       const voNew = viewOnlyReady ? [...new Set([...voKeep, ...voList(entry).filter((k) => categoryKeys.includes(k) && entry[k])])].sort() : voList(saved[email]);
       if (viewOnlyReady) fields[ICS_VIEWONLY_FIELD] = voNew.length ? JSON.stringify(voNew) : "";
-      // 접속 기록 — 열이 있으면 Y/N 으로 분명히 적는다(비어 있던 행도 지금 보이는 값으로 굳힌다 · MKQR 과 같은 방식)
-      if (alReady) fields[ICS_ACCESSLOG_FIELD] = entry.accessLog ? "Y" : "N";
+      // 접속 기록 — 이 화면에서 직접 고쳤거나 이미 Y/N 이 적힌 행만 쓴다. 10-26 예전에는 바뀐 사람마다 지금 보이는 값으로 굳혀,
+      //            Admin 역할(관리자 전용 칸은 비어 있음)인 사람의 다른 칸 하나만 바꿔도 「N」 이 적혀 접속 기록 메뉴가 사라졌다.
+      //            비워 두면 규칙대로 「관리자 전용」 · Admin 역할을 따른다(hasCategoryAccess).
+      if (alReady && (entry.alTouched || (saved[email] && saved[email].alRaw))) fields[ICS_ACCESSLOG_FIELD] = entry.accessLog ? "Y" : "N";
       try {
         const existing = ICS_CATEGORY_ACCESS[email];
         if (existing?.spId) {
-          await icsUpdateItem(ICS_LISTS.categoryAccess, existing.spId, fields);
+          /* 10-26 이 화면을 연 뒤 다른 관리자가 같은 사람의 권한을 고쳤으면 덮어쓰지 않는다(읽은 값과 비교 + If-Match).
+             예전에는 로그인 때 읽은 값으로 행 전체를 써서, 다른 관리자가 회수한 권한이 되살아날 수 있었다. */
+          const base = saved[email] || {};
+          const isY = (v) => ["Y", "TRUE", "1"].includes(String(v || "").trim().toUpperCase());
+          const sameAsBase = (f) => categoryKeys.filter((k) => k !== "accessLog").every((k) => {
+            const col = { icsOverview: "ICS_Overview", controlMgmt: "ControlMgmt", self: "Self", review: "Review", fsa: "FSA", fsaReview: "FSAReview", adminOnly: "AdminOnly", executive: "Executive" }[k];
+            return !col || isY(f[col]) === !!base[k];
+          }) && (!viewOnlyReady || String(f[ICS_VIEWONLY_FIELD] == null ? "" : f[ICS_VIEWONLY_FIELD]).trim() === String(base.voRaw || ""))
+            && (!alReady || icsAccessLogRaw(f[ICS_ACCESSLOG_FIELD]) === String(base.alRaw || ""));
+          const g = await icsGuardedUpdate(ICS_LISTS.categoryAccess, existing.spId, sameAsBase, fields);
+          if (!g.ok) { conflicts.push(email); continue; }
         } else {
           const created = await icsCreateItem(ICS_LISTS.categoryAccess, { Title: email, ...fields });
           entry.spId = created.id;
@@ -12182,7 +12357,8 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
         const stored = { ...entry, vo: voNew, voRaw: viewOnlyReady ? (fields[ICS_VIEWONLY_FIELD] || "") : ((saved[email] && saved[email].voRaw) || ""),
           alRaw: alReady ? fields[ICS_ACCESSLOG_FIELD] : ((saved[email] && saved[email].alRaw) || ""), alTouched: false };
         ICS_CATEGORY_ACCESS[email] = { ...(ICS_CATEGORY_ACCESS[email] || {}), ...stored };
-        draft[email] = { ...entry, vo: voNew };
+        nextSaved[email] = { ...stored };
+        nextDraft[email] = { ...entry, vo: voNew };
         // 사람별 이력 — 카테고리마다 「없음 · 보기 · 편집」 이전 → 이후
         const diffs = categoryKeys.filter((k) => lvOf(saved[email], k) !== lvOf(stored, k));
         if (diffs.length) {
@@ -12193,11 +12369,19 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
         successCount++;
       } catch (e) {
         console.warn(`[ICS] ${email} 카테고리 접근 권한 저장 실패:`, e.message);
+        failed.push(email);
       }
     }
-    setSaved({ ...draft });
-    setDraft({ ...draft });
+    // 10-26 반영된 사람만 「저장됨」 으로 — 실패 · 충돌한 사람은 고친 값이 그대로 남아(변경 표시) 다시 반영할 수 있다.
+    //       예전에는 실패해도 전원을 저장됨으로 바꿔, 실제로는 권한이 그대로인데 화면에는 회수된 것처럼 보였다.
+    setSaved(nextSaved);
+    setDraft(nextDraft);
     setApplying(false);
+    if (failed.length || conflicts.length) {
+      alert((lang === "en"
+        ? `${successCount} applied.` + (failed.length ? `\n\nFailed (${failed.length}) — try again:\n${failed.join("\n")}` : "") + (conflicts.length ? `\n\nChanged by another admin meanwhile (${conflicts.length}) — reload and check:\n${conflicts.join("\n")}` : "")
+        : `${successCount}명 반영.` + (failed.length ? `\n\n저장 실패 ${failed.length}명 — 다시 「반영」 을 눌러 주세요:\n${failed.join("\n")}` : "") + (conflicts.length ? `\n\n그사이 다른 관리자가 고친 사람 ${conflicts.length}명 — 덮어쓰지 않았습니다. 새로고침 후 확인해 주세요:\n${conflicts.join("\n")}` : "")));
+    }
     if (successCount > 0) {
       addLog(
         currentUser.email,
@@ -12207,7 +12391,7 @@ function CategoryAccessPage({ currentUser, addLog, showToast }) {
         `Bulk category access update (${successCount} users)`
       );
       if (showToast) showToast(lang === "en" ? `Permissions updated for ${successCount} user(s).` : `${successCount}명의 권한이 반영되었습니다.`);
-    } else if (changedEmails.length > 0) {
+    } else if (changedEmails.length > 0 && !failed.length && !conflicts.length) {
       alert(lang === "en" ? "Failed to save changes." : "저장에 실패했습니다.");
     }
   }
@@ -12774,7 +12958,14 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
         DeptsAdmin: draft.deptsAdmin.join(","),
       };
       if (existing?.spId) {
-        await icsUpdateItem(ICS_LISTS.categoryAccess, existing.spId, fields);
+        /* 10-26 이 화면을 연 뒤 다른 관리자가 같은 사람의 역할 · 부서 배정을 고쳤으면 덮어쓰지 않는다(읽은 값과 비교 + If-Match) */
+        const normList = (v) => String(Array.isArray(v) ? v.join(",") : (v || "")).split(",").map((x) => x.trim()).filter(Boolean).sort().join(",");
+        const sameAsBase = (f) => normList(f.DeptsAccessor) === normList(existing.deptsAccessor)
+          && normList(f.DeptsReviewer) === normList(existing.deptsReviewer)
+          && normList(f.DeptsAdmin) === normList(existing.deptsAdmin)
+          && String(f.RoleOverride || "").trim().toLowerCase() === String(existing.roleOverride || "").trim().toLowerCase();
+        const g = await icsGuardedUpdate(ICS_LISTS.categoryAccess, existing.spId, sameAsBase, fields);
+        if (!g.ok) throw new Error(lang === "en" ? "Another admin changed this person's permissions meanwhile — nothing was overwritten. Please reload and check." : "그사이 다른 관리자가 이 사람의 권한을 고쳤습니다 — 덮어쓰지 않았습니다. 새로고침 후 확인해 주세요.");
       } else {
         const created = await icsCreateItem(ICS_LISTS.categoryAccess, { Title: email, ...fields });
         ICS_CATEGORY_ACCESS[email] = { spId: created.id };
@@ -13247,16 +13438,17 @@ function PermissionsPage({ permissions, setPermissions, currentUser, addLog, sho
 /* 메인 앱                                                              */
 /* ------------------------------------------------------------------ */
 
-export default function InternalControlApp({ initialUserId, initialControls, initialLog }) {
+export default function InternalControlApp({ initialUserId, initialControls, initialLog, initialLogFailed }) {
   const [lang, setLang] = useState("ko");
   const t = useMemo(() => makeT(lang), [lang]);
 
   const [departments, setDepartments] = useState(INITIAL_DEPARTMENTS);
   const [users, setUsers] = useState(INITIAL_USERS);
 
-  // SharePoint(ICS_Controls/ICS_Requests, ICS_Log)에서 불러온 데이터가 있으면 그걸 쓰고,
-  // 로드에 실패했을 때만(네트워크 오류 등) 코드 내 목업 데이터로 안전하게 대체한다.
-  const usingSharePointData = !!(initialControls && initialControls.length);
+  // SharePoint(ICS_Controls/ICS_Requests)에서 읽어 왔으면(0건이어도) SharePoint 모드 — 활동 로그 · 결재 · 저장이 모두 SharePoint 로 간다.
+  // 10-26 예전에는 「1건 이상」 일 때만 SharePoint 모드라, 로그인 때 읽기가 한 번 실패하면 빈 화면으로 들어가 그 세션의 활동 로그가
+  //       하나도 남지 않았다(권한 변경 · 매뉴얼처럼 실제 저장은 되는 작업까지). 이제 읽기에 실패하면 로그인 단계에서 멈추고 다시 시도하게 한다(icsBoot).
+  const usingSharePointData = Array.isArray(initialControls);
   const [page, setPage] = useState("dashboard");
   // 사이드바 접기(10-09 · ics-side) — 상단 ←| 단추로 아이콘만 남은 좁은 막대로 접고 |→ 로 다시 편다.
   // 선택은 이 브라우저에 기억한다. 기억된 값이 없으면 좁은 창(1100px 미만)에서만 접힌 채로 시작.
@@ -13307,7 +13499,9 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
     const found = [...new Set((src || []).map((c) => String(c.year || "")).filter(Boolean))];
     return found.length ? found.sort() : ["2026"];
   });
-  const [selectedYear, setSelectedYear] = useState("2026");
+  // 10-26 처음 여는 연도 = 진행 중인(마지막) 연도. 예전에는 "2026" 고정이라 새 회계연도를 만든 뒤에도 모두 지난 연도(조회 전용)로 열리고,
+  //       그때 남긴 활동 로그에도 지난 연도 표시가 붙었다.
+  const [selectedYear, setSelectedYear] = useState(() => years[years.length - 1]);
   const activeYear = years[years.length - 1];
 
   // 로그인 시엔 CFO/RD 컨펌 판단에 필요한 이벤트만 가볍게 불러왔으므로(loadIcsConfirmEvents),
@@ -13344,7 +13538,7 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
     return result;
   });
 
-  // 관리자 데이터 초기화(전체 삭제) 시 요구되는 비밀번호. 관리자가 설정 페이지에서 변경 가능 (데모 기본값: 0000).
+  // [미사용] 예전 데모의 「전체 삭제」 확인 비밀번호. 이 값을 쓰는 화면(ResetConfirmModal)은 지금 그려지지 않고 설정 화면에서 바꾸는 칸도 없다(10-26 주석 정정).
   const [resetPassword, setResetPassword] = useState("0000");
 
   // 저장/제출 등 작업이 성공했을 때 잠깐 보여주는 토스트 알림 (조용히 끝나서 반영됐는지 헷갈리는 문제 방지)
@@ -13471,11 +13665,31 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
       return;
     }
 
-    setYearProgress({ done: 0, total: newControls.length, failed: 0 });
+    /* 10-26 서버에 그 연도 항목이 이미 있는지 먼저 본다 — 다른 관리자 · 다른 탭이 먼저 만들었거나, 지난번에 일부만 만들어진 경우.
+       예전에는 이 화면의 상태만 보고 만들어 248건이 한 벌 더 생길 수 있었다. 있으면 없는 코드만 만들지 묻는다. */
+    let existingCodes;
+    try {
+      const all = await icsListAll(ICS_LISTS.controls);
+      existingCodes = new Set(all.filter((it) => String((it.fields || {}).Year) === String(newYear)).map((it) => String((it.fields || {}).Title || "").trim()));
+    } catch (e) {
+      alert((lang === "en" ? "Could not check existing items, so nothing was created. Please try again.\n\n" : "기존 항목을 확인하지 못해 만들지 않았습니다. 잠시 후 다시 시도해 주세요.\n\n") + e.message);
+      return;
+    }
+    let toCreate = newControls;
+    if (existingCodes.size) {
+      toCreate = newControls.filter((c) => !existingCodes.has(String(c.code).trim()));
+      const ok = window.confirm(lang === "en"
+        ? `FY${newYear} already has ${existingCodes.size} control item(s) on SharePoint (created elsewhere or partly before).\nCreate only the ${toCreate.length} missing item(s)?\n\n(Refresh the page afterwards to see all of them.)`
+        : `${newYear} 회계연도 통제 항목이 SharePoint 에 이미 ${existingCodes.size}건 있습니다(다른 곳에서 만들었거나 지난번에 일부만 생성).\n없는 ${toCreate.length}건만 만들까요?\n\n(끝난 뒤 새로고침하면 모두 보입니다.)`);
+      if (!ok) return;
+      if (!toCreate.length) { window.location.reload(); return; }
+    }
+
+    setYearProgress({ done: 0, total: toCreate.length, failed: 0 });
     const created = [];
     let failed = 0;
-    for (let i = 0; i < newControls.length; i++) {
-      const c = newControls[i];
+    for (let i = 0; i < toCreate.length; i++) {
+      const c = toCreate[i];
       try {
         const res = await icsCreateItem(ICS_LISTS.controls, {
           Title: c.code, Dept: c.dept, Category: c.cat,
@@ -13488,7 +13702,7 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
         failed++;
         console.warn(`[ICS] 새 연도 항목 생성 실패 (${c.code}):`, e.message);
       }
-      setYearProgress({ done: i + 1, total: newControls.length, failed });
+      setYearProgress({ done: i + 1, total: toCreate.length, failed });
     }
 
     if (!created.length) {
@@ -13518,22 +13732,52 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
     }
   }
 
-  function confirmYear(role) {
-    const nowIso = new Date().toISOString();
-    setYearConfirmations((prev) => ({
-      ...prev,
-      [activeYear]: { ...(prev[activeYear] || { cfo: null, rd: null }), [role]: { by: currentUser.email, at: nowIso } },
-    }));
-    addLog(currentUser.email, role === "cfo" ? "cfo_confirm" : "rd_confirm", "-", activeYear, activeYear);
+  /* 컨펌 · 취소는 기록(ICS_Log)이 곧 상태다(새로고침하면 기록에서 복원). 10-26 기록 저장이 끝난 뒤에 화면을 바꾼다 —
+     예전에는 화면부터 「컨펌 완료」 로 바꾸고 기록은 따로 보내, 저장이 실패하면 새로고침 때 컨펌이 사라졌다. */
+  const [confirmBusy, setConfirmBusy] = useState(false);
+  async function writeConfirmEvent(actionKey) {
+    if (!usingSharePointData) return true;
+    try {
+      await icsCreateItem(ICS_LISTS.log, { Title: actionKey, ActorEmail: currentUser.email, ControlId: "-", Detail: activeYear });
+      return true;
+    } catch (e) {
+      alert((lang === "en" ? "Could not record this. Nothing was changed — please try again.\n\n" : "기록을 저장하지 못해 반영하지 않았습니다. 잠시 후 다시 시도해 주세요.\n\n") + e.message);
+      return false;
+    }
+  }
+  async function confirmYear(role) {
+    if (confirmBusy) return false;
+    if (initialLogFailed) { alert(icsLogFailedMsg(lang)); return false; }
+    setConfirmBusy(true);
+    try {
+      const key = role === "cfo" ? "cfo_confirm" : "rd_confirm";
+      if (!(await writeConfirmEvent(key))) return false;
+      const nowIso = new Date().toISOString();
+      setYearConfirmations((prev) => ({
+        ...prev,
+        [activeYear]: { ...(prev[activeYear] || { cfo: null, rd: null }), [role]: { by: currentUser.email, at: nowIso } },
+      }));
+      setLog((prev) => [{ id: uid("log"), date: new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10), dateTime: nowIso, actor: currentUser.email, actionKey: key, code: "-", name: activeYear, nameEn: activeYear, year: activeYear }, ...prev]);
+      return true;
+    } finally { setConfirmBusy(false); }
   }
 
   // 컨펌 취소. RD는 언제든 취소 가능하지만, CFO는 RD가 먼저 취소한 뒤(=RD 미컨펌 상태)에만 취소할 수 있다.
-  function cancelYearConfirm(role) {
-    setYearConfirmations((prev) => ({
-      ...prev,
-      [activeYear]: { ...(prev[activeYear] || { cfo: null, rd: null }), [role]: null },
-    }));
-    addLog(currentUser.email, role === "cfo" ? "cfo_cancel" : "rd_cancel", "-", activeYear, activeYear);
+  async function cancelYearConfirm(role) {
+    if (confirmBusy) return false;
+    if (initialLogFailed) { alert(icsLogFailedMsg(lang)); return false; }
+    setConfirmBusy(true);
+    try {
+      const key = role === "cfo" ? "cfo_cancel" : "rd_cancel";
+      if (!(await writeConfirmEvent(key))) return false;
+      const nowIso = new Date().toISOString();
+      setYearConfirmations((prev) => ({
+        ...prev,
+        [activeYear]: { ...(prev[activeYear] || { cfo: null, rd: null }), [role]: null },
+      }));
+      setLog((prev) => [{ id: uid("log"), date: new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10), dateTime: nowIso, actor: currentUser.email, actionKey: key, code: "-", name: activeYear, nameEn: activeYear, year: activeYear }, ...prev]);
+      return true;
+    } finally { setConfirmBusy(false); }
   }
 
   const currentYearConfirmation = yearConfirmations[activeYear] || { cfo: null, rd: null };
@@ -13543,6 +13787,8 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
   // 지금 화면의 편집 여부(10-11 · ics-viewedit) — 쓰기 잠금 · 보기 전용 띠 · 평가 화면 잠금에 쓴다
   const pageKey = ICS_PAGE_EDIT_KEY[page];
   const pageEditable = !pageKey ? true : pageKey === "learn" ? isIcsAdminEditor(currentUser) || !isIcsAdmin(currentUser) : icsCanEdit(currentUser, pageKey);
+  if (!pageEditable && !_icsWriteBlock) { _icsWriteBlockSince = Date.now(); }   // 10-26 잠금이 막 켜진 시각(유예 계산)
+  if (pageEditable) _icsWasEditable = true; else if (_icsWriteBlock && Date.now() - _icsWriteBlockSince >= ICS_WRITE_GRACE_MS) _icsWasEditable = false;
   _icsWriteBlock = !pageEditable;
   // 카테고리 접근 권한 화면은 자체 「보기 전용」 안내가 있어 띠를 두 번 띄우지 않는다
   const pageViewOnly = !!pageKey && pageKey !== "learn" && page !== "categoryAccess" && !ICS_VIEW_NATURE.has(pageKey) && hasCategoryAccess(currentUser, pageKey) && !pageEditable;
@@ -13776,6 +14022,14 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
 
           <div className="ics-main-scroll flex-1 overflow-y-auto p-4 md:p-6">
             <div className="max-w-[1600px] mx-auto">
+            {initialLogFailed && (page === "finalReport" || page === "settings" || page === "dashboard") && (
+              <div className="mb-4 rounded-xl border px-4 py-2.5 flex items-center gap-2.5 text-xs" data-log-failed
+                   style={{ borderColor: "#F5C2C0", background: "#FEF2F2", color: "#9B1C1C" }}>
+                <AlertTriangle size={15} className="flex-shrink-0" />
+                <span className="flex-1">{icsLogFailedMsg(lang)}</span>
+                <button type="button" onClick={() => window.location.reload()} className="px-2 py-0.5 rounded-md border border-red-300 bg-white hover:bg-red-50">{lang === "en" ? "Reload" : "새로고침"}</button>
+              </div>
+            )}
             {pageViewOnly && (
               <div className="mb-4 rounded-xl border px-4 py-2.5 flex items-center gap-2.5 text-xs" style={{ borderColor: "#DCD3F1", background: "#F7F5FC", color: "#4A3C78" }}>
                 <Eye size={15} className="flex-shrink-0" />
@@ -13847,7 +14101,7 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
             )}
             {page === "approval" && (
               <ApprovalPage
-                controls={controlsForYear}
+                controls={controls}
                 setControls={setControls}
                 currentUser={currentUser}
                 addLog={addLog}
@@ -13945,7 +14199,7 @@ const MSAL_CONFIG = {
   },
   cache: { cacheLocation: "sessionStorage" },
 };
-const MSAL_SCOPES = ["User.Read", "Sites.ReadWrite.All", "Files.ReadWrite.All"]; // 다른 APS 시스템들과 동일 조합(이미 동의된 권한 재사용, 이 앱은 실제로는 읽기만 함)
+const MSAL_SCOPES = ["User.Read", "Sites.ReadWrite.All", "Files.ReadWrite.All"]; // 다른 APS 시스템들과 동일 조합(이미 동의된 권한 재사용). ICS 는 목록 · 파일에 실제로 쓴다(평가 · 결재 · 권한 · 로그) — 10-26 주석 정정
 const SITE_PATH = "startruckkorea.sharepoint.com:/sites/STK-DB:"; // 다른 APS 시스템들과 동일한 사이트 재사용
 const GRAPH = "https://graph.microsoft.com/v1.0";
 
@@ -13956,6 +14210,21 @@ function showLoginErr(msg) {
   const el = document.getElementById("login-err");
   if (el) { el.textContent = msg; el.style.display = "block"; }
 }
+/* 10-26 로그인 단계 오류 — 로그인 화면으로 돌아가 단추를 「다시 시도」(새로고침)로 살린다.
+   예전에는 단추가 「로딩 중...」 비활성 그대로 남아, 탭을 닫는 것 말고는 빠져나갈 길이 없었다. */
+function icsShowBootError(msg) {
+  const ld = document.getElementById("loading"); if (ld) ld.style.display = "none";
+  const ls = document.getElementById("login-screen"); if (ls) ls.style.display = "flex";
+  showLoginErr(msg);
+  const btn = document.getElementById("btn-login");
+  if (btn) { btn.disabled = false; btn.textContent = "다시 시도 / Retry"; btn.onclick = () => window.location.reload(); }
+}
+// MFA · 조건부 액세스 · 세션 만료로 사용자 확인이 다시 필요한 토큰 오류인지
+function icsNeedsInteraction(e) {
+  if (!e) return false;
+  if (typeof msal !== "undefined" && msal.InteractionRequiredAuthError && e instanceof msal.InteractionRequiredAuthError) return true;
+  return /interaction_required|consent_required|login_required|InteractionRequired|no_tokens_found|monitor_window_timeout/i.test(`${e.errorCode || ""} ${e.name || ""} ${e.message || ""}`);
+}
 
 /* ── Graph 호출 재시도 ────────────────────────────────────────────────────
  * ICS 는 다른 APS 시스템과 달리 공통 api() 래퍼 없이 fetch 를 직접 호출해 왔다.
@@ -13963,12 +14232,9 @@ function showLoginErr(msg) {
  * 자가평가 제출이 항목만 만들어진 채 끊기거나 목록 조회가 통째로 날아갔다.
  * (LTR-PC 주석의 2026-08 ACC/GW 사례와 같은 유형)
  *
- * 대기 시간을 다른 시스템(3회·최대 5.6초)보다 짧게 잡은 이유:
- *  - ICS 는 저장 중 표시가 없다. 자가평가 제출 버튼에 스피너가 없어 몇 초만 멈춰도
- *    「눌리지 않았다」고 느끼고 다시 누른다. 그래서 누적 대기를 2초로 묶었다.
- *  - SharePoint 의 Retry-After 는 수십~수백 초가 오기도 한다. 그대로 따르면
- *    화면이 조용히 몇 분 멈춘다. 예산(4초)을 넘는 값이 오면 재시도하지 않고
- *    바로 실패시킨다. 곧 돌아올 상황이 아니라는 뜻이라, 기다리게 하는 것보다 낫다.
+ * 대기 시간(10-26 주석 정정 — 지금 값은 아래 ICS_RETRY_MAX · ICS_RETRY_BUDGET: 5회 · 8초):
+ *  - 처음에는 저장 중 표시가 없어 누적 대기를 2초(예산 4초)로 묶었으나, 로그인 때 429 로 자주 실패해 aps 와 같은 수준으로 올렸다.
+ *  - SharePoint 의 Retry-After 는 수십~수백 초가 오기도 한다. 그대로 따르지 않고 예산 남은 만큼만 기다렸다가 한 번 더 보낸다.
  *
  * 메서드별 규칙 (다른 시스템과 동일):
  *  - GET·PATCH·DELETE : 429·503·504 재시도. 다시 보내도 결과가 같다.
@@ -13995,7 +14261,8 @@ const ICS_RETRY_BUDGET = 8000; // 한 호출이 재시도로 쓸 수 있는 총 
 
 async function icsFetch(url, options = {}) {
   const method = String(options.method || "GET").toUpperCase();
-  if (method !== "GET" && _icsWriteBlock && !options.__icsLog) {
+  if (method !== "GET" && _icsWriteBlock && !options.__icsLog
+      && !(_icsWasEditable && Date.now() - _icsWriteBlockSince < ICS_WRITE_GRACE_MS)) {
     throw new Error("보기 권한만 있는 화면이라 저장할 수 없습니다 — 편집 권한이 필요하면 관리자에게 요청해 주세요. / View-only access — cannot save.");
   }
   const idem =
@@ -14051,8 +14318,20 @@ const _icsListIds = {};
 
 async function getGraphToken() {
   const account = msalApp.getActiveAccount();
-  const tokenRes = await msalApp.acquireTokenSilent({ scopes: MSAL_SCOPES, account });
-  return tokenRes.accessToken;
+  try {
+    const tokenRes = await msalApp.acquireTokenSilent({ scopes: MSAL_SCOPES, account });
+    return tokenRes.accessToken;
+  } catch (e) {
+    // 10-26 사용하던 중 로그인이 만료되면(MFA 재확인 등) 팝업으로 다시 확인받는다 — 화면 · 입력 중인 내용은 그대로.
+    //       팝업이 막히면 무엇을 해야 하는지 알려 준다(예전에는 MSAL 원문 오류만 보였다).
+    if (!icsNeedsInteraction(e)) throw e;
+    try {
+      const r = await msalApp.acquireTokenPopup({ scopes: MSAL_SCOPES, account });
+      return r.accessToken;
+    } catch (e2) {
+      throw new Error("로그인이 만료되었습니다. 팝업을 허용하거나 페이지를 새로고침해 다시 로그인해 주세요. / Your sign-in expired — allow the pop-up or reload the page to sign in again.");
+    }
+  }
 }
 
 async function getIcsListId(listName) {
@@ -14276,15 +14555,20 @@ async function icsDownloadAttachment(requestItemId, fileName, subfolder = "", co
 
 // ICS_Requests_AttachedFiles/{requestItemId}/{파일명} 경로에 업로드하고 webUrl을 돌려준다.
 // (BP_Requests/GW_Requests와 동일 패턴: filename|webUrl 쌍으로 목록 필드에 이어 붙여 저장)
-async function icsUploadAttachment(requestItemId, file, subfolder = "") {
+async function icsUploadAttachment(requestItemId, file, subfolder = "", opts = {}) {
   const token = await getGraphToken();
   const driveId = await getIcsAttachedFilesDriveId();
   const buf = await file.arrayBuffer();
+  // 10-26 「;」 「|」 는 첨부 목록 열(이름|주소;이름|주소)의 구분자라 이름에 있으면 목록이 깨진다 — 「_」 로 바꿔 올린다
+  const safeName = String(file.name || "file").replace(/[;|]/g, "_");
   const path = subfolder
-    ? `ICS_Requests_AttachedFiles/${requestItemId}/${subfolder}/${encodeURIComponent(file.name)}`
-    : `ICS_Requests_AttachedFiles/${requestItemId}/${encodeURIComponent(file.name)}`;
+    ? `ICS_Requests_AttachedFiles/${requestItemId}/${subfolder}/${encodeURIComponent(safeName)}`
+    : `ICS_Requests_AttachedFiles/${requestItemId}/${encodeURIComponent(safeName)}`;
+  // 10-26 같은 이름이 이미 있으면 덮어쓰지 않고 이름을 바꿔 둔다(conflictBehavior=rename) — 예전에는 반려 뒤 같은 이름으로 다시 올리면
+  //       검토자가 봤던 증빙이 조용히 바뀌었다. 바뀐 이름은 응답(name)으로 돌려주고 호출부가 그 이름을 목록에 적는다.
+  //       제출 때 자동으로 만드는 서식 사본(Documentation 폴더)은 최신 한 부만 두면 되므로 opts.replace 로 덮어쓴다.
   const res = await icsFetch(
-    `${GRAPH}/drives/${driveId}/root:/${path}:/content`,
+    `${GRAPH}/drives/${driveId}/root:/${path}:/content?@microsoft.graph.conflictBehavior=${opts.replace ? "replace" : "rename"}`,
     { method: "PUT", headers: { Authorization: "Bearer " + token, "Content-Type": file.type || "application/octet-stream" }, body: buf }
   );
   if (!res.ok) throw new Error(`파일 업로드 실패: ${file.name} (${res.status})`);
@@ -14346,17 +14630,6 @@ async function loadIcsMediaTitles() {
   return res.json();
 }
 
-async function saveIcsMediaTitles(titles) {
-  const token = await getGraphToken();
-  const driveId = await getIcsAttachedFilesDriveId();
-  const res = await icsFetch(`${GRAPH}/drives/${driveId}/root:/ICS_Media-Files/media_titles.json:/content`, {
-    method: "PUT",
-    headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
-    body: JSON.stringify(titles),
-  });
-  if (!res.ok) throw new Error(`media_titles.json 저장 실패 (${res.status})`);
-  return res.json();
-}
 
 // 학습 영상/이미지를 "삭제"할 때 실제 SharePoint 파일은 지우지 않고, 이 숨김 목록(파일 ID)에만 추가해서 화면에서만 안 보이게 한다.
 async function loadIcsHiddenMedia() {
@@ -14374,16 +14647,6 @@ async function loadIcsHiddenMedia() {
   }
 }
 
-async function saveIcsHiddenMedia(idList) {
-  const token = await getGraphToken();
-  const driveId = await getIcsAttachedFilesDriveId();
-  const res = await icsFetch(`${GRAPH}/drives/${driveId}/root:/ICS_Media-Files/hidden_media.json:/content`, {
-    method: "PUT",
-    headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
-    body: JSON.stringify(idList),
-  });
-  if (!res.ok) throw new Error(`hidden_media.json 저장 실패 (${res.status})`);
-}
 
 async function icsListMediaFiles() {
   const token = await getGraphToken();
@@ -14436,13 +14699,15 @@ async function icsListMediaFiles() {
   };
 }
 
-// 4MB를 넘는 파일은 Graph의 단순 PUT(:/content)으로 못 올리므로, 업로드 세션(resumable upload)으로 5MB(320KiB의 배수)씩 나눠 올린다.
+// 학습 영상 · 매뉴얼처럼 큰 파일은 업로드 세션(resumable upload)으로 5MB(320KiB의 배수)씩 나눠 올린다(끊겨도 처음부터 다시 보내지 않게).
+// (평가 첨부는 icsUploadAttachment 의 단순 PUT — Graph 는 단순 PUT 을 250MB 까지 받는다고 안내한다 · 10-26 주석 정정)
 // onProgress(percent:0~100)로 진행률을 알려준다.
 // opts.folder(10-16 ICS 매뉴얼) — ICS_Media-Files 아래 다른 폴더에 올릴 때. 그때는 파일 이름을 경로용으로 인코딩한다(#·% 등).
 async function icsUploadMediaFile(file, onProgress, opts = {}) {
   const token = await getGraphToken();
   const driveId = await getIcsAttachedFilesDriveId();
-  const path = opts.folder ? `${opts.folder}/${encodeURIComponent(file.name)}` : `ICS_Media-Files/${file.name}`;
+  // 10-26 기본 폴더도 이름을 경로용으로 인코딩한다(「#」 「%」 가 든 이름이 잘려 엉뚱한 곳에 올라가던 것)
+  const path = `${opts.folder || "ICS_Media-Files"}/${encodeURIComponent(file.name)}`;
   const sessionRes = await icsFetch(`${GRAPH}/drives/${driveId}/root:/${path}:/createUploadSession`, {
     method: "POST",
     headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
@@ -14522,16 +14787,6 @@ async function loadIcsManual() {
   if (!res.ok) throw new Error(`manual.json 조회 실패 (${res.status})`);
   return icsManualClean(await res.json().catch(() => ({})));
 }
-async function saveIcsManual(map) {
-  const token = await getGraphToken();
-  const driveId = await getIcsAttachedFilesDriveId();
-  const res = await icsFetch(`${GRAPH}/drives/${driveId}/root:/${ICS_MANUAL_DIR}/manual.json:/content`, {
-    method: "PUT",
-    headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
-    body: JSON.stringify(icsManualClean(map)),
-  });
-  if (!res.ok) throw new Error(`manual.json 저장 실패 (${res.status})`);
-}
 // 올리기(없으면 등록 · 있으면 교체). 돌려주는 값 { map, prev } — prev 가 있으면 교체
 async function icsManualUpload(lang, file, onProgress) {
   icsManualGuard();
@@ -14540,19 +14795,26 @@ async function icsManualUpload(lang, file, onProgress) {
   if (bad) throw new Error(bad);
   const item = await icsUploadMediaFile(file, onProgress, { folder: `${ICS_MANUAL_DIR}/${lang}` });
   if (!item || !item.id) throw new Error("업로드 응답에 파일 정보가 없습니다.");
-  const cur = await loadIcsManual();   // 그사이 다른 관리자가 바꾼 다른 언어 파일은 그대로 둔다
-  const prev = cur[lang] || null;
-  cur[lang] = { id: item.id, name: item.name || file.name, size: item.size || file.size, uploadedAt: new Date().toISOString(), uploadedBy: (_icsManualActor && _icsManualActor.email) || "" };
-  await saveIcsManual(cur);
-  return { map: cur, prev };
+  // 그사이 다른 관리자가 바꾼 다른 언어 파일은 그대로 둔다 — 10-26 읽은 그 버전일 때만 저장(If-Match, 겹치면 다시 읽어 반영)
+  let prev = null;
+  const map = await icsJsonFileUpdate(`${ICS_MANUAL_DIR}/manual.json`, (cur) => {
+    const m = icsManualClean(cur || {});
+    prev = m[lang] || null;
+    m[lang] = { id: item.id, name: item.name || file.name, size: item.size || file.size, uploadedAt: new Date().toISOString(), uploadedBy: (_icsManualActor && _icsManualActor.email) || "" };
+    return m;
+  }, {});
+  return { map, prev };
 }
 async function icsManualRemove(lang) {
   icsManualGuard();
-  const cur = await loadIcsManual();
-  const prev = cur[lang] || null;
-  delete cur[lang];
-  await saveIcsManual(cur);
-  return { map: cur, prev };
+  let prev = null;
+  const map = await icsJsonFileUpdate(`${ICS_MANUAL_DIR}/manual.json`, (cur) => {   // 10-26 If-Match
+    const m = icsManualClean(cur || {});
+    prev = m[lang] || null;
+    delete m[lang];
+    return m;
+  }, {});
+  return { map, prev };
 }
 // 내려받기 — 첨부와 같이 공개 링크 없이 로그인한 세션으로 파일을 받아 저장한다. 받은 뒤 「출력 · 다운로드」 기록.
 async function icsManualDownload(lang, m) {
@@ -14616,6 +14878,7 @@ async function icsUpdateItem(listName, itemId, fields) {
   return res.json();
 }
 
+// [10-26 이후 호출부 없음] 아래 두 확인 함수 대신 icsGuardedUpdate(읽은 버전 If-Match 로 확인 · 저장을 한 번에)를 쓴다. 남겨 두는 동안에도 실패하면 막는다.
 // 이중 결재(처리) 방지: PATCH 전에 서버의 현재 상태 값을 다시 조회해서, 화면에 떠있는 상태와 실제로 같은지 확인한다.
 // 두 사람이 동시에 같은 항목의 검토 화면을 열어놓고 있다가 한쪽이 먼저 승인/반려한 뒤 다른 쪽이 또 처리하는 경우를 막기 위함
 // (다른 APS 시스템들과 동일한 패턴).
@@ -14625,7 +14888,8 @@ async function icsCheckStillPending(listName, itemId, statusField, expectedValue
   const res = await icsFetch(`${GRAPH}/sites/${_siteId}/lists/${listId}/items/${itemId}/fields?$select=${statusField}`, {
     headers: { Authorization: "Bearer " + token },
   });
-  if (!res.ok) return true; // 재조회 자체가 실패하면(네트워크 등) 막지 않고 원래 흐름대로 진행
+  // 10-26 재조회가 실패하면 막는다(예전엔 「막지 않고 진행」 — 서버가 바쁠 때(429)가 바로 두 사람이 동시에 누르는 때라 가드가 꺼졌다)
+  if (!res.ok) throw new Error(icsStateCheckFailMsg(res.status));
   const data = await res.json();
   return data[statusField] === expectedValue;
 }
@@ -14640,7 +14904,7 @@ async function icsCheckChangeRequestTurn(itemId, expectedStep) {
   const res = await icsFetch(`${GRAPH}/sites/${_siteId}/lists/${listId}/items/${itemId}/fields?$select=Status,Step`, {
     headers: { Authorization: "Bearer " + token },
   });
-  if (!res.ok) return true; // 재조회 자체가 실패하면(네트워크 등) 막지 않고 원래 흐름대로 진행
+  if (!res.ok) throw new Error(icsStateCheckFailMsg(res.status));   // 10-26 실패하면 막는다(위와 같은 이유)
   const data = await res.json();
   return String(data.Status || "pending") === "pending" && Number(data.Step || 1) === Number(expectedStep);
 }
@@ -14654,9 +14918,134 @@ async function icsDeleteItem(listName, itemId) {
   });
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
-    throw new Error(`${listName} 삭제 실패 (${res.status}): ${detail.slice(0, 300)}`);
+    const err = new Error(`${listName} 삭제 실패 (${res.status}): ${detail.slice(0, 300)}`);
+    err.status = res.status;   // 10-26 호출부가 404(이미 지워짐)를 가려낼 수 있게
+    throw err;
   }
 }
+
+/* ── 상태 전환 저장(10-26 · ics-guard) ───────────────────────────────────────────────
+   예전에는 「현재 상태 확인(GET) → 저장(PATCH)」 를 따로 보냈다. 그 사이에 다른 사람(또는 다른 탭)이 처리하면 둘 다 성공해
+   철회한 건이 「검토 완료」 로, 이미 검토된 건이 「제출」 로 되돌아가는 일이 생길 수 있었다.
+   이제는 읽을 때 받은 버전(@odata.etag)을 If-Match 로 함께 보낸다 — 그 사이 행이 바뀌었으면 SharePoint 가 412 로 거부한다
+   (APS 결재행 · WMC 쿠폰과 같은 방식, 같은 엔드포인트 items/{id} + { fields }).
+   412 면 다시 읽어서 ① 방금 보낸 값이 이미 들어가 있으면(503 재시도로 두 번 간 경우) 성공 ② 조건이 여전히 맞으면(관계없는 열만 바뀜)
+   새 버전으로 다시(최대 3회) ③ 아니면 { ok:false } — 호출부가 「다른 사람이 먼저 처리」 를 알린다.
+   읽기에 실패하면 저장하지 않고 오류를 던진다(막지 않고 진행하지 않는다). */
+// 10-26 로그인 때 CFO/RD 컨펌 기록(ICS_Log)을 못 읽었을 때 — 컨펌 상태를 모르므로 컨펌 · 취소 · 새 회계연도를 막고 알린다
+function icsLogFailedMsg(lang) {
+  return lang === "en"
+    ? "CFO/RD confirmation records could not be loaded at sign-in, so confirmation status may be wrong and confirm/cancel is disabled for this session. Please reload the page."
+    : "로그인 때 CFO/RD 컨펌 기록을 불러오지 못했습니다. 컨펌 상태가 정확하지 않을 수 있어 이 세션에서는 컨펌 · 취소를 할 수 없습니다. 새로고침해 주세요.";
+}
+function icsStateCheckFailMsg(status) {
+  return `현재 상태를 확인하지 못해 저장하지 않았습니다 (${status}). 잠시 후 다시 시도해 주세요. / Could not verify the current state — nothing was saved.`;
+}
+async function icsReadItemForWrite(listName, itemId) {
+  const token = await getGraphToken();
+  const listId = await getIcsListId(listName);
+  const res = await icsFetch(`${GRAPH}/sites/${_siteId}/lists/${listId}/items/${itemId}?$expand=fields`, {
+    headers: { Authorization: "Bearer " + token },
+  });
+  if (res.status === 404) return { missing: true, fields: null, etag: "" };
+  if (!res.ok) throw new Error(icsStateCheckFailMsg(res.status));
+  const it = await res.json();
+  return { missing: false, fields: it.fields || {}, etag: it["@odata.etag"] || (it.fields && it.fields["@odata.etag"]) || "" };
+}
+function icsIsOwnWrite(f, fields) {
+  if (!f) return false;
+  const n = (v) => (v == null ? "" : String(v).replace(/\r\n/g, "\n").trim());
+  return Object.keys(fields).every((k) => {
+    const a = f[k], b = fields[k];
+    if (/Date$/.test(k) && b) { const x = Date.parse(a), y = Date.parse(b); return Math.abs(x - y) < 5000; }
+    if (typeof b === "number") return Number(a) === b;
+    return n(a) === n(b);
+  });
+}
+/* guard(현재 fields) → true 일 때만 저장. opts.pre 에 미리 읽은 { fields, etag } 를 넘기면 첫 읽기를 건너뛴다.
+   돌려주는 값 { ok, missing, fields } — ok:false 면 아무것도 쓰지 않았다(또는 다른 사람이 먼저 바꿨다). */
+async function icsGuardedUpdate(listName, itemId, guard, fields, opts = {}) {
+  let cur = opts.pre || await icsReadItemForWrite(listName, itemId);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (cur.missing) return { ok: false, missing: true, fields: null };
+    if (!guard(cur.fields)) return { ok: false, missing: false, fields: cur.fields };
+    const token = await getGraphToken();
+    const listId = await getIcsListId(listName);
+    const headers = { Authorization: "Bearer " + token, "Content-Type": "application/json" };
+    if (cur.etag) headers["If-Match"] = cur.etag;
+    const res = await icsFetch(`${GRAPH}/sites/${_siteId}/lists/${listId}/items/${itemId}`, {
+      method: "PATCH", headers, body: JSON.stringify({ fields }),
+    });
+    if (res.ok) { const j = await res.json().catch(() => ({})); return { ok: true, fields: { ...cur.fields, ...fields }, etag: j["@odata.etag"] || "" }; }
+    if (res.status !== 412) {
+      const detail = await res.text().catch(() => "");
+      throw new Error(`${listName} 수정 실패 (${res.status}): ${detail.slice(0, 300)}`);
+    }
+    cur = await icsReadItemForWrite(listName, itemId);
+    if (!cur.missing && icsIsOwnWrite(cur.fields, fields)) return { ok: true, fields: cur.fields, etag: cur.etag };
+  }
+  return { ok: false, missing: false, fields: cur.fields };
+}
+
+/* ── JSON 설정 파일 고치기(10-26) — 학습 영상 제목 · 숨김 목록 · 매뉴얼 정보 ─────────────────────────────
+   예전에는 읽기에 실패하면 「없음」 으로 보고 통째로 덮어써(숨긴 영상이 다시 보이거나 다른 제목이 지워짐),
+   두 관리자가 동시에 고치면 한쪽 변경이 사라졌다. 이제는 버전(eTag) → 내용 순서로 읽고 mutate 결과를 If-Match 로 저장한다.
+   파일이 없으면(404) 빈 값에서 시작해 If-None-Match:* 로 만든다. 412(그사이 바뀜)면 다시 읽어 최대 4번. 그 밖의 읽기 실패는 저장하지 않는다. */
+async function icsJsonFileUpdate(path, mutate, empty) {
+  const token = await getGraphToken();
+  const driveId = await getIcsAttachedFilesDriveId();
+  const base = `${GRAPH}/drives/${driveId}/root:/${path}`;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const meta = await icsFetch(`${base}?$select=id,eTag`, { headers: { Authorization: "Bearer " + token }, cache: "no-store" });
+    let exists = true, eTag = "", data = null;
+    if (meta.status === 404) exists = false;
+    else if (!meta.ok) throw new Error(`${path} 조회 실패 (${meta.status})`);
+    else {
+      eTag = (await meta.json()).eTag || "";
+      const body = await icsFetch(`${base}:/content`, { headers: { Authorization: "Bearer " + token }, cache: "no-store" });
+      if (!body.ok) throw new Error(`${path} 조회 실패 (${body.status})`);
+      const txt = await body.text();
+      try { data = txt.trim() ? JSON.parse(txt) : null; } catch (e) { throw new Error(`${path} 내용을 읽을 수 없습니다(JSON 형식 오류) — 덮어쓰지 않았습니다.`); }
+    }
+    const next = mutate(data == null ? JSON.parse(JSON.stringify(empty)) : data);
+    const headers = { Authorization: "Bearer " + token, "Content-Type": "application/json" };
+    if (!exists) headers["If-None-Match"] = "*"; else if (eTag) headers["If-Match"] = eTag;
+    const res = await icsFetch(`${base}:/content`, { method: "PUT", headers, body: JSON.stringify(next) });
+    if (res.ok) return next;
+    if (res.status === 412 || res.status === 409) { await new Promise((r) => setTimeout(r, 250 + attempt * 250)); continue; }
+    throw new Error(`${path} 저장 실패 (${res.status})`);
+  }
+  throw new Error(`${path} 저장 실패 — 다른 관리자의 변경과 겹쳤습니다. 잠시 후 다시 시도해 주세요.`);
+}
+
+/* ── 진행 중인 변경 요청 확인(10-26) — 상신 직전에 서버에서 다시 본다 ─────────────────────────────
+   예전에는 화면을 열 때 읽은 목록(로컬)만 봐서, 같은 화면에서 연달아 상신하거나 두 사람이 동시에 올리면
+   같은 통제에 수정 · 삭제 요청이 겹쳤다(먼저 승인된 쪽이 나머지를 무의미하게 만든다).
+   같은 코드 · 연도의 진행 중 요청(일괄 변경 대상 포함)이 있으면 그 요청을 돌려준다. 읽기에 실패하면 오류(상신하지 않는다). */
+async function icsPendingChangeMap(year) {
+  let list;
+  try { list = await loadIcsChangeRequests(); }
+  catch (e) { throw new Error(`진행 중인 요청을 확인하지 못해 상신하지 않았습니다. 잠시 후 다시 시도해 주세요. (${e.message})`); }
+  const y = String(year || ""), map = {};
+  list.forEach((r) => {
+    if (r.status !== "pending" || (r.year && y && String(r.year) !== y)) return;
+    if (icsIsBulk(r)) ((r.payload || {}).items || []).forEach((it) => { map[it.code] = map[it.code] || r; });
+    else map[r.code] = map[r.code] || r;
+  });
+  return map;
+}
+async function icsPendingChangeFor(code, year) {
+  return (await icsPendingChangeMap(year))[code] || null;
+}
+/* 수정 요청에 담는 「요청 당시 값」(10-26) — 최종 승인 때 바뀐 칸만 반영하고, 그사이 다른 경로로 바뀐 칸이 있으면 결재자에게 묻는다.
+   결재 상세의 변경 전(As-Is)도 이 값을 쓴다(승인 뒤에도 무엇이 바뀌었는지 남는다). */
+function icsControlSnapshot(c) {
+  return { dept: c.dept || "", cat: c.cat || "", name: c.name || "", nameEn: c.nameEn || "", desc: c.desc || "", descEn: c.descEn || "",
+           accessor: c.accessor || "", reviewer: c.reviewer || "", frequency: c.frequency || "", importance: c.importance || "" };
+}
+// 화면 키 ↔ ICS_Controls 열
+const ICS_CTRL_COL = { dept: "Dept", cat: "Category", name: "NameKo", nameEn: "NameEn", desc: "DescKo", descEn: "DescEn",
+                       accessor: "AccessorEmail", reviewer: "ReviewerEmail", frequency: "Frequency", importance: "Importance" };
 
 
 // ICS_Controls(마스터) + ICS_Requests(평가 진행 상태)를 읽어서 화면에서 쓰는 통제 항목 배열로 합친다.
@@ -14752,6 +15141,24 @@ async function loadIcsDepartmentList() {
   return out;
 }
 
+/* 평가 행(ICS_Requests)이 서버에 이미 있는지 — 처음 저장 · 제출 직전에 본다(10-26).
+   ControlId 로 걸러 받고(색인이 없어도 5,000건 아래면 된다), 실패하면 전체를 읽어 화면에서 거른다. */
+async function icsFindRequestItem(code, year) {
+  const q = String(code || "").replace(/'/g, "''");
+  let items;
+  try { items = await icsListAll(ICS_LISTS.requests, `&$filter=fields/ControlId eq '${q}'`); }
+  catch (e) { items = await icsListAll(ICS_LISTS.requests); }
+  const rows = items.filter((it) => (it.fields || {}).ControlId === code && String((it.fields || {}).Year) === String(year));
+  return rows.reduce((best, it) => (!best || icsRequestRowBetter(it, best) ? it : best), null);
+}
+/* 같은 통제 · 연도의 평가 행이 여럿일 때 어느 행을 쓸지 — 로딩(loadIcsControls)과 처음 저장(icsFindRequestItem)이 같은 규칙을 쓴다.
+   진행이 더 된 행(ISA · FSA 상태), 같으면 나중에 고친 행. */
+function icsRequestRowBetter(a, b) {
+  const rk = (v) => ({ completed: 3, submitted_self: 2, returned: 1 })[v] || 0;
+  const sc = (it) => rk((it.fields || {}).Status) * 10 + rk((it.fields || {}).FsaStatus);
+  return sc(a) > sc(b) || (sc(a) === sc(b) && String(a.lastModifiedDateTime || "") > String(b.lastModifiedDateTime || ""));
+}
+
 /* 다시 읽은 통제 항목을 화면 상태에 합친다(대시보드 「최신 데이터」, 10-26).
    - 같은 항목(SharePoint id, 없으면 코드+연도)은 화면의 id 를 그대로 물려준다 — 진행 중인 저장이 id 로 항목을 찾기 때문.
    - 읽는 동안 이 화면에서 바뀐 항목(제출 · 검토 · 수정)은 화면 쪽을 남긴다 — 방금 저장한 값이 옛 값으로 되돌아가지 않게.
@@ -14824,7 +15231,18 @@ async function loadIcsControls() {
   });
   controls.forEach((c) => { c.sampleSize = recommendedSample(c.importance, c.frequency); });
 
+  /* 같은 통제 · 연도에 평가 행이 둘 이상이면(예전 두 번 클릭 · 두 탭에서 동시에 처음 저장) 진행이 더 된 행, 같으면 나중에 고친 행을 쓴다(10-26).
+     예전에는 Graph 가 준 순서에서 마지막 행이 이겨, 제출한 건이 빈 행에 가려 「사라진」 것처럼 보일 수 있었다. 겹친 행은 콘솔에 남긴다. */
+  const _picked = {};
   requestItems.forEach((it) => {
+    const f = it.fields || {};
+    const k = f.ControlId + "|" + String(f.Year);
+    const prev = _picked[k];
+    if (!prev) { _picked[k] = it; return; }
+    console.warn(`[ICS] 평가 행 중복 — ${k} (행 ${prev.id}, ${it.id}). 진행이 더 된 행을 씁니다.`);
+    if (icsRequestRowBetter(it, prev)) _picked[k] = it;
+  });
+  Object.values(_picked).forEach((it) => {
     const f = it.fields;
     const match = controls.find((c) => c.code === f.ControlId && c.year === String(f.Year));
     if (!match) return; // 통제 마스터에 없는 고아 Request는 무시 (삭제된 통제 등)
@@ -14947,6 +15365,8 @@ function setByKeyPath(obj, path, value) {
     return m ? [m[1], m[2]] : [seg];
   });
   let node = obj;
+  // 10-26 문구 파일(ics_ui_strings.xlsx)의 키에 __proto__ 등이 있으면 모든 객체에 값이 새는 것(프로토타입 오염)을 막는다
+  if (parts.some((k) => k === "__proto__" || k === "constructor" || k === "prototype")) return;
   for (let i = 0; i < parts.length - 1; i++) {
     const key = parts[i];
     if (node[key] === undefined || node[key] === null) {
@@ -15270,6 +15690,8 @@ async function icsBoot(account) {
   let configLoadFailed = false;
   let loadedControls = null;
   let loadedLog = null;
+  let bootErr = "";          // 10-26 통제 항목을 못 읽으면 앱에 들어가지 않는다(빈 화면 · 로그 누락 방지)
+  let logFailed = false;     // 10-26 컨펌 기록을 못 읽으면 들어가되 컨펌 · 취소를 막고 알린다
   try {
     const tokenRes = await msalApp.acquireTokenSilent({ scopes: MSAL_SCOPES, account });
     const token = tokenRes.accessToken;
@@ -15292,11 +15714,15 @@ async function icsBoot(account) {
     if (uiStringsResult.status === "rejected") {
       console.warn("[ICS] ics_ui_strings.xlsx 로드 실패, 코드 내 기본 문구로 진행:", uiStringsResult.reason.message);
     }
-    // 통제 항목/로그 로드 실패 시에도 화면 자체는 뜨게 하고(빈 목록), 콘솔에만 경고를 남긴다.
+    // 10-26 통제 항목을 못 읽으면 앱에 들어가지 않고 다시 시도하게 한다. 예전에는 빈 목록으로 들어가 대시보드가 텅 비어 보이고,
+    //       그 세션은 「SharePoint 미사용」 으로 판정돼 활동 로그가 하나도 남지 않았다(콘솔 경고만).
     if (controlsResult.status === "fulfilled") loadedControls = controlsResult.value;
-    else console.warn("[ICS] 통제 항목 로드 실패:", controlsResult.reason.message);
+    else {
+      console.warn("[ICS] 통제 항목 로드 실패:", controlsResult.reason.message);
+      bootErr = `통제 항목을 불러오지 못했습니다(SharePoint 응답 지연일 수 있습니다). 잠시 후 「다시 시도」를 눌러 주세요. / Could not load control items — please retry. (${controlsResult.reason.message})`;
+    }
     if (logResult.status === "fulfilled") loadedLog = logResult.value;
-    else console.warn("[ICS] 활동 로그 로드 실패:", logResult.reason.message);
+    else { console.warn("[ICS] 컨펌 기록 로드 실패:", logResult.reason.message); logFailed = true; }
     // ICS_CategoryAccess 목록이 아직 없어도(첫 설치 등) 실패로 앱을 막지 않고 기본 권한(역할 기반)으로 진행.
     if (categoryAccessResult.status === "fulfilled") { ICS_CATEGORY_ACCESS = categoryAccessResult.value; ICS_ACCESS_LOADED = true; }
     else console.warn("[ICS] ICS_CategoryAccess 목록 로드 실패, 기본 권한으로 진행:", categoryAccessResult.reason.message);
@@ -15343,6 +15769,11 @@ async function icsBoot(account) {
       }
     });
   } catch (e) {
+    // 10-26 로그인 확인이 다시 필요한 토큰 오류(MFA · 조건부 액세스 · 만료)면 로그인 창으로 보낸다 — 예전에는 아래 「설정 파일」 오류로 잘못 안내됐다.
+    if (icsNeedsInteraction(e)) {
+      try { await msalApp.acquireTokenRedirect({ scopes: MSAL_SCOPES, account }); return; }
+      catch (e2) { icsShowBootError("다시 로그인해야 합니다. 「다시 시도」를 눌러 주세요. / Please sign in again."); return; }
+    }
     // INITIAL_USERS를 코드에 하드코딩해두지 않으므로, 여기서 실패하면 사용자 목록이 비어있는 채로 남는다.
     // 그대로 진행하면 "권한 없음"으로 오인되니, 실제 원인(설정 파일 로드 실패)을 화면에 명확히 알린다.
     console.warn("[ICS] ics_category_access.xlsx 로드 실패:", e.message);
@@ -15350,11 +15781,10 @@ async function icsBoot(account) {
   }
 
   if (configLoadFailed || INITIAL_USERS.length === 0) {
-    document.getElementById("loading").style.display = "none";
-    document.getElementById("login-screen").style.display = "flex";
-    showLoginErr("사용자 설정(ics_category_access.xlsx)을 불러오지 못했습니다. 잠시 후 새로고침하거나 관리자에게 문의해주세요.");
+    icsShowBootError("사용자 설정(ics_category_access.xlsx)을 불러오지 못했습니다. 잠시 후 「다시 시도」를 누르거나 관리자에게 문의해주세요.");
     return;
   }
+  if (bootErr) { icsShowBootError(bootErr); return; }
 
   // 다른 APS 시스템들과 동일하게, UPN(username)과 mail 클레임을 둘 다 대조한다.
   // 두 값이 다른 계정(과거 도메인 이전, 별칭 메일 등)도 Users 시트에 등록된 이메일과 매칭되도록 하기 위함.
@@ -15391,7 +15821,7 @@ async function icsBoot(account) {
   const loadingEl = document.getElementById("loading");
   if (loadingEl) loadingEl.remove();
   const rootEl = document.getElementById("root");
-  createRoot(rootEl).render(<InternalControlApp initialUserId={matched.id} initialControls={loadedControls} initialLog={loadedLog} />);
+  createRoot(rootEl).render(<InternalControlApp initialUserId={matched.id} initialControls={loadedControls} initialLog={loadedLog} initialLogFailed={logFailed} />);
 }
 
 (async function initMsal() {
