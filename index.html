@@ -1297,7 +1297,6 @@ const STR = {
       codePlaceholder: "예: FIN-CA-03", namePlaceholder: "통제 항목 이름",
       codeLockedHint: "통제 코드는 수정할 수 없습니다. 이미 등록된 평가 내용과 연결되어 있어 코드를 바꾸면 연결이 끊어집니다.",
       lockedPending: "결재가 진행 중인 통제 항목입니다. 결재가 끝난 뒤에 다시 시도해 주세요.",
-      lockedApproved: "이미 결재가 완료된 변경 요청이 있는 통제 항목입니다. 추가 변경이 필요하면 IT로 문의해 주세요.",
       descPlaceholder: "통제 활동에 대한 상세 설명", namePersonPlaceholder: "이름",
       emailPlaceholder: "이메일 주소 (예: user@example.com)",
     },
@@ -1822,7 +1821,6 @@ const STR = {
       codePlaceholder: "e.g. FIN-CA-03", namePlaceholder: "Control item name",
       codeLockedHint: "The control code cannot be changed. It links this item to its recorded assessments.",
       lockedPending: "This control item has a change request in progress. Please try again once approval is complete.",
-      lockedApproved: "This control item already has an approved change request. Please contact IT if further changes are needed.",
       descPlaceholder: "Detailed description of the control activity", namePersonPlaceholder: "Name",
       emailPlaceholder: "Email address (e.g. user@example.com)",
       uploading: "Uploading...",
@@ -4297,7 +4295,9 @@ function icsBulkLabel(r, lang) {
 // 변경 요청 목록 → 통제 코드별 요청(진행 중 우선). 진행 중인 일괄 변경은 그 항목들의 코드에도 걸어 개별 요청을 막는다.
 function icsChangeReqMap(list) {
   const map = {};
-  list.forEach((r) => { if (icsIsBulk(r)) return; const prev = map[r.code]; if (!prev || (r.status === "pending" && prev.status !== "pending")) map[r.code] = r; });
+  const newer = (a, b) => String(a.created || "") > String(b.created || "");
+  list.forEach((r) => { if (icsIsBulk(r)) return; const prev = map[r.code];
+    if (!prev || (r.status === "pending" && prev.status !== "pending") || ((r.status === "pending") === (prev.status === "pending") && newer(r, prev))) map[r.code] = r; });
   list.forEach((r) => {
     if (!icsIsBulk(r) || r.status !== "pending") return;
     ((r.payload || {}).items || []).forEach((it) => { const prev = map[it.code]; if (!prev || prev.status !== "pending") map[it.code] = r; });
@@ -4522,7 +4522,8 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
   const [codeError, setCodeError] = useState("");
   const [managePage, setManagePage] = useState(0);
   // 통제 항목별 변경 요청 상태 (코드 → { status, step, steps, requester })
-  // 결재가 진행 중이거나 이미 승인된 항목은 다시 수정·삭제할 수 없다.
+  // 결재가 진행 중인 항목만 잠근다. 승인 · 반려로 끝난 요청이 있어도 다시 결재로 수정 · 삭제를 요청할 수 있다
+  // (10-26: 수정이 승인된 항목의 삭제 요청이 막히던 문제 — 모든 변경은 어차피 3단계 결재를 거친다. ISA 화면과 같은 기준)
   const [changeReqs, setChangeReqs] = useState({});
   const [bulkOpen, setBulkOpen] = useState(false);   // 담당자 일괄 변경(10-20)
   // 부서별 통제 현황을 통합하면서 가져온 조회 조건.
@@ -4551,7 +4552,6 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
     const r = changeReqs[c.code];
     if (!r) return null;
     if (r.status === "pending") return t("manage.lockedPending");
-    if (r.status === "approved") return t("manage.lockedApproved");
     return null;
   }
   const MANAGE_PAGE_SIZE = 20;
@@ -4932,10 +4932,10 @@ Continue?`
   async function remove(c) {
     const delReason = deleteReason.trim();
     if (usingSharePointData && !delReason) { alert(lang === "en" ? "Please enter the reason for deletion." : "삭제 사유를 입력해 주세요."); return; }
+    const reason = lockReason(c);
+    if (reason) { alert(reason); setConfirmDelete(null); setDeleteReason(""); return; }
     setConfirmDelete(null);
     setDeleteReason("");
-    const reason = lockReason(c);
-    if (reason) { alert(reason); return; }
     try {
       // 삭제도 3단계 결재를 거친다.
       if (usingSharePointData) {
@@ -5136,7 +5136,7 @@ Continue?`
                   <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-end gap-2">
                       <button onClick={() => openEdit(c)} className="text-slate-400 hover:text-teal-600"><Pencil size={15} /></button>
-                      <button onClick={() => setConfirmDelete(c)} className="text-slate-400 hover:text-red-500"><Trash2 size={15} /></button>
+                      <button onClick={() => { const lr = lockReason(c); if (lr) { alert(lr); return; } setConfirmDelete(c); }} className="text-slate-400 hover:text-red-500"><Trash2 size={15} /></button>
                     </div>
                   </td>
                 )}
