@@ -337,7 +337,7 @@ function isIcsAdminEditor(user) { return isIcsAdmin(user) && icsCanEdit(user, "a
 // 화면 → 편집 판정 키(쓰기 잠금 · 보기 전용 띠). 없는 화면(대시보드 · 결재 승인 · 나의 결재 이력)은 지금 그대로.
 const ICS_PAGE_EDIT_KEY = { self: "self", review: "review", fsa: "fsa", fsaReview: "fsaReview", history: "history",
   settings: "adminOnly", manage: "adminOnly", permissions: "adminOnly", categoryAccess: "adminOnly", historyAll: "adminOnly", accessLog: "accessLog",
-  approvalHistory: "executive", changeHistory: "executive", finalReport: "executive", list: "controlMgmt", learn: "learn" };
+  approvalHistory: "executive", changeHistory: "executive", deletedControls: "executive", finalReport: "executive", list: "controlMgmt", learn: "learn" };
 // 쓰기 잠금 — 버튼을 숨기는 것과 별개로 마지막 안전장치. App 이 그릴 때마다 지금 화면 기준으로 바꾼다(활동 로그 기록은 예외).
 let _icsWriteBlock = false;
 /* 10-26 쓰기 잠금 유예 — 편집 화면에서 시작한 저장이 끝나기 전에 조회 전용 화면(평가 이력 · 접속 기록 등)으로 옮기면
@@ -1205,6 +1205,7 @@ const STR = {
       myApprovals: "내가 처리한 변경 결재",
       approvalHistory: "변경 결재 전체 이력",
       changeHistory: "통제 항목 변경 이력",
+      deletedControls: "삭제된 통제 항목",
       finalReport: "최종 결과 보고",
     },
     common: {
@@ -1732,6 +1733,7 @@ const STR = {
       myApprovals: "Changes I decided",
       approvalHistory: "All change approvals",
       changeHistory: "Control change history",
+      deletedControls: "Deleted controls",
       finalReport: "Final Report",
     },
     common: {
@@ -2457,6 +2459,8 @@ const MENU_GROUPS = [
     // 변경 이력은 결재가 끝난 건만 다루므로 그 위에 둔다.
     { key: "approvalHistory", icon: ClipboardCheck, categoryKey: "executive" },
     { key: "changeHistory", icon: History, categoryKey: "executive" },
+    // 삭제된 통제 항목(10-28) — 삭제 결재가 끝난 통제의 정의 · 경위 · 보관된 평가 기록. 변경 이력과 같이 Admin · CFO · RD 가 본다.
+    { key: "deletedControls", icon: Archive, categoryKey: "executive" },
   ] },
   { key: "executive", label: "executive", items: [
     { key: "finalReport", icon: FileCheck2 },
@@ -4508,6 +4512,33 @@ function icsDeleteInProgressMsg(c, lang) {
   return lang === "en"
     ? `${c.code} has an assessment in progress (ISA ${c.status || "-"} · FSA ${c.fsaStatus || "-"}).\nIf the deletion is approved, its assessment record is kept for audit but no longer shown on screens.\n\nContinue?`
     : `${c.code} 은(는) 평가가 진행 중입니다(ISA ${c.status || "-"} · FSA ${c.fsaStatus || "-"}).\n삭제가 승인되면 평가 기록은 감사용으로 남지만 화면에서는 더 이상 보이지 않습니다.\n\n계속할까요?`;
+}
+/* 10-28 삭제된 통제 항목 기록(ICS_DeletedControls) — 최종 승인으로 통제를 지운 직후 한 행.
+   정의는 지운 순간의 통제(target), 이미 지워져 없으면 요청 때 남긴 snapshot. 같은 결재 번호로 이미 남겼으면 다시 만들지 않는다
+   (요청 저장 실패 뒤 다시 승인하는 경우). 목록 권한은 직원 「추가만」 — 남긴 기록은 화면 · API 로 고치거나 지울 수 없다. */
+async function icsRecordDeletedControl(r, target, steps, actor) {
+  const pl = r.payload || {};
+  const live = target && target.code ? { ...icsControlSnapshot(target), status: target.status || "" } : null;
+  const sn = live || pl.snapshot || null;
+  const reqId = Number(r.spId);
+  let prev = [];
+  try { prev = await icsListAll(ICS_LISTS.deletedControls, `&$filter=fields/ChangeRequestId eq ${reqId}`); }
+  catch (e) { prev = (await icsListAll(ICS_LISTS.deletedControls)).filter((x) => Number((x.fields || {}).ChangeRequestId) === reqId); }
+  if (prev.length) return;
+  const s = (v) => (v == null ? "" : String(v));
+  const now = new Date().toISOString();
+  const fields = {
+    Title: r.code, Year: s(r.year),
+    NameKo: s(sn && sn.name), NameEn: s(sn && sn.nameEn), DescKo: s(sn && sn.desc), DescEn: s(sn && sn.descEn),
+    Dept: s(sn && sn.dept), Category: s(sn && sn.cat), AccessorEmail: s(sn && sn.accessor), ReviewerEmail: s(sn && sn.reviewer),
+    Frequency: s(sn && sn.frequency), Importance: s(sn && sn.importance), StatusAtDelete: s(sn && sn.status),
+    DeleteMethod: "approval", ChangeRequestId: reqId, RequesterEmail: s(r.requester), RequestedAt: r.created || "",
+    Reason: s(pl.reason), ApprovalLine: JSON.stringify(steps || []), FinalApprover: s(actor), DeletedAt: now, DeletedBy: s(actor),
+    DefinitionSource: live ? "결재 시점 통제 항목" : (pl.snapshot ? "결재 요청 스냅샷" : "없음"),
+    RecordSource: "ICS 자동(최종 승인)", SnapshotJson: sn ? JSON.stringify(sn) : "",
+  };
+  Object.keys(fields).forEach((k) => { if (fields[k] === "") delete fields[k]; });
+  await icsCreateItem(ICS_LISTS.deletedControls, fields);
 }
 /* 삭제 승인 뒤 평가 행(ICS_Requests)을 보관 처리 — ControlId 뒤에 삭제 표시를 붙여, 같은 코드를 나중에 다시 만들어도 옛 평가가 붙지 않게 한다(행 자체는 감사용으로 남김) */
 async function icsArchiveRequestRows(code, year) {
@@ -8818,7 +8849,7 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
     if (icsIsBulk(r)) return icsBulkLabel(r, lang);
     if (icsIsAdd(r)) return icsAddLabel(r, lang);   // 신규 등록(10-26)   // 담당자 일괄 변경(10-20)
     const c = controls.find((x) => x.code === r.code && x.year === r.year);
-    return c ? cName(c, lang) : r.code;
+    return c ? cName(c, lang) : icsSnapName(r, lang);
   }
 
   // 요청자가 아직 진행 중인 자기 요청을 거둔다.
@@ -8988,6 +9019,17 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
       await icsApprovalsDecide(r.spId, r.step, approved, comment[r.spId] || "");
       // 결재행 기록이 실패했으면 아래 성공 토스트로 덮지 않는다.
       const apprFail = icsApprovalsTakeFailure();
+      // 10-28 삭제가 확정되면 「삭제된 통제 항목」 에 정의 · 경위를 남긴다. 실패해도 삭제 결재는 이미 끝났다 — 알리기만 한다.
+      let archFail = "";
+      if (applied && applied.kind === "delete" && nextStatus === "approved") {
+        try { await icsRecordDeletedControl(r, applied.target, steps, currentUser.email); }
+        catch (e) {
+          const msg = (e && e.message) || "unknown";
+          console.warn("[ICS] 삭제된 통제 항목 기록 실패:", msg);
+          // 목록을 아직 만들기 전이면 알리지 않는다 — 이관 스크립트가 승인된 삭제 요청을 다시 읽어 채운다
+          if (!/찾을 수 없습니다/.test(msg)) archFail = msg;
+        }
+      }
 
       // 화면 반영은 두 저장이 모두 끝난 뒤에 한다. 먼저 지워 버리면 요청 PATCH 가
       // 실패했을 때 화면과 서버가 어긋난다.
@@ -9015,6 +9057,10 @@ function ApprovalPage({ controls, setControls, currentUser, addLog, showToast, i
       addLog(currentUser.email, approved ? "approve_change" : "reject_change", r.code, labelOf(r), labelOf(r));
       if (apprFail) {
         showToast(`결재는 처리되었지만 메일 알림 기록에 실패했습니다 (${apprFail}). IT로 알려 주세요.`);
+      } else if (archFail) {
+        showToast(lang === "en"
+          ? `Approved and deleted, but the deleted-control record could not be saved (${archFail}). Please notify IT.`
+          : `승인 · 삭제는 끝났지만 「삭제된 통제 항목」 기록을 남기지 못했습니다 (${archFail}). IT로 알려 주세요.`);
       } else showToast(approved
         ? (nextStatus === "approved"
             ? (lang === "en" ? "Approved. The change has been applied." : "승인되었습니다. 변경 내용이 반영되었습니다.")
@@ -9144,7 +9190,7 @@ function RequestTable({ rows, controls, kind, onPick }) {
     if (icsIsBulk(r)) return icsBulkLabel(r, lang);
     if (icsIsAdd(r)) return icsAddLabel(r, lang);   // 신규 등록(10-26)   // 담당자 일괄 변경(10-20)
     const c = controls.find((x) => x.code === r.code && x.year === r.year);
-    return c ? cName(c, lang) : r.code;
+    return c ? cName(c, lang) : icsSnapName(r, lang);
   };
   const stepLabel = (st) => {
     if (st.role === "LM1" || st.role === "MC") return t("approval.stepLm1");
@@ -10550,7 +10596,7 @@ function RequestDetailModal({ r, controls, onClose, canAct, canCancel, acting, c
   if (!r) return null;
 
   const c = controls.find((x) => x.code === r.code && x.year === r.year);
-  const name = c ? cName(c, lang) : r.code;
+  const name = c ? cName(c, lang) : icsSnapName(r, lang);
   const stepLabel = (st) => {
     if (st.role === "LM1" || st.role === "MC") return t("approval.stepLm1");
     if (st.role === "LM2") return t("approval.stepLm2");
@@ -10789,7 +10835,7 @@ function MyApprovalsPage({ controls, currentUser }) {
     if (icsIsBulk(r)) return icsBulkLabel(r, lang);
     if (icsIsAdd(r)) return icsAddLabel(r, lang);   // 신규 등록(10-26)   // 담당자 일괄 변경(10-20)
     const c = controls.find((x) => x.code === r.code && x.year === r.year);
-    return c ? cName(c, lang) : r.code;
+    return c ? cName(c, lang) : icsSnapName(r, lang);
   }
   function stepLabel(st) {
     if (st.role === "LM1" || st.role === "MC") return t("approval.stepLm1");
@@ -10939,7 +10985,7 @@ function ApprovalHistoryPage({ controls }) {
     if (icsIsBulk(r)) return icsBulkLabel(r, lang);
     if (icsIsAdd(r)) return icsAddLabel(r, lang);   // 신규 등록(10-26)   // 담당자 일괄 변경(10-20)
     const c = controls.find((x) => x.code === r.code && x.year === r.year);
-    return c ? cName(c, lang) : r.code;
+    return c ? cName(c, lang) : icsSnapName(r, lang);
   }
   // 결재선의 role 은 LM1 · MC · LM2 · ICS_CONTACT · CFO 로 저장된다(buildApprovalSteps).
   // 소문자 키(lm1·contact…)로 찾으면 언제나 빈 문자열이 나와 차수 이름이 표시되지 않는다.
@@ -11110,7 +11156,7 @@ function ChangeHistoryPage({ controls, currentUser }) {
     if (icsIsBulk(r)) return icsBulkLabel(r, lang);
     if (icsIsAdd(r)) return icsAddLabel(r, lang);   // 신규 등록(10-26)   // 담당자 일괄 변경(10-20)
     const c = controls.find((x) => x.code === r.code && x.year === r.year);
-    return c ? cName(c, lang) : r.code;
+    return c ? cName(c, lang) : icsSnapName(r, lang);
   }
   // 결재선의 role 은 대문자(LM1 · MC · LM2 · ICS_CONTACT · CFO)로 저장된다.
   function stepLabel(st) {
@@ -11234,6 +11280,266 @@ function ChangeHistoryPage({ controls, currentUser }) {
       )}
       <RequestDetailModal r={detail} controls={controls} onClose={() => setDetail(null)} />
     </div>
+  );
+}
+
+/* ── 삭제된 통제 항목(10-28) ─────────────────────────────────────────────────────────────
+ * 통제를 지우면 ICS_Controls 에서 사라져 다른 화면에서는 볼 수 없다. 감사 대응을 위해
+ * ICS_DeletedControls(최종 승인 때 자동 기록 · 지난 삭제분은 이관 스크립트로 채움)에 남은 정의 · 경위와,
+ * ICS_Requests 에 보관된 평가 기록(「코드#DELETED-날짜」 · 10-26 이전 삭제분은 원래 코드)을 함께 보여 준다. 조회 전용. */
+function icsMapDeleted(it) {
+  const f = it.fields || {};
+  const st = (v) => stripSpRichText(v) || "";
+  let steps = [];
+  try { steps = f.ApprovalLine ? JSON.parse(st(f.ApprovalLine)) : []; } catch (e) { steps = []; }
+  return {
+    id: it.id, code: String(f.Title || "").trim(), year: String(f.Year || ""),
+    name: st(f.NameKo), nameEn: st(f.NameEn), desc: st(f.DescKo), descEn: st(f.DescEn),
+    dept: f.Dept || "", cat: f.Category || "", accessor: f.AccessorEmail || "", reviewer: f.ReviewerEmail || "",
+    frequency: f.Frequency || "", importance: f.Importance || "", statusAtDelete: f.StatusAtDelete || "",
+    method: f.DeleteMethod || "", reqId: f.ChangeRequestId != null && f.ChangeRequestId !== "" ? Number(f.ChangeRequestId) : null,
+    requester: f.RequesterEmail || "", requestedAt: f.RequestedAt || null, reason: st(f.Reason),
+    steps: Array.isArray(steps) ? steps : [], finalApprover: f.FinalApprover || "",
+    deletedAt: f.DeletedAt || null, deletedBy: f.DeletedBy || "", defSource: f.DefinitionSource || "",
+    recSource: f.RecordSource || "", note: st(f.Note),
+  };
+}
+function icsSafeSpUrl(u) {
+  const s = String(u || "").trim();
+  return /^https:\/\/startruckkorea\.sharepoint\.com\//i.test(s) ? s : "";
+}
+function DeletedControlsPage({ controls }) {
+  const { lang, t } = useLang();
+  const { departments, users } = useAppData();
+  const [rows, setRows] = useState([]);
+  const [evals, setEvals] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
+  const [q, setQ] = useState("");
+  const [pg, setPg] = useState(0);
+  const [detail, setDetail] = useState(null);
+  const en = lang === "en";
+
+  async function reload() {
+    setLoading(true); setErr("");
+    try {
+      const items = await icsListAll(ICS_LISTS.deletedControls);
+      setRows(items.map(icsMapDeleted).sort((a, b) => new Date(b.deletedAt || 0) - new Date(a.deletedAt || 0)));
+    } catch (e) { console.warn("[ICS] 삭제된 통제 항목 로드 실패:", e.message); setRows([]); setErr(String((e && e.message) || e)); }
+    try { setEvals(await icsListAll(ICS_LISTS.requests)); }
+    catch (e) { console.warn("[ICS] 평가 행 로드 실패:", e.message); setEvals([]); }
+    setLoading(false);
+  }
+  useEffect(() => { reload(); }, []);
+
+  // 같은 코드 · 연도로 통제를 다시 만들었으면 원래 코드 그대로인 평가 행은 새 통제의 것이다 — 보관 표시(#DELETED) 행만 본다
+  const evalsOf = (d) => {
+    const alive = (controls || []).some((c) => c.code === d.code && c.year === d.year);
+    return evals.filter((it) => {
+      const f = it.fields || {};
+      const cid = String(f.ControlId || "");
+      if (String(f.Year || "") !== d.year) return false;
+      return cid.startsWith(d.code + "#DELETED-") || (!alive && cid === d.code);
+    });
+  };
+  const nm = (d) => (en ? (d.nameEn || d.name) : (d.name || d.nameEn)) || "-";
+  const methodChip = (d) => d.method === "approval"
+    ? { label: en ? `Approved #${d.reqId != null ? d.reqId : "-"}` : `결재 #${d.reqId != null ? d.reqId : "-"}`, bg: "#E4F1F0", fg: BRAND.accent }
+    : { label: en ? "No approval" : "결재 없음", bg: "#FEE2E2", fg: "#B91C1C" };
+
+  const kw = q.trim().toLowerCase();
+  const list = !kw ? rows : rows.filter((d) =>
+    d.code.toLowerCase().includes(kw) || (d.name || "").toLowerCase().includes(kw) || (d.nameEn || "").toLowerCase().includes(kw) ||
+    (d.requester || "").toLowerCase().includes(kw) || (d.reason || "").toLowerCase().includes(kw));
+  useEffect(() => { setPg(0); }, [q]);
+  const paged = list.slice(pg * APPR_PAGE_SIZE, (pg + 1) * APPR_PAGE_SIZE);
+  const th = "px-3 py-2 text-left text-[11px] font-semibold text-slate-500 whitespace-nowrap";
+  const td = "px-3 py-1.5 text-xs text-slate-700 align-middle";
+  const ell = { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
+  const missingList = /찾을 수 없습니다|not found/i.test(err);
+
+  return (
+    <div className="p-8">
+      <SectionHeader icon={Archive} title={t("nav.deletedControls")}
+        subtitle={en
+          ? "Controls removed by an approved delete request (or removed without approval before this record existed). Their definition, deletion history and archived assessments stay here for audit. Read-only."
+          : "삭제 결재가 끝난(또는 이 기록 이전에 결재 없이 지워진) 통제 항목입니다. 정의 · 삭제 경위 · 보관된 평가 기록을 감사용으로 보관합니다. 조회 전용입니다."} />
+      <div className="mb-4 flex items-center gap-2 flex-wrap">
+        <input value={q} onChange={(e) => setQ(e.target.value)}
+          placeholder={en ? "Search by code, name, requester or reason" : "통제 코드 · 통제명 · 요청자 · 사유로 검색"}
+          className="flex-1 min-w-[220px] max-w-md text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:border-slate-400" />
+        <span className="text-sm text-slate-500 ml-auto">{t("approvalHistory.total")} {list.length}{t("approvalHistory.unit")}</span>
+        <button onClick={reload} disabled={loading}
+          className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+          <Loader2 size={14} className={loading ? "animate-spin" : ""} />{t("changeHistory.refresh")}
+        </button>
+      </div>
+      {loading ? (
+        <EmptyState text="..." />
+      ) : err ? (
+        <EmptyState text={missingList
+          ? (en ? "The SharePoint list ICS_DeletedControls has not been created yet. Please contact IT." : "SharePoint 목록 ICS_DeletedControls 가 아직 없습니다. IT로 문의해 주세요.")
+          : (en ? "Could not load deleted controls. Please refresh." : "삭제된 통제 항목을 불러오지 못했습니다. 새로고침해 주세요.")} />
+      ) : list.length === 0 ? (
+        <EmptyState text={en ? "No results." : "조회 결과가 없습니다."} />
+      ) : (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <table className="w-full" style={{ tableLayout: "fixed" }}>
+            <thead className="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th className={th} style={{ width: "4%" }}>{t("approvalHistory.colNo")}</th>
+                <th className={th} style={{ width: "10%" }}>{t("approvalHistory.colCode")}</th>
+                <th className={th} style={{ width: "27%" }}>{t("approvalHistory.colName")}</th>
+                <th className={th} style={{ width: "6%" }}>{en ? "Year" : "연도"}</th>
+                <th className={th} style={{ width: "9%" }}>{en ? "Dept" : "부서"}</th>
+                <th className={th} style={{ width: "11%" }}>{en ? "Deletion" : "삭제 방식"}</th>
+                <th className={th} style={{ width: "12%" }}>{en ? "Deleted at" : "삭제 일시"}</th>
+                <th className={th} style={{ width: "12%" }}>{en ? "Deleted by" : "삭제자"}</th>
+                <th className={th} style={{ width: "9%" }}>{en ? "Assessments" : "평가 기록"}</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {paged.map((d, i) => {
+                const mc = methodChip(d);
+                const n = evalsOf(d).length;
+                return (
+                  <tr key={d.id} onClick={() => setDetail(d)} className="hover:bg-slate-50 cursor-pointer">
+                    <td className={`${td} text-slate-400 text-center`}>{list.length - (pg * APPR_PAGE_SIZE + i)}</td>
+                    <td className={`${td} font-mono text-slate-500`}>{d.code}</td>
+                    <td className={td} style={ell} title={nm(d)}>{nm(d)}</td>
+                    <td className={td}>{d.year || "-"}</td>
+                    <td className={td} style={ell}>{d.dept ? deptName(d.dept, lang, departments) : "-"}</td>
+                    <td className={td}>
+                      <span className="px-2 pt-[4px] pb-[5px] leading-none rounded-full text-[11px] font-medium whitespace-nowrap" style={{ backgroundColor: mc.bg, color: mc.fg }}>{mc.label}</span>
+                    </td>
+                    <td className={`${td} whitespace-nowrap`}>{formatDateShort(d.deletedAt)}</td>
+                    <td className={td} style={ell} title={d.deletedBy}>{d.deletedBy ? nameOfEmail(d.deletedBy) : "-"}</td>
+                    <td className={`${td} text-center`}>{n ? n : "-"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <TablePager page={pg} setPage={setPg} total={list.length} pageSize={APPR_PAGE_SIZE} />
+        </div>
+      )}
+      {detail && <DeletedControlDetail d={detail} evals={evalsOf(detail)} onClose={() => setDetail(null)} />}
+    </div>
+  );
+}
+function DeletedControlDetail({ d, evals, onClose }) {
+  const { lang, t } = useLang();
+  const { departments, users } = useAppData();
+  const en = lang === "en";
+  const who = (email) => (email ? personByEmail(email, lang, users) : "-");
+  const stepName = (st) => {
+    if (st.role === "LM1" || st.role === "MC") return t("approval.stepLm1");
+    if (st.role === "LM2") return t("approval.stepLm2");
+    if (st.role === "ICS_CONTACT") return t("approval.stepContact");
+    return t("approval.stepFinal");
+  };
+  const stepState = (st) => st.status === "approved" ? { text: t("approval.stepApproved"), fg: "#107c10" }
+    : st.status === "rejected" ? { text: t("approval.stepRejected"), fg: "#a4262c" } : { text: t("approval.stepWaiting"), fg: "#7d5700" };
+  const statusText = (s) => { const m = STATUS_META[s]; return m ? m[lang] : (s || "-"); };
+  const riskText = (r) => { const m = RISK_META[r]; return m ? m[lang] : (r || "-"); };
+  const files = (raw) => String(stripSpRichText(raw) || "").split(";").filter(Boolean).map((p) => { const [name, url] = p.split("|"); return { name, url: icsSafeSpUrl(url) }; });
+  const Row = ({ k, v, pre }) => (
+    <div className="grid grid-cols-[140px_1fr] gap-3 py-1.5 text-xs">
+      <span className="text-slate-400">{k}</span>
+      <span className={`text-slate-700 ${pre ? "whitespace-pre-wrap" : ""}`}>{v || "-"}</span>
+    </div>
+  );
+  const name = (en ? (d.nameEn || d.name) : (d.name || d.nameEn)) || "";
+  return (
+    <Modal title={`${d.code}${name ? " · " + name : ""}`} size="xl" onClose={onClose}>
+      <div className="px-6 py-4 space-y-5">
+        <div className="flex flex-wrap gap-2 text-[11px]">
+          <span className="px-2 py-1 rounded-full font-medium" style={d.method === "approval" ? { backgroundColor: "#E4F1F0", color: BRAND.accent } : { backgroundColor: "#FEE2E2", color: "#B91C1C" }}>
+            {d.method === "approval" ? (en ? `Deleted by approval #${d.reqId != null ? d.reqId : "-"}` : `결재로 삭제 · #${d.reqId != null ? d.reqId : "-"}`) : (en ? "Deleted without approval" : "결재 없이 삭제")}
+          </span>
+          <span className="px-2 py-1 rounded-full bg-slate-100 text-slate-600">{en ? "FY" : "연도"} {d.year || "-"}</span>
+          {d.defSource && <span className="px-2 py-1 rounded-full bg-slate-100 text-slate-500">{en ? "Definition source" : "정의 출처"}: {d.defSource}</span>}
+        </div>
+
+        <section>
+          <p className="text-[11px] font-semibold text-slate-500 mb-1">{en ? "Control definition (at deletion)" : "통제 정의(삭제 당시)"}</p>
+          <div className="rounded-lg border border-slate-200 px-4 py-2 divide-y divide-slate-100">
+            <Row k={en ? "Name (KO)" : "통제명(국문)"} v={d.name} />
+            <Row k={en ? "Name (EN)" : "통제명(영문)"} v={d.nameEn} />
+            <Row k={en ? "Description (KO)" : "설명(국문)"} v={d.desc} pre />
+            <Row k={en ? "Description (EN)" : "설명(영문)"} v={d.descEn} pre />
+            <Row k={en ? "Department · Category" : "부서 · 분류"} v={`${d.dept ? deptName(d.dept, lang, departments) : "-"} · ${d.cat ? catName(d.cat, lang) : "-"}`} />
+            <Row k={en ? "Accessor · Reviewer" : "담당자 · 검토자"} v={`${who(d.accessor)} · ${who(d.reviewer)}`} />
+            <Row k={en ? "Frequency · Importance" : "점검 빈도 · 중요도"} v={`${d.frequency ? freqLabel(d.frequency, lang) : "-"} · ${d.importance ? importanceLabel(d.importance, lang) : "-"}`} />
+            <Row k={en ? "Status at deletion" : "삭제 당시 평가 상태"} v={d.statusAtDelete ? statusText(d.statusAtDelete) : "-"} />
+          </div>
+        </section>
+
+        <section>
+          <p className="text-[11px] font-semibold text-slate-500 mb-1">{en ? "Deletion" : "삭제 경위"}</p>
+          <div className="rounded-lg border border-slate-200 px-4 py-2 divide-y divide-slate-100">
+            <Row k={en ? "Requested by" : "요청자"} v={who(d.requester)} />
+            <Row k={en ? "Requested at" : "요청 일시"} v={d.requestedAt ? formatDateShort(d.requestedAt) : "-"} />
+            <Row k={en ? "Reason" : "삭제 사유"} v={d.reason} pre />
+            <Row k={en ? "Deleted at" : "삭제 일시"} v={d.deletedAt ? formatDateShort(d.deletedAt) : "-"} />
+            <Row k={en ? "Deleted by" : "삭제자"} v={who(d.deletedBy)} />
+            <Row k={en ? "Recorded via" : "기록 경로"} v={d.recSource} />
+            {d.note && <Row k={en ? "Note" : "비고"} v={d.note} pre />}
+          </div>
+          {d.steps.length > 0 && (
+            <div className="mt-2 rounded-lg border border-slate-200 divide-y divide-slate-100 overflow-hidden">
+              {d.steps.map((st, i) => {
+                const b = stepState(st);
+                return (
+                  <div key={i} className="px-4 py-2 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-slate-700">{i + 1}{en ? "" : "차"} {stepName(st)}</span>
+                      <span className="font-semibold" style={{ color: b.fg }}>{b.text}</span>
+                    </div>
+                    <p className="text-slate-500">{who(st.approver)}{st.approver ? ` · ${st.approver}` : ""}</p>
+                    {st.date && <p className="text-slate-400">{formatDateShort(st.date)}</p>}
+                    {st.comment && <p className="text-slate-600 mt-0.5 whitespace-pre-wrap">💬 {st.comment}</p>}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        <section>
+          <p className="text-[11px] font-semibold text-slate-500 mb-1">{en ? `Archived assessments (${evals.length})` : `보관된 평가 기록 (${evals.length})`}</p>
+          {evals.length === 0 ? (
+            <p className="text-xs text-slate-400 px-1">{en ? "No assessment was recorded for this control." : "이 통제에 남은 평가 기록이 없습니다(평가 전 삭제)."}</p>
+          ) : evals.map((it) => {
+            const f = it.fields || {};
+            const isaFiles = files(f.AttachedFiles), fsaFiles = files(f.FsaAttachedFiles);
+            const txt = (ko, enV) => (en ? (stripSpRichText(enV) || stripSpRichText(ko)) : (stripSpRichText(ko) || stripSpRichText(enV))) || "";
+            return (
+              <div key={it.id} className="rounded-lg border border-slate-200 px-4 py-2 mb-2 divide-y divide-slate-100">
+                <Row k="ISA" v={`${statusText(f.Status)} · ${riskText(f.SelfRisk)}${f.SelfDate ? " · " + formatDateShort(f.SelfDate) : ""}`} />
+                <Row k={en ? "ISA comment" : "ISA 의견"} v={txt(f.SelfCommentKo, f.SelfCommentEn)} pre />
+                <Row k={en ? "ISA review" : "ISA 검토"} v={`${riskText(f.ReviewRisk)}${f.ReviewDate ? " · " + formatDateShort(f.ReviewDate) : ""}${txt(f.ReviewCommentKo, f.ReviewCommentEn) ? " — " + txt(f.ReviewCommentKo, f.ReviewCommentEn) : ""}`} pre />
+                <Row k="FSA" v={`${statusText(f.FsaStatus)} · ${riskText(f.FsaRisk)}${f.FsaDate ? " · " + formatDateShort(f.FsaDate) : ""}`} />
+                <Row k={en ? "FSA comment" : "FSA 의견"} v={txt(f.FsaCommentKo, f.FsaCommentEn)} pre />
+                <Row k={en ? "FSA review" : "FSA 검토"} v={`${riskText(f.FsaReviewRisk)}${f.FsaReviewDate ? " · " + formatDateShort(f.FsaReviewDate) : ""}${txt(f.FsaReviewCommentKo, f.FsaReviewCommentEn) ? " — " + txt(f.FsaReviewCommentKo, f.FsaReviewCommentEn) : ""}`} pre />
+                {(isaFiles.length > 0 || fsaFiles.length > 0) && (
+                  <div className="grid grid-cols-[140px_1fr] gap-3 py-1.5 text-xs">
+                    <span className="text-slate-400">{en ? "Attachments" : "첨부"}</span>
+                    <span className="flex flex-col gap-0.5">
+                      {[...isaFiles.map((x) => ({ ...x, tag: "ISA" })), ...fsaFiles.map((x) => ({ ...x, tag: "FSA" }))].map((x, k) => (
+                        x.url
+                          ? <a key={k} href={x.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">[{x.tag}] {x.name}</a>
+                          : <span key={k} className="text-slate-600">[{x.tag}] {x.name}</span>
+                      ))}
+                    </span>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </section>
+      </div>
+    </Modal>
   );
 }
 
@@ -14419,6 +14725,9 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
             {page === "changeHistory" && (hasCategoryAccess(currentUser, "executive")
               ? <ChangeHistoryPage controls={controlsForYear} currentUser={currentUser} />
               : <EmptyState text="Access denied" />)}
+            {page === "deletedControls" && (hasCategoryAccess(currentUser, "executive")
+              ? <DeletedControlsPage controls={controls} />
+              : <EmptyState text="Access denied" />)}
             {/* 경영진 전용 그룹의 화면인데 라우팅에 검사가 없었다.
                 사이드바는 hasCategoryAccess 로 메뉴를 거르지만,
                 대시보드의 goTo("finalReport") 버튼으로는 권한 없이 들어올 수 있었다.
@@ -14575,7 +14884,7 @@ async function apiGet(path, token) {
  * ICS_* SharePoint 목록 연동 (Controls / Requests / Log)
  * 목록 GUID를 하드코딩하지 않고 displayName으로 조회해서 캐싱한다 (오타/재생성에 안전).
  * ------------------------------------------------------------------ */
-const ICS_LISTS = { controls: "ICS_Controls", requests: "ICS_Requests", approvals: "ICS_Approvals", log: "ICS_Log", categoryAccess: "ICS_CategoryAccess", departments: "ICS_Departments", changeRequests: "ICS_ChangeRequests", accessLog: "ICS_AccessLog" };
+const ICS_LISTS = { controls: "ICS_Controls", requests: "ICS_Requests", approvals: "ICS_Approvals", log: "ICS_Log", categoryAccess: "ICS_CategoryAccess", departments: "ICS_Departments", changeRequests: "ICS_ChangeRequests", accessLog: "ICS_AccessLog", deletedControls: "ICS_DeletedControls" };
 // ICS_Departments 목록이 존재하는지 여부. 없으면 부서는 ics_category_access.xlsx의 Departments 시트(읽기 전용)에서만 오고,
 // 권한 관리 화면의 부서 추가·수정·삭제는 비활성화된다.
 let ICS_DEPT_LIST_READY = false;
@@ -15304,6 +15613,12 @@ async function icsPendingChangeFor(code, year) {
 }
 /* 수정 요청에 담는 「요청 당시 값」(10-26) — 최종 승인 때 바뀐 칸만 반영하고, 그사이 다른 경로로 바뀐 칸이 있으면 결재자에게 묻는다.
    결재 상세의 변경 전(As-Is)도 이 값을 쓴다(승인 뒤에도 무엇이 바뀌었는지 남는다). */
+// 10-28 지워진 통제의 이름 — 결재 요청에 남긴 snapshot(10-22~) 의 통제명, 없으면 코드
+function icsSnapName(r, lang) {
+  const sn = r && r.payload && r.payload.snapshot;
+  if (!sn) return r ? r.code : "";
+  return (lang === "en" ? (sn.nameEn || sn.name) : (sn.name || sn.nameEn)) || r.code;
+}
 function icsControlSnapshot(c) {
   return { dept: c.dept || "", cat: c.cat || "", name: c.name || "", nameEn: c.nameEn || "", desc: c.desc || "", descEn: c.descEn || "",
            accessor: c.accessor || "", reviewer: c.reviewer || "", frequency: c.frequency || "", importance: c.importance || "" };
