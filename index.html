@@ -1357,6 +1357,8 @@ const STR = {
       uploadError: "업로드 중 문제가 발생했습니다. 템플릿 형식을 확인해 주세요.",
       modalAddTitle: "새 통제 항목 추가", modalEditTitle: "통제 항목 수정",
       fieldCode: "통제 코드", fieldName: "통제명", fieldDesc: "통제 설명",
+      enOptionalHint: "영문은 영어 화면에 표시됩니다. 비워 두면 한글이 그대로 쓰입니다.",
+      nameEnPlaceholder: "Control item name (English)", descEnPlaceholder: "Description of the control activity (English)",
       fieldDept: "부서", fieldCat: "통제영역 (COSO)", fieldAccessor: "1차 담당자 이메일 (Accessor)",
       fieldReviewer: "2차 검토자 이메일 (Reviewer)", fieldFreq: "점검 빈도", fieldImportance: "중요도",
       recommendedHint: "빈도·중요도 기준 권장 샘플링 건수",
@@ -1886,6 +1888,8 @@ const STR = {
       uploadError: "Something went wrong during upload. Please check the template format.",
       modalAddTitle: "Add control item", modalEditTitle: "Edit control item",
       fieldCode: "Control code", fieldName: "Control name", fieldDesc: "Description",
+      enOptionalHint: "English text is shown on the English screen. If left blank, the Korean text is used.",
+      nameEnPlaceholder: "Control item name (English)", descEnPlaceholder: "Description of the control activity (English)",
       fieldDept: "Department", fieldCat: "Component (COSO)", fieldAccessor: "1st Accessor Email",
       fieldReviewer: "2nd Reviewer Email", fieldFreq: "Testing frequency", fieldImportance: "Importance",
       recommendedHint: "Recommended sample size for this frequency/importance:",
@@ -4246,7 +4250,7 @@ function ControlDetailBody({ control: c }) {
 function emptyControlForm(defaultDept, departments = INITIAL_DEPARTMENTS) {
   return {
     code: "", dept: defaultDept || departments[0]?.id || "", cat: CATEGORIES[0].id,
-    name: "", desc: "", accessor: "", reviewer: "",
+    name: "", nameEn: "", desc: "", descEn: "", accessor: "", reviewer: "",
     frequency: FREQUENCY_OPTIONS[2].id, importance: IMPORTANCE_OPTIONS[1].id,
   };
 }
@@ -5129,7 +5133,8 @@ function ControlManage({ controls: allControls, setControls, canEdit, addLog, is
     if (reason) { alert(reason); return; }
     // pendingEdit(수정 요청 → 승인 대기) 흐름은 2026-07-30(895c3f6)에 제거되어 항상 null 이다.
     const src = c;
-    setForm({ code: src.code, dept: src.dept, cat: src.cat, name: src.name, desc: src.desc, accessor: src.accessor, reviewer: src.reviewer, frequency: src.frequency, importance: src.importance });
+    // 10-30 영문 통제명 · 설명도 이 창에서 고친다. 예전 등록분은 영문 칸에 한글이 복사돼 있을 수 있다(그대로 보여 주고 고치게 한다)
+    setForm({ code: src.code, dept: src.dept, cat: src.cat, name: src.name, nameEn: src.nameEn || "", desc: src.desc, descEn: src.descEn || "", accessor: src.accessor, reviewer: src.reviewer, frequency: src.frequency, importance: src.importance });
     setEditingId(c.id);
     setCodeError("");
   }
@@ -5179,14 +5184,20 @@ Continue?`
 그대로 진행할까요? (취소하면 권한 관리에서 먼저 지정할 수 있습니다)`)) return;
       }
     }
+    // 10-30 영문 칸 — 비우면 한글을 그대로 쓴다(엑셀 업로드 「통제명(영문)」 · 「설명(영문)」 과 같은 규칙)
+    //   수정 요청에서 원래 영문이 없던 항목을 비워 두면 「바뀜」 으로 잡지 않는다(undefined → 승인 때 기존 값 유지)
+    const editTarget = editingId ? allControls.find((c) => c.id === editingId) : null;
+    const enOr = (v, ko, prev) => String(v || "").trim() || (editTarget && !String(prev || "").trim() ? undefined : ko);
+    const nameEn = enOr(form.nameEn, form.name, editTarget && editTarget.nameEn);
+    const descEn = enOr(form.descEn, form.desc, editTarget && editTarget.descEn);
     const fields = {
       Title: form.code,
       Dept: form.dept,
       Category: form.cat,
       NameKo: form.name,
-      NameEn: form.name,
+      NameEn: nameEn ?? form.name,
       DescKo: form.desc,
-      DescEn: form.desc,
+      DescEn: descEn ?? form.desc,
       AccessorEmail: form.accessor,
       ReviewerEmail: form.reviewer,
       Year: year,
@@ -5216,8 +5227,8 @@ Continue?`
             RequesterEmail: currentUser.email,
             Payload: JSON.stringify({
               dept: form.dept, cat: form.cat, name: form.name, desc: form.desc,
-              // 10-26 영문 통제명 · 설명은 이 폼에 칸이 없다 — 지금 값을 그대로 담는다. 예전에는 빠져 있어 최종 승인 때 한글로 덮어써졌다.
-              nameEn: target.nameEn || "", descEn: target.descEn || "",
+              // 10-30 영문 통제명 · 설명도 이 폼에서 받는다(비우면 한글). 최종 승인 때 바뀐 칸만 반영된다.
+              nameEn, descEn,
               accessor: form.accessor, reviewer: form.reviewer,
               frequency: form.frequency, importance: form.importance,
               before: icsControlSnapshot(target),   // 10-26 요청 당시 값 — 승인 때 바뀐 칸만 반영 · As-Is 보존
@@ -5231,7 +5242,7 @@ Continue?`
             target.code, target.name, currentUser.email, steps);
           // 10-26 이 화면에서도 바로 잠근다(같은 항목에 이어서 삭제 · 수정을 올리지 못하게)
           setChangeReqs((prev) => ({ ...prev, [target.code]: { code: target.code, year: target.year, status: "pending", reqType: "edit" } }));
-          addLog(currentUser.email, "request_edit_control", target.code, form.name, form.name);
+          addLog(currentUser.email, "request_edit_control", target.code, form.name, nameEn ?? form.name);
           setForm(null);
           setEditingId(null);
           showToast(lang === "en"
@@ -5240,8 +5251,8 @@ Continue?`
           return;
         }
         if (target?.spId) await icsUpdateItem(ICS_LISTS.controls, target.spId, fields);
-        setControls((prev) => prev.map((c) => (c.id === editingId ? { ...c, ...form, sampleSize: recommendedSample(form.importance, form.frequency), pendingEdit: null } : c)));
-        addLog(currentUser.email, "edit_control", form.code, form.name, form.name);
+        setControls((prev) => prev.map((c) => (c.id === editingId ? { ...c, ...form, nameEn: nameEn ?? (c.nameEn || ""), descEn: descEn ?? (c.descEn || ""), sampleSize: recommendedSample(form.importance, form.frequency), pendingEdit: null } : c)));
+        addLog(currentUser.email, "edit_control", form.code, form.name, nameEn ?? form.name);
         showToast(lang === "en" ? "Control item updated." : "통제 항목이 수정되었습니다.");
       } else if (usingSharePointData) {
         // 10-26 정책 — 신규 등록도 결재(MC → ICS Admin → 최종)를 거친다. 최종 승인 때 통제 항목이 만들어진다.
@@ -5256,22 +5267,22 @@ Continue?`
         if (mcEmail === null) return;   // 취소
         const steps = buildApprovalSteps(currentUser.email, mcEmail);
         if (!steps.length) { alert(lang === "en" ? "Approval line could not be determined. Please contact IT." : "결재선을 확인할 수 없습니다. IT로 문의해 주세요."); return; }
-        const item = { code, dept: form.dept, cat: form.cat, name: form.name, nameEn: form.name, desc: form.desc, descEn: form.desc,
+        const item = { code, dept: form.dept, cat: form.cat, name: form.name, nameEn, desc: form.desc, descEn,
                        accessor: form.accessor, reviewer: form.reviewer, frequency: form.frequency, importance: form.importance };
         await icsSubmitAddRequest({ items: [item], year, requester: currentUser.email, steps });
-        addLog(currentUser.email, "request_add_control", code, form.name, form.name);
+        addLog(currentUser.email, "request_add_control", code, form.name, nameEn);
         showToast(lang === "en" ? "New control submitted for approval. It will be created when approved." : "신규 등록이 결재로 상신되었습니다. 최종 승인되면 통제 항목이 만들어집니다.");
       } else {
         const created = await icsCreateItem(ICS_LISTS.controls, fields);
         const newControl = {
-          id: uid(), spId: created.id, ...form, status: "not_started", year,
+          id: uid(), spId: created.id, ...form, nameEn, descEn, status: "not_started", year,
           selfRisk: null, selfComment: "", selfCommentEn: "", selfDate: null,
           reviewRisk: null, reviewComment: "", reviewCommentEn: "", reviewDate: null, history: [],
           sampleSize: recommendedSample(form.importance, form.frequency), actualSample: null, attachments: [], fsaAttachments: [],
           fsaStatus: "not_started", fsaRisk: null, fsaComment: "", fsaCommentEn: "", fsaDate: null, fsaReviewRisk: null, fsaReviewComment: "", fsaReviewCommentEn: "", fsaReviewDate: null, pendingEdit: null,
         };
         setControls((prev) => [newControl, ...prev]);
-        addLog(currentUser.email, "add_control", form.code, form.name, form.name);
+        addLog(currentUser.email, "add_control", form.code, form.name, nameEn);
         showToast(lang === "en" ? "Control item added." : "통제 항목이 추가되었습니다.");
       }
       setForm(null);
@@ -5539,7 +5550,7 @@ Continue?`
       </div>
 
       {form && (
-        <Modal title={editingId ? t("manage.modalEditTitle") : t("manage.modalAddTitle")} onClose={() => setForm(null)}>
+        <Modal wide title={editingId ? t("manage.modalEditTitle") : t("manage.modalAddTitle")} onClose={() => setForm(null)}>
           <Field label={t("manage.fieldCode")}>
             <input
               className={codeError ? `${inputCls} border-red-400 focus:border-red-400 focus:ring-red-100` : inputCls}
@@ -5551,12 +5562,22 @@ Continue?`
             {editingId && <p className="text-xs text-slate-400 mt-1.5">{t("manage.codeLockedHint")}</p>}
             {codeError && <p className="text-xs text-red-600 mt-1.5 flex items-start gap-1"><AlertTriangle size={12} className="flex-shrink-0 mt-0.5" />{codeError}</p>}
           </Field>
-          <Field label={t("manage.fieldName")}>
+          {/* 10-30 통제명 · 설명은 한글 · 영문을 좌우로 받는다(사용자 「변경 요청」 창과 같은 배치). 영문은 선택 — 비우면 한글을 쓴다 */}
+          <div className="mb-4 grid grid-cols-2 gap-x-3 gap-y-1">
+            <label className="block text-xs font-medium text-slate-500 mb-0.5">{t("manage.fieldName")} · {t("common.ko")}</label>
+            <label className="block text-xs font-medium mb-0.5" style={{ color: BRAND.accent }}>{t("manage.fieldName")} · {t("common.en")}</label>
             <input className={inputCls} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder={t("manage.namePlaceholder")} />
-          </Field>
-          <Field label={t("manage.fieldDesc")}>
-            <textarea className={inputCls + " resize-y ics-tall"} rows={5} value={form.desc} onChange={(e) => setForm({ ...form, desc: e.target.value })} placeholder={t("manage.descPlaceholder")} />
-          </Field>
+            <input className={inputCls} value={form.nameEn || ""} onChange={(e) => setForm({ ...form, nameEn: e.target.value })} placeholder={t("manage.nameEnPlaceholder")} />
+          </div>
+          <div className="mb-4">
+            <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+              <label className="block text-xs font-medium text-slate-500 mb-0.5">{t("manage.fieldDesc")} · {t("common.ko")}</label>
+              <label className="block text-xs font-medium mb-0.5" style={{ color: BRAND.accent }}>{t("manage.fieldDesc")} · {t("common.en")}</label>
+              <textarea className={inputCls + " resize-y ics-tall"} rows={5} maxLength={DESC_MAX} value={form.desc} onChange={(e) => setForm({ ...form, desc: e.target.value })} placeholder={t("manage.descPlaceholder")} />
+              <textarea className={inputCls + " resize-y ics-tall"} rows={5} maxLength={DESC_MAX} value={form.descEn || ""} onChange={(e) => setForm({ ...form, descEn: e.target.value })} placeholder={t("manage.descEnPlaceholder")} />
+            </div>
+            <p className="text-xs text-slate-400 mt-1.5">{t("manage.enOptionalHint")}</p>
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <Field label={t("manage.fieldDept")}>
               <select className={inputCls} value={form.dept} onChange={(e) => setForm({ ...form, dept: e.target.value })}>
