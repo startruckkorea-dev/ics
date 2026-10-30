@@ -78,6 +78,20 @@
   .log-load-err button{font-size:12px;font-weight:600;padding:5px 14px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;color:#334155;cursor:pointer}
   .log-load-err button:hover{border-color:#2F7B7A;color:#2F7B7A}
   @media (prefers-reduced-motion:reduce){.log-loading .log-spin,.log-loading .loading-dots span{animation:none}}
+  /* 10-30 활동 로그 빠르게 — 내 평가 이력은 최근 N건, 전사 화면은 기간(기본 최근 7일) */
+  .log-range{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:-4px 0 12px}
+  .log-range-box{display:flex;align-items:center;gap:6px;height:32px;padding:0 10px;border:1px solid #cbd5e1;border-radius:8px;background:#fff}
+  .log-range-box:focus-within{border-color:#2F7B7A;box-shadow:0 0 0 2px rgba(47,123,122,.12)}
+  .log-range-box input{border:0;outline:0;background:transparent;font-size:12px;color:#334155;font-family:inherit;padding:0;width:118px}
+  .log-range-box .arr{color:#94a3b8;font-size:11px}
+  .log-range-chips{display:inline-flex;height:32px;border:1px solid #cbd5e1;border-radius:8px;overflow:hidden;background:#fff}
+  .log-range-chips button{border:0;border-right:1px solid #e2e8f0;background:transparent;padding:0 11px;font-size:11.5px;color:#475569;cursor:pointer;font-family:inherit}
+  .log-range-chips button:last-child{border-right:0}
+  .log-range-chips button:hover{background:#f0f7f7;color:#2F7B7A}
+  .log-range-chips button.on{background:#2F7B7A;color:#fff;font-weight:600}
+  .log-foot{display:flex;align-items:flex-start;gap:6px;margin-top:10px;padding-top:10px;border-top:1px solid #f1f5f9;font-size:11px;line-height:1.5;color:#94a3b8}
+  .log-foot svg{flex:none;margin-top:2px}
+  .log-foot b{color:#64748b;font-weight:600}
   .btn-login{background:linear-gradient(135deg,#2F7B7A,#1A2B4C);color:#fff;border:none;border-radius:10px;padding:13px 0;font-size:.92rem;font-weight:600;cursor:pointer;width:100%;font-family:inherit}
   .btn-login:disabled{background:#cbd5e0;cursor:not-allowed}
   #login-err{color:#C1352E;font-size:.78rem;margin-top:10px;display:none}
@@ -696,6 +710,10 @@ const ACTION_LABELS = {
   download_manual_failed: { ko: "ICS 매뉴얼 다운로드 실패", en: "ICS manual download failed" },
 };
 // 10-15 전사 평가 이력 「출력 · 다운로드만」 보기에 쓰는 행위 키
+// 10-30 평가 흐름(자가평가 · 검토 · FSA · 생략) 기록 — 내 평가 이력 화면과 서버 필터가 같은 목록을 쓴다
+const ICS_ASSESSMENT_ACTION_KEYS = ["submit_self", "review_complete", "review_reject", "fsa_submit", "fsa_review_complete", "fsa_review_reject", "withdraw_self", "withdraw_fsa", "skip_isa", "unskip_isa"];
+const ICS_LOG_MINE_LIMIT = 30;   // 내 평가 이력 활동 로그는 최근 30건만(그 이전은 관리자 화면에서)
+const ICS_LOG_DEFAULT_DAYS = 7;  // 전사 평가 이력 기본 기간(최근 7일)
 const ICS_OUTPUT_ACTIONS = new Set(["export_excel", "export_excel_failed", "download_template", "download_template_failed",
   "pdf_final_report", "pdf_final_report_failed", "pdf_control_package", "pdf_control_package_failed", "pdf_request", "pdf_request_failed",
   "pdf_control_doc", "pdf_control_doc_failed", "download_attachment", "download_attachment_failed", "download_manual", "download_manual_failed",
@@ -1538,6 +1556,9 @@ const STR = {
       subtitleAll: "관리자 전용 — 모든 부서의 평가 활동 로그와 종합 현황입니다. 담당 배정과 무관하게 전사 통제 항목이 모두 표시됩니다.",
       allDepts: "전체 부서",
       logAll: "전체 활동", logAssessment: "평가 활동만", logOutput: "출력 · 다운로드만", logEmpty: "표시할 활동 로그가 없습니다.", logLoading: "활동 로그를 불러오는 중", logLoadError: "활동 로그를 불러오지 못했습니다.", logRetry: "다시 시도",
+      logRecent: "최근", logMineNote: "빠른 조회를 위해 최근 {n}건까지만 보여 드립니다 · 그 이전 이력은 ICS 관리자에게 요청해 주세요.",
+      logAllNote: "기본은 최근 7일입니다 · 기간을 넓히면 불러오는 데 시간이 조금 더 걸립니다.",
+      logR7: "7일", logR30: "30일", logR90: "90일", logRAll: "연도 전체", logFrom: "시작일", logTo: "종료일", logRangeLabel: "조회 기간",
     },
     assess: {
       searchPlaceholder: "통제명 · 코드 · 담당자 검색",
@@ -2066,6 +2087,9 @@ const STR = {
       subtitleAll: "Admin only — assessment activity log and summary for every department, regardless of assignment.",
       allDepts: "All departments",
       logAll: "All activity", logAssessment: "Assessment only", logOutput: "Exports & downloads only", logEmpty: "No activity to show.", logLoading: "Loading activity", logLoadError: "Couldn't load the activity log.", logRetry: "Retry",
+      logRecent: "Latest", logMineNote: "Only the latest {n} entries are shown for speed · ask an ICS admin for older history.",
+      logAllNote: "Last 7 days by default · wider ranges take a little longer to load.",
+      logR7: "7 days", logR30: "30 days", logR90: "90 days", logRAll: "Whole year", logFrom: "From", logTo: "To", logRangeLabel: "Period",
     },
     assess: {
       searchPlaceholder: "Search by control name, code, or accessor",
@@ -11551,7 +11575,7 @@ function DeletedControlDetail({ d, evals, onClose }) {
   );
 }
 
-function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedDepts, scope = "mine", logLoading = false, logError = false, onRetryLog }) {
+function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedDepts, scope = "mine", logLoading = false, logError = false, onRetryLog, logRange = null, onLogRange, logLimit = 0 }) {
   // scope="all"(관리자 전용 · 전사 평가 이력 · 리포트, 10-08): 배정 필터 없이 전 부서를 본다. 들어오는 길목(라우팅)에서 adminOnly 를 검사한다.
   const all = scope === "all";
   const [deptFilter, setDeptFilter] = useState("");
@@ -11580,12 +11604,16 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
   // 전사 화면의 부서 선택 목록 — 통제 항목이 실제로 있는 부서만
   const deptOptions = all ? departments.filter((d) => baseControls.some((c) => c.dept === d.id)) : [];
   // 활동 로그는 ISA/FSA 평가 흐름(자가평가·검토·FSA)에서 발생한 기록만 보여준다 - 권한 변경, 부서 초기화 등 시스템/관리 로그는 제외.
-  const ASSESSMENT_ACTIONS = new Set(["submit_self", "review_complete", "review_reject", "fsa_submit", "fsa_review_complete", "fsa_review_reject", "withdraw_self", "withdraw_fsa",
-    "skip_isa", "unskip_isa"]);   // 10-15 ISA 생략 · 생략 취소도 평가 흐름 기록
+  const ASSESSMENT_ACTIONS = new Set(ICS_ASSESSMENT_ACTION_KEYS);   // 10-15 ISA 생략 · 생략 취소도 평가 흐름 기록(10-30 공용 상수로)
   const log = allLog
     // 전사 화면은 전 활동(임시 저장 · 서식 저장 · 통제 항목 변경 · 권한 변경 …)을 보여 준다 — 제출이 아직 없어도 누가 무엇을 했는지 보인다.
     .filter((l) => all ? (logKind === "assessment" ? ASSESSMENT_ACTIONS.has(l.actionKey) : logKind === "output" ? ICS_OUTPUT_ACTIONS.has(l.actionKey) : true) : ASSESSMENT_ACTIONS.has(l.actionKey))
-    .filter((l) => all ? (!deptFilter || myCodes.has(l.code)) : ((l.actor || "").toLowerCase() === myEmail || myCodes.has(l.code)));
+    .filter((l) => all ? (!deptFilter || myCodes.has(l.code)) : ((l.actor || "").toLowerCase() === myEmail || myCodes.has(l.code)))
+    .slice(0, !all && logLimit ? logLimit : undefined);   // 10-30 내 평가 이력은 최근 N건(화면에서 방금 남긴 기록이 앞에 붙어도 N건 유지)
+  // 10-30 전사 화면 기간 고르기 — 빠른 선택(7 · 30 · 90일 · 연도 전체)과 직접 입력
+  const rangePresets = [["7", t("history.logR7")], ["30", t("history.logR30")], ["90", t("history.logR90")], ["all", t("history.logRAll")]];
+  const pickRange = (preset) => onLogRange && onLogRange({ preset });
+  const editRange = (k, v) => { if (!onLogRange || !v) return; onLogRange({ [k]: v }); };
   const pieData = ["green", "orange", "red", "none"].map((r) => ({
     name: RISK_META[r][lang], value: controls.filter((c) => stageRisk(c, stage) === r).length, color: RISK_META[r].color,
   })).filter((d) => d.value > 0);
@@ -11639,7 +11667,7 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
 
         <div className="lg:col-span-3 bg-white rounded-xl border border-slate-200 shadow-sm p-5">
           <div className="flex items-center justify-between gap-3 mb-4">
-            <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2"><FileText size={15} /> {t("history.logTitle")}<span className="text-xs font-normal text-slate-400">{logLoading || logError ? "" : <>{log.length}{t("common.items")}</>}</span></h3>
+            <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2"><FileText size={15} /> {t("history.logTitle")}<span className="text-xs font-normal text-slate-400">{logLoading || logError ? "" : <>{!all && logLimit && log.length >= logLimit ? t("history.logRecent") + " " : ""}{log.length}{t("common.items")}</>}</span></h3>
             {all && (
               <select value={logKind} onChange={(e) => setLogKind(e.target.value)} className={`${inputCls} w-auto flex-shrink-0 text-xs py-1`}>
                 <option value="all">{t("history.logAll")}</option>
@@ -11648,6 +11676,20 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
               </select>
             )}
           </div>
+          {all && logRange && onLogRange && (
+            <div className="log-range" data-log-range>
+              <div className="log-range-box">
+                <input type="date" aria-label={t("history.logFrom")} value={logRange.from} min={logRange.min} max={logRange.to} onChange={(e) => editRange("from", e.target.value)} />
+                <span className="arr" aria-hidden="true">→</span>
+                <input type="date" aria-label={t("history.logTo")} value={logRange.to} min={logRange.from} max={logRange.max} onChange={(e) => editRange("to", e.target.value)} />
+              </div>
+              <div className="log-range-chips" role="group" aria-label={t("history.logRangeLabel")}>
+                {rangePresets.map(([k, label]) => (
+                  <button key={k} type="button" className={logRange.preset === k ? "on" : ""} onClick={() => pickRange(k)}>{label}</button>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="divide-y divide-slate-100 max-h-56 overflow-y-auto pr-2">
             {logLoading && (
               <div className="log-loading" role="status" aria-live="polite">
@@ -11678,6 +11720,12 @@ function HistoryPage({ controls: allControls, log: allLog, currentUser, allowedD
             })}
             {!logLoading && !logError && log.length === 0 && <p className="text-xs text-slate-400 text-center py-8">{t("history.logEmpty")}</p>}
           </div>
+          {(all ? !!logRange : !!logLimit) && (
+            <p className="log-foot" data-log-foot>
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><circle cx="8" cy="8" r="6.5" /><path d="M8 7.2V11.2M8 4.9v.2" strokeLinecap="round" /></svg>
+              <span>{all ? t("history.logAllNote") : t("history.logMineNote").replace("{n}", String(logLimit))}</span>
+            </p>
+          )}
         </div>
       </div>
 
@@ -14096,17 +14144,31 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
   // 10-28 불러오는 동안은 「불러오는 중 ...」, 실패하면 안내 + 다시 시도. 화면을 떠나거나 연도를 바꿔 앞선 요청이 늦게 오면 버린다.
   const [logLoadErr, setLogLoadErr] = useState(false);
   const [logReload, setLogReload] = useState(0);
+  // 10-30 활동 로그가 쌓여(연 1,500건+) 느려져서 — 내 평가 이력은 최근 30건만, 전사 평가 이력은 고른 기간만(기본 최근 7일) 서버에서 걸러 읽는다.
+  const [logRange, setLogRangeState] = useState(null);
+  const onLogRange = (chg) => setLogRangeState((cur) => {
+    const base = cur && cur.year === String(selectedYear) ? cur : icsLogRangeFor(selectedYear);
+    if (chg.preset !== undefined) return icsLogRangeFor(selectedYear, chg.preset);
+    return icsLogRangeFor(selectedYear, "", Date.now(), chg.from || base.from, chg.to || base.to);
+  });
+  const rangeKey = logRange ? `${logRange.year}|${logRange.from}|${logRange.to}` : "";
   useEffect(() => {
     if ((page !== "history" && page !== "historyAll") || !usingSharePointData) return;   // 전사 평가 이력 · 리포트도 같은 로그를 쓴다(10-08)
+    if (page === "historyAll" && (!logRange || logRange.year !== String(selectedYear))) { setLogRangeState(icsLogRangeFor(selectedYear)); return; }
     let stale = false;
     setFullLogLoaded(false);
     setLogLoadErr(false);
-    loadIcsLog(selectedYear)
-      .then((full) => { if (stale) return; setLog(full); setFullLogLoaded(true); })
+    const me = String((users.find((u) => u.id === currentUserId) || {}).email || "").toLowerCase();
+    const myCodes = new Set(controls.filter((c) => c.year === selectedYear && ((c.accessor || "").toLowerCase() === me || (c.reviewer || "").toLowerCase() === me)).map((c) => c.code));
+    const job = page === "historyAll"
+      ? loadIcsLogRange(selectedYear, logRange)
+      : loadIcsLogMine(selectedYear, me, myCodes).then((r) => r.items);
+    job
+      .then((rows) => { if (stale) return; setLog(rows); setFullLogLoaded(true); })
       .catch((e) => { if (stale) return; console.warn("[ICS] 활동 로그 로드 실패:", e.message); setLogLoadErr(true); });
     return () => { stale = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, selectedYear, logReload]);
+  }, [page, selectedYear, logReload, rangeKey]);
   const logLoading = usingSharePointData && !fullLogLoaded && !logLoadErr;
   const retryLog = () => setLogReload((n) => n + 1);
   const isArchived = selectedYear !== activeYear;
@@ -14710,7 +14772,7 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
             )}
             {page === "history" && (
               hasCategoryAccess(currentUser, "history")
-                ? <HistoryPage controls={controlsForYear} log={logForYear} currentUser={currentUser} allowedDepts={allowedDepts} logLoading={logLoading} logError={logLoadErr} onRetryLog={retryLog} />
+                ? <HistoryPage controls={controlsForYear} log={logForYear} currentUser={currentUser} allowedDepts={allowedDepts} logLoading={logLoading} logError={logLoadErr} onRetryLog={retryLog} logLimit={usingSharePointData ? ICS_LOG_MINE_LIMIT : 0} />
                 : <EmptyState text="Access denied" />
             )}
             {page === "settings" && (
@@ -14739,7 +14801,7 @@ export default function InternalControlApp({ initialUserId, initialControls, ini
             {/* 전사 평가 이력 · 리포트(10-08) — 관리자 전용. 같은 HistoryPage 를 scope="all" 로 열어 전 부서 통제 항목 · 활동 로그를 본다. */}
             {page === "historyAll" && (
               hasCategoryAccess(currentUser, "adminOnly")
-                ? <HistoryPage controls={controlsForYear} log={logForYear} currentUser={currentUser} allowedDepts={allowedDepts} scope="all" logLoading={logLoading} logError={logLoadErr} onRetryLog={retryLog} />
+                ? <HistoryPage controls={controlsForYear} log={logForYear} currentUser={currentUser} allowedDepts={allowedDepts} scope="all" logLoading={logLoading} logError={logLoadErr} onRetryLog={retryLog} logRange={usingSharePointData && logRange && logRange.year === String(selectedYear) ? logRange : null} onLogRange={onLogRange} />
                 : <EmptyState text="Access denied" />
             )}
             {page === "permissions" && (hasCategoryAccess(currentUser, "adminOnly") ? <PermissionsPage permissions={permissions} setPermissions={setPermissions} currentUser={currentUser} addLog={addLog} showToast={showToast} /> : <EmptyState text="Access denied" />)}
@@ -15957,6 +16019,68 @@ async function loadIcsLog(year) {
   }
   const items = await icsListAll(ICS_LISTS.log, `&$orderby=lastModifiedDateTime desc${filter}`);
   return items.map(mapIcsLogItem).sort(icsLogNewestFirst);
+}
+
+/* 10-30 활동 로그 빠르게 — ICS_Log 인덱스 열(만든 날짜 · 제목)로 서버에서 거르고, 필요한 만큼만 페이지를 넘긴다.
+   · 내 평가 이력: 그 평가 연도 창 + 평가 흐름 제목만 → 최신순으로 넘기다 내 기록이 limit 건 모이면 멈춘다.
+     (제목 조건을 서버가 거부하면 날짜 조건만으로 다시 읽고 화면에서 거른다)
+   · 전사 평가 이력: 고른 기간(KST 날짜, 평가 연도 창 안) 만 읽는다. */
+function icsKstYmd(ms) { return new Date(ms + 9 * 3600 * 1000).toISOString().slice(0, 10); }
+function icsKstDayStart(ymd) { return Date.parse(ymd + "T00:00:00+09:00"); }
+function icsLogIso(ms) { return new Date(ms).toISOString().slice(0, 19) + "Z"; }
+function icsLogRangeFor(year, preset = String(ICS_LOG_DEFAULT_DAYS), now = Date.now(), from = "", to = "") {
+  const [a, b] = icsFyWindow(year);
+  const min = icsKstYmd(a), max = icsKstYmd(b - 1);
+  const clamp = (d) => (d < min ? min : d > max ? max : d);
+  if (preset === "all") return { year: String(year), preset, min, max, from: min, to: max };
+  if (/^\d+$/.test(String(preset))) {
+    const end = clamp(icsKstYmd(now));
+    return { year: String(year), preset: String(preset), min, max, to: end, from: clamp(icsKstYmd(icsKstDayStart(end) - (Number(preset) - 1) * 864e5)) };
+  }
+  let f = clamp(from || min), e = clamp(to || max);
+  if (f > e) [f, e] = [e, f];
+  return { year: String(year), preset: "", min, max, from: f, to: e };
+}
+async function icsListUntil(listName, extraQuery, keep, limit, pageSize = 100) {
+  const token = await getGraphToken();
+  const listId = await getIcsListId(listName);
+  let url = `${GRAPH}/sites/${_siteId}/lists/${listId}/items?expand=fields&$top=${pageSize}${extraQuery}`;
+  const out = [];
+  let more = false;
+  while (url) {
+    const res = await icsFetch(url, { headers: { Authorization: "Bearer " + token, Prefer: "HonorNonIndexedQueriesWarningMayFailRandomly" } });
+    if (!res.ok) throw new Error(`${listName} 조회 실패 (${res.status})`);
+    const data = await res.json();
+    for (const it of data.value || []) {
+      const m = mapIcsLogItem(it);
+      if (keep(m)) out.push(m);
+    }
+    url = data["@odata.nextLink"] || null;
+    if (limit && out.length >= limit) { more = !!url || out.length > limit; break; }
+  }
+  out.sort(icsLogNewestFirst);
+  return { items: limit ? out.slice(0, limit) : out, more };
+}
+async function loadIcsLogMine(year, email, codes, limit = ICS_LOG_MINE_LIMIT) {
+  const [a, b] = icsFyWindow(year);
+  const win = `fields/Created ge '${icsLogIso(a)}' and fields/Created lt '${icsLogIso(b)}'`;
+  const me = String(email || "").toLowerCase();
+  const keys = new Set(ICS_ASSESSMENT_ACTION_KEYS);
+  const keep = (m) => m.year === String(year) && keys.has(m.actionKey) && ((m.actor || "").toLowerCase() === me || codes.has(m.code));
+  const titles = ICS_ASSESSMENT_ACTION_KEYS.map((k) => `fields/Title eq '${k}'`).join(" or ");
+  try {
+    return await icsListUntil(ICS_LISTS.log, `&$orderby=lastModifiedDateTime desc&$filter=${win} and (${titles})`, keep, limit);
+  } catch (e) {
+    console.warn("[ICS] 활동 로그 제목 조건 조회 실패 — 날짜 조건만으로 다시 읽음:", e && e.message);
+    return await icsListUntil(ICS_LISTS.log, `&$orderby=lastModifiedDateTime desc&$filter=${win}`, keep, limit);
+  }
+}
+async function loadIcsLogRange(year, range) {
+  const [a, b] = icsFyWindow(year);
+  const from = Math.max(a, icsKstDayStart(range.from)), to = Math.min(b, icsKstDayStart(range.to) + 864e5);
+  const filter = `&$filter=fields/Created ge '${icsLogIso(from)}' and fields/Created lt '${icsLogIso(to)}'`;
+  const items = await icsListAll(ICS_LISTS.log, `&$orderby=lastModifiedDateTime desc${filter}`);
+  return items.map(mapIcsLogItem).filter((m) => m.year === String(year)).sort(icsLogNewestFirst);
 }
 
 // 로그인 시엔 CFO/RD 컨펌 상태 계산에 필요한 4종 이벤트만 가볍게 가져온다 (전체 활동 로그는 History 화면 진입 시 지연 로드).
